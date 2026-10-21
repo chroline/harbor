@@ -1,0 +1,53 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "type-scale",
+  "title": "Type Scale",
+  "description": "Six type roles (display, title, subtitle, body, caption, micro), each a font size and a line height, at the default and compact steps of the size ladder. Adds text-<role> utilities and the --fs-* / --lh-* variables components read.",
+  "cssVars": {
+    "theme": {
+      "text-display": "var(--fs-display)",
+      "text-display--line-height": "var(--lh-display)",
+      "text-title": "var(--fs-title)",
+      "text-title--line-height": "var(--lh-title)",
+      "text-subtitle": "var(--fs-subtitle)",
+      "text-subtitle--line-height": "var(--lh-subtitle)",
+      "text-body": "var(--fs-body)",
+      "text-body--line-height": "var(--lh-body)",
+      "text-caption": "var(--fs-caption)",
+      "text-caption--line-height": "var(--lh-caption)",
+      "text-micro": "var(--fs-micro)",
+      "text-micro--line-height": "var(--lh-micro)"
+    },
+    "light": {
+      "fs-display": "28px",
+      "lh-display": "34px",
+      "fs-display-compact": "24px",
+      "lh-display-compact": "30px",
+      "fs-title": "16px",
+      "lh-title": "22px",
+      "fs-title-compact": "15px",
+      "lh-title-compact": "20px",
+      "fs-subtitle": "14px",
+      "lh-subtitle": "20px",
+      "fs-subtitle-compact": "13px",
+      "lh-subtitle-compact": "18px",
+      "fs-body": "13px",
+      "lh-body": "20px",
+      "fs-body-compact": "12px",
+      "lh-body-compact": "18px",
+      "fs-caption": "12px",
+      "lh-caption": "16px",
+      "fs-caption-compact": "11px",
+      "lh-caption-compact": "14px",
+      "fs-micro": "11px",
+      "lh-micro": "14px",
+      "fs-micro-compact": "10px",
+      "lh-micro-compact": "12px"
+    }
+  },
+  "docs": "Docs & live playground: https://www.fluidfunctionalism.com/docs/typography.",
+  "categories": [
+    "theme"
+  ],
+  "type": "registry:item"
+}

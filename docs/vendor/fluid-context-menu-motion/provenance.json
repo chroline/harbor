@@ -1,0 +1,14 @@
+{
+  "source": "https://www.fluidfunctionalism.com/r/base/dropdown.json",
+  "file": "registry/base/dropdown.tsx",
+  "retrievedAt": "2026-10-15",
+  "sha256": "b8ff28029af70bfd82d2e1a6000f9a614c0d1de5e074aec0b02649bee30fcc0e",
+  "adaptations": [
+    "Popup spring wrapper and usePopupExit deferred-unmount lifecycle applied to Base UI ContextMenu roots/submenus.",
+    "Existing shared framer-motion runtime used.",
+    "Reduced motion skips animation; consumer callbacks and imperative actions preserved.",
+    "Only completion of the opacity-zero exit target releases the popup, avoiding a late enter-completion race.",
+    "Context menus select Fluid spring.moderate (160ms enter / 120ms exit) after native recording showed fast motion reading as a snap."
+  ],
+  "status": "Historical comparison only. Superseded by shadcn CSS zoom/slide animations in context-menu.tsx; this Motion lifecycle is no longer used by context menus."
+}

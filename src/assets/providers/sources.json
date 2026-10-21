@@ -1,0 +1,42 @@
+{
+  "retrieved": "2026-10-08",
+  "usage": "Provider identification. Brand marks remain the property of their respective owners.",
+  "icons": {
+    "codex": {
+      "url": "https://raw.githubusercontent.com/agentclientprotocol/registry/ca37066599b968533c740c5b1bce1bcff8513f8e/codex-acp/icon.svg",
+      "sha256": "3304f6c5797ebce8f5c3d0e0af28e1eb970e81697deaae986466970523e46b96",
+      "changes": "None. Displayed as an alpha mask at the requested icon size."
+    },
+    "claude": {
+      "url": "https://raw.githubusercontent.com/agentclientprotocol/registry/ca37066599b968533c740c5b1bce1bcff8513f8e/claude-acp/icon.svg",
+      "sha256": "30c1a5c5e597b030d17bd7ff55ad62fd38975a7ba560d32589bd96de99b5fe8d",
+      "changes": "None. Displayed as an alpha mask at the requested icon size."
+    },
+    "cursor": {
+      "url": "https://raw.githubusercontent.com/agentclientprotocol/registry/ca37066599b968533c740c5b1bce1bcff8513f8e/cursor/icon.svg",
+      "sha256": "a77e8aafedef55dd0b4b9ad17b921f31bdf46996f109ec67e8d93a21ab52437f",
+      "changes": "None. Displayed as an alpha mask at the requested icon size."
+    },
+    "pi": {
+      "url": "https://raw.githubusercontent.com/agentclientprotocol/registry/ca37066599b968533c740c5b1bce1bcff8513f8e/pi-acp/icon.svg",
+      "sha256": "a902d73df746feba793514b9da3a4b8334caf16f6ae2ef36b1a25c70808b7f91",
+      "changes": "None. Displayed as an alpha mask at the requested icon size."
+    },
+    "opencode": {
+      "url": "https://raw.githubusercontent.com/agentclientprotocol/registry/ca37066599b968533c740c5b1bce1bcff8513f8e/opencode/icon.svg",
+      "sha256": "b60bce4476ce81c772f78313e497b98f9489a67580fd89f39354b527241edbc6",
+      "changes": "None. Displayed as an alpha mask at the requested icon size."
+    },
+    "prime": {
+      "url": "https://www.primeintellect.ai/icons/primeintellect-logo.svg",
+      "sourceSha256": "108fb8057cf432b47c07329812c980d928b5d9b400fea3cfe9df9c37e85b7e24",
+      "changes": "Isolated the two original symbol paths from the official logo; original coordinates retained in the 40 by 40 symbol viewBox."
+    },
+    "grok": {
+      "url": "https://raw.githubusercontent.com/agentclientprotocol/registry/ca37066599b968533c740c5b1bce1bcff8513f8e/grok-build/icon.svg",
+      "retrieved": "2026-10-14",
+      "sha256": "b8fe2866adbbfb6352af9a3138916e79c90086566cede68e724c3e19e663b51e",
+      "changes": "None. Displayed as an alpha mask at the requested icon size."
+    }
+  }
+}

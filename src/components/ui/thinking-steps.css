@@ -1,0 +1,28 @@
+/* Type tokens downloaded from Fluid Functionalism on October 13, 2026. */
+.transcript-activity,
+.agent-plan {
+  --fs-display: 1.75rem;
+  --lh-display: 2.125rem;
+  --fs-display-compact: 1.5rem;
+  --lh-display-compact: 1.875rem;
+  --fs-title: 1rem;
+  --lh-title: 1.375rem;
+  --fs-title-compact: 0.9375rem;
+  --lh-title-compact: 1.25rem;
+  --fs-subtitle: 0.875rem;
+  --lh-subtitle: 1.25rem;
+  --fs-subtitle-compact: 0.8125rem;
+  --lh-subtitle-compact: 1.125rem;
+  --fs-body: 0.8125rem;
+  --lh-body: 1.25rem;
+  --fs-body-compact: 0.75rem;
+  --lh-body-compact: 1.125rem;
+  --fs-caption: 0.75rem;
+  --lh-caption: 1rem;
+  --fs-caption-compact: 0.6875rem;
+  --lh-caption-compact: 0.875rem;
+  --fs-micro: 0.6875rem;
+  --lh-micro: 0.875rem;
+  --fs-micro-compact: 0.625rem;
+  --lh-micro-compact: 0.75rem;
+}

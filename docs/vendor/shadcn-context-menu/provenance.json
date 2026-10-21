@@ -1,0 +1,14 @@
+{
+  "url": "https://ui.shadcn.com/r/styles/base-rhea/context-menu.json",
+  "reference": "https://ui.shadcn.com/docs/components/base/context-menu",
+  "retrievedAt": "2026-10-15T03:42:47.564546+00:00",
+  "sha256": "7b0070e1e2e9c43fb8c11e98b16c4a4ad656fc7e6f76589decd271ba4d7fb521",
+  "style": "base-rhea",
+  "adaptations": [
+    "Use Harbor cn helper and Tabler Check/ChevronRight icons",
+    "Use Fluid compact body type, 28px rows, 14px icons, rounded shape, surface elevation and popup padding",
+    "Retain shadcn cursor-relative transform origin, two-axis zoom95, side-aware slide and 100ms CSS animations verbatim; install tw-animate-css",
+    "Keep mobile drawer portal container and pending action/focus handling; Base UI manages animation completion and unmount",
+    "Honor the application reduced-motion media query"
+  ]
+}

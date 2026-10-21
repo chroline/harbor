@@ -1,0 +1,14 @@
+{
+  "identifier": "main",
+  "description": "Local Harbor window",
+  "windows": ["main", "tab-*"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-set-theme",
+    "dialog:allow-open",
+    "notification:default",
+    "core:window:allow-set-title",
+    "core:window:allow-close"
+  ]
+}

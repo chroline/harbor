@@ -1,0 +1,18 @@
+node_modules/
+dist/
+dist-dev/
+src-tauri/target/
+src-tauri/gen/
+*.tsbuildinfo
+.DS_Store
+
+# generated screenshots and review artifacts
+/*.png
+/artifacts/
+/screenshots/
+/test-results/
+/playwright-report/
+
+# generated root-level HTML previews; keep the app entry point
+/*.html
+!/index.html

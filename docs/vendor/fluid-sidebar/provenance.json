@@ -1,0 +1,403 @@
+{
+  "source": "https://www.fluidfunctionalism.com/r/sidebar.json",
+  "reference": "https://www.fluidfunctionalism.com/docs/sidebar?preset=sa1FQfCxG4",
+  "retrievedAt": "2026-10-15T01:26:34.076Z",
+  "sha256": "736941cbe21ab411b71fea4889c47bf2def2acc6dd89bfe9881fb183a10c567b",
+  "dependencies": [
+    {
+      "name": "springs",
+      "url": "https://www.fluidfunctionalism.com/r/springs.json",
+      "sha256": "25dba808aba95d87fe3924ae214084013b8718fc26a102db3fee9e55b201f781",
+      "files": [
+        {
+          "upstreamPath": "registry/default/lib/springs.ts",
+          "localPath": "src/lib/springs.ts",
+          "sourceSha256": "b5d1c7c55ba4b865ac1156effc9ae41e95e4fdd08b42cefcda2854e93b817057",
+          "localSha256": "d920ba1e339198d0c8b8f221ab0a3cc37557a3d7a1dd9e1374896a83b62eda4c",
+          "sampleChanges": [
+            {
+              "added": false,
+              "text": "// Motion tokens. Each tier's value is the ENTER transition — a critically\n// damped spring, except the largest tier which keeps a little bounce. Its\n// `.exit`"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "font-weight",
+      "url": "https://www.fluidfunctionalism.com/r/font-weight.json",
+      "sha256": "15f95ccd38499667cfc3a5ddedee4658bb667e47eef2b3f35d23a58fd0c677e4",
+      "files": [
+        {
+          "upstreamPath": "registry/default/lib/font-weight.ts",
+          "localPath": "src/lib/font-weight.ts",
+          "sourceSha256": "1b290a5eeb29cad9d9c835a26d66e77af8da5e1d412b68da31bd473460631d04",
+          "localSha256": "277d5b2a2494289c19411b7cc302ee83401e84daed1ddadaaaaa69891db46888",
+          "sampleChanges": [
+            {
+              "added": false,
+              "text": "// Inter (variable) weight tokens for `fontVariationSettings`. Text uses 3:\n// `normal` for text, `semibold` for headings and selected items, `bold` for\n// the "
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "shape-context",
+      "url": "https://www.fluidfunctionalism.com/r/shape-context.json",
+      "sha256": "f593f686c5c854cb15f34b7a46f9b0a3b6897fc9b21f3d5b97be86cde372f882",
+      "files": [
+        {
+          "upstreamPath": "registry/default/lib/shape-context.tsx",
+          "localPath": "src/lib/shape-context.tsx",
+          "sourceSha256": "c88e150726e3b3c0b133fa826942c976283f01252162538677db7dd96cb836c3",
+          "localSha256": "8a194b7c372a09309e525a11468994236c3a9ac5f92b20c50f7cd5f2d3d71c9c",
+          "sampleChanges": [
+            {
+              "added": true,
+              "text": "import { pixelsToRem } from \"@/lib/units\";\n"
+            },
+            {
+              "added": false,
+              "text": "  /** Numeric counterpart of `container`. Popup shells use a 4px inset, so\n"
+            },
+            {
+              "added": true,
+              "text": "  /** Numeric counterpart of `container`. Popup shells use a 0.25rem inset, so\n"
+            },
+            {
+              "added": false,
+              "text": "    item: \"rounded-[20px]\",\n    bg: \"rounded-[20px]\",\n    // +2px over `item` because the focus ring sits 2px outside the element\n"
+            },
+            {
+              "added": true,
+              "text": "    item: \"rounded-[1.25rem]\",\n    bg: \"rounded-[1.25rem]\",\n    // +0.125rem over `item` because the focus ring sits 0.125rem outside the element\n"
+            },
+            {
+              "added": false,
+              "text": "    // pill element gets a pill ring (matches the rounded-mode 8px→10px bump).\n    focusRing: \"rounded-[22px]\",\n"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "size-context",
+      "url": "https://www.fluidfunctionalism.com/r/size-context.json",
+      "sha256": "5ac32ca21329e2543483d62afea604cedd0ce1f174619494c02da04f93090066",
+      "files": [
+        {
+          "upstreamPath": "registry/default/lib/size-context.tsx",
+          "localPath": "src/lib/size-context.tsx",
+          "sourceSha256": "3750783bc61b1560ffee48384a529ec0d34cd5a5d18abe830b34bc8a76ef4563",
+          "localSha256": "1bae81091a59f0b36a55a57365445aaf20b21b309115fc571a9d810d41bba1fc",
+          "sampleChanges": [
+            {
+              "added": false,
+              "text": "   *  Its 20px line box (18px compact) is what puts a padded row on the\n"
+            },
+            {
+              "added": true,
+              "text": "   *  Its 1.25rem line box (1.125rem compact) is what puts a padded row on the\n"
+            },
+            {
+              "added": false,
+              "text": "  /** `text` for an editable field: the same body role, plus 16px on touch\n"
+            },
+            {
+              "added": true,
+              "text": "  /** `text` for an editable field: the same body role, plus 1rem on touch\n"
+            },
+            {
+              "added": false,
+              "text": "   *  focused field set under 16px. */\n"
+            },
+            {
+              "added": true,
+              "text": "   *  focused field set under 1rem. */\n"
+            }
+          ]
+        },
+        {
+          "upstreamPath": "registry/default/lib/type-scale.ts",
+          "localPath": "src/lib/type-scale.ts",
+          "sourceSha256": "78c430d2e73f1c1d383d8ef5848c00e15ef020cecfc6145d407bed3b2fd0d574",
+          "localSha256": "8d812f0858c70d322f641c7e234f15f9fc378582f2e0177707d6eb30a2bec35a",
+          "sampleChanges": [
+            {
+              "added": false,
+              "text": "// Six-role type scale: each role is a font size and a line height, per step\n// of the size ladder. This file is the single source: the CSS variables, the\n// Ta"
+            },
+            {
+              "added": false,
+              "text": "  /** Control labels, body copy, and paragraphs. 20px also puts a row of\n   *  padded text on the 36px ladder (8 + 20 + 8), 18px on the 28px one. */\n"
+            },
+            {
+              "added": true,
+              "text": "  /** Control labels, body copy, and paragraphs. 1.25rem also puts a row of\n   *  padded text on the 2.25rem ladder (8 + 20 + 8), 1.125rem on the 1.75rem one. *"
+            },
+            {
+              "added": false,
+              "text": "    display: \"text-[length:var(--fs-display,28px)] leading-[var(--lh-display,34px)]\",\n    title: \"text-[length:var(--fs-title,16px)] leading-[var(--lh-title,22p"
+            },
+            {
+              "added": true,
+              "text": "    display: \"text-[length:var(--fs-display,1.75rem)] leading-[var(--lh-display,2.125rem)]\",\n    title: \"text-[length:var(--fs-title,1rem)] leading-[var(--lh-ti"
+            },
+            {
+              "added": false,
+              "text": "    display: \"text-[length:var(--fs-display-compact,24px)] leading-[var(--lh-display-compact,30px)]\",\n    title: \"text-[length:var(--fs-title-compact,15px)] lea"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "surface-context",
+      "url": "https://www.fluidfunctionalism.com/r/surface-context.json",
+      "sha256": "f409608e96ccd0a583342fb03599687309fe0f0688ca888053cb55ab7903639c",
+      "files": [
+        {
+          "upstreamPath": "registry/default/lib/surface-context.tsx",
+          "localPath": "src/lib/surface-context.tsx",
+          "sourceSha256": "17352842c40d49bd6a90bf8ca21c789fdde8be8904d9e5d667c71f365c48c120",
+          "localSha256": "17352842c40d49bd6a90bf8ca21c789fdde8be8904d9e5d667c71f365c48c120",
+          "sampleChanges": []
+        }
+      ]
+    },
+    {
+      "name": "surface-classes",
+      "url": "https://www.fluidfunctionalism.com/r/surface-classes.json",
+      "sha256": "fb99bcd57f921ea90ab09aa7e1df023579fd6899b47b1b009f243dd02f31bed0",
+      "files": [
+        {
+          "upstreamPath": "registry/default/lib/surface-classes.ts",
+          "localPath": "src/lib/surface-classes.ts",
+          "sourceSha256": "cb42a715b587950d9adecbb7994f8b67cdea101eed0852a732365549e7cdc896",
+          "localSha256": "29ea02bb97cb0e7c940b5ccd401debe1864f23d9134af1427c27af7187de697f",
+          "sampleChanges": [
+            {
+              "added": false,
+              "text": "/**\n * Static lookup tables for surface tokens.\n *\n * Tailwind v4's static scanner only generates utility classes for literal\n * strings it sees in source. Temp"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "icon-context",
+      "url": "https://www.fluidfunctionalism.com/r/icon-context.json",
+      "sha256": "e2d50bf68f93a26f0f4e63a40b982b0d31d0713ed96b252bb17f40220f6c71e3",
+      "files": [
+        {
+          "upstreamPath": "registry/default/lib/icon-context.tsx",
+          "localPath": "src/lib/icon-context.tsx",
+          "sourceSha256": "60a37ca536e35a338b155e3404aeb4c8ef98d6cbd6f157778c66a6e77580455c",
+          "localSha256": "5bca6ac823de6962baa2a230cb7235fffd2146e3114e1006fdb559e524d231f0",
+          "sampleChanges": [
+            {
+              "added": false,
+              "text": "// every component follows. Lucide is the default and the only icon library\n// this file depends on.\n"
+            },
+            {
+              "added": true,
+              "text": "// every component follows. Tabler is the default icon set.\n"
+            },
+            {
+              "added": false,
+              "text": "import { createContext, useContext, useMemo, type ComponentType, type ReactNode } from \"react\";\n"
+            },
+            {
+              "added": true,
+              "text": "import {\n  createContext,\n  useContext,\n  useMemo,\n  type ComponentType,\n  type ReactNode,\n} from \"react\";\n"
+            },
+            {
+              "added": false,
+              "text": "} from \"lucide-react\";\n"
+            },
+            {
+              "added": true,
+              "text": "} from \"@/lib/icons\";\n"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "use-fluid-hover",
+      "url": "https://www.fluidfunctionalism.com/r/use-fluid-hover.json",
+      "sha256": "696e016bb9bf636bfd1ecdfb5404d655af4d59e9986d3a8ed3ad231540feee23",
+      "files": [
+        {
+          "upstreamPath": "registry/default/hooks/use-fluid-hover.ts",
+          "localPath": "src/hooks/use-fluid-hover.ts",
+          "sourceSha256": "5b64e97f7937ecf7d5ee9002e13d9c303efd8de2fdbe2a004711408bb0fbebcc",
+          "localSha256": "5b64e97f7937ecf7d5ee9002e13d9c303efd8de2fdbe2a004711408bb0fbebcc",
+          "sampleChanges": []
+        },
+        {
+          "upstreamPath": "registry/default/fluid-hover-highlight.tsx",
+          "localPath": "src/components/fluid-hover-highlight.tsx",
+          "sourceSha256": "6ff7e9ed03524f20a71d2d6062a4754c089b6f984db9e0c829b80977371cb5d2",
+          "localSha256": "18a189c1490e74863b0c5bad7ef1a0b6ecbac9112e8e03c5565dd81921b8f7fc",
+          "sampleChanges": [
+            {
+              "added": true,
+              "text": "import { pixelsToRem } from \"@/lib/units\";\n"
+            },
+            {
+              "added": false,
+              "text": "} from \"motion/react\";\n"
+            },
+            {
+              "added": true,
+              "text": "} from \"framer-motion\";\n"
+            },
+            {
+              "added": true,
+              "text": "function toRemTarget(rect: ItemRect) {\n  return Object.fromEntries(Object.entries(toTarget(rect)).map(([key, value]) => [key, pixelsToRem(value)]));\n}\n\n"
+            },
+            {
+              "added": false,
+              "text": "          initial={{ opacity: 0, ...toTarget(from ?? rect) }}\n          animate={{ opacity: 1, ...toTarget(rect) }}\n"
+            },
+            {
+              "added": true,
+              "text": "          initial={{ opacity: 0, ...toRemTarget(from ?? rect) }}\n          animate={{ opacity: 1, ...toRemTarget(rect) }}\n"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "tooltip",
+      "url": "https://www.fluidfunctionalism.com/r/tooltip.json",
+      "sha256": "8739edf064ef88817975e7326d036d230cce251ecc23ce316c12010781db9611",
+      "files": [
+        {
+          "upstreamPath": "registry/radix/tooltip.tsx",
+          "localPath": "src/components/ui/tooltip.tsx",
+          "sourceSha256": "d60b70d643021c1fc44adcd16b483df46b5f0bb652c3e2e2cad7d2703898285c",
+          "localSha256": "397494f062e7b58d5eb3a4926644b8e51bdd846140d682f4daf40651a841389e",
+          "sampleChanges": [
+            {
+              "added": true,
+              "text": "import { pixelsToRem } from \"@/lib/units\";\n"
+            },
+            {
+              "added": false,
+              "text": "import { motion, useMotionValue } from \"motion/react\";\n"
+            },
+            {
+              "added": true,
+              "text": "import { motion, useMotionValue, useTransform } from \"framer-motion\";\n"
+            },
+            {
+              "added": true,
+              "text": "  const followOffsetRem = useTransform(followOffset, pixelsToRem);\n"
+            },
+            {
+              "added": false,
+              "text": "                  ? { y: followOffset }\n"
+            },
+            {
+              "added": true,
+              "text": "                  ? { y: followOffsetRem }\n"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "scroll-area",
+      "url": "https://www.fluidfunctionalism.com/r/scroll-area.json",
+      "sha256": "df93b07ce404686d106b382ed453b79eafa8699af759d109696dd2b49aa0238b",
+      "files": [
+        {
+          "upstreamPath": "registry/radix/scroll-area.tsx",
+          "localPath": "src/components/ui/scroll-area.tsx",
+          "sourceSha256": "5cd690f990f30585a7ec59b50936fc2e3fdeb958ce531fdc1eb2ee72885e687e",
+          "localSha256": "a3937c0b20be99e1808098e69f8846cb2b708ac27b0b9320be23277b77a31a79",
+          "sampleChanges": [
+            {
+              "added": false,
+              "text": "import { omit } from \"@/lib/omit\";\n"
+            },
+            {
+              "added": false,
+              "text": "interface ScrollAreaProps\n  extends ComponentPropsWithoutRef<typeof ScrollAreaPrimitive.Root> {\n"
+            },
+            {
+              "added": true,
+              "text": "interface ScrollAreaProps extends ComponentPropsWithoutRef<\n  typeof ScrollAreaPrimitive.Root\n> {\n"
+            },
+            {
+              "added": true,
+              "text": "  /** Harbor: preserve session scroll on the actual scroll viewport. */\n  viewportRef?: React.Ref<HTMLDivElement>;\n  onViewportScroll?: React.UIEventHandler<HTM"
+            },
+            {
+              "added": true,
+              "text": "      // Swallowed: hide timing is owned by the fade classes + scroll linger\n      // below, not Radix's hover machinery (see type=\"always\" note).\n      scrollH"
+            },
+            {
+              "added": true,
+              "text": "      viewportRef,\n      onViewportScroll,\n"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "button",
+      "url": "https://www.fluidfunctionalism.com/r/button.json",
+      "sha256": "55dea9ecf804cd35de788cf99fce850265dbf71737aa76a6b9e6437a197e431a",
+      "files": [
+        {
+          "upstreamPath": "registry/radix/button.tsx",
+          "localPath": "src/components/ui/button.tsx",
+          "sourceSha256": "d0f7dea2cb7e66470803ad59ecaa9c7ff19787f876b53ef79cce1627af8398c6",
+          "localSha256": "700f10ea0e1b9a377382f653197a23a3ecb9919c000c4a0359693c3de58a3927",
+          "sampleChanges": [
+            {
+              "added": true,
+              "text": "import { LoaderCircle } from \"@/lib/icons\";\n"
+            },
+            {
+              "added": false,
+              "text": "import { omit } from \"@/lib/omit\";\n"
+            },
+            {
+              "added": false,
+              "text": "    // whitespace-nowrap: a label never breaks onto 2 lines. It also makes\n    // the label the button's narrowest width, so a tight row moves the\n    // button"
+            },
+            {
+              "added": true,
+              "text": "    \"group relative isolate inline-flex items-center justify-center outline-none cursor-pointer select-none\",\n"
+            },
+            {
+              "added": false,
+              "text": "    \"focus-visible:ring-1 focus-visible:ring-[color:var(--focus-ring,#6B97FF)]\",\n"
+            },
+            {
+              "added": true,
+              "text": "    \"focus-visible:ring-[0.0625rem] focus-visible:ring-[color:var(--focus-ring,#6B97FF)]\",\n"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "tokens",
+      "url": "https://www.fluidfunctionalism.com/r/tokens.json",
+      "sha256": "9673e81219c4e2c818af030fff5394e17df840f7c972cef4264ca9e7c0b0b978",
+      "files": []
+    },
+    {
+      "name": "type-scale",
+      "url": "https://www.fluidfunctionalism.com/r/type-scale.json",
+      "sha256": "3e4ba51be7b50ad2a7c019e6e95fb537924ab7bfd570696707feddcf69f5d4a9",
+      "files": []
+    }
+  ]
+}

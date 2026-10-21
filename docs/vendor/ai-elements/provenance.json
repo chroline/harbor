@@ -1,0 +1,42 @@
+[
+  {
+    "name": "trace",
+    "url": "https://ui.shadcn.com/r/styles/radix-rhea/trace.json",
+    "sha256": "3e930218095d3357a5e196016fcaaaa772c75228023b15a463bd66ffb9414273"
+  },
+  {
+    "name": "code-block",
+    "url": "https://ui.shadcn.com/r/styles/radix-rhea/code-block.json",
+    "sha256": "c76f4c0546712c2c9cbad2941d27f131e4aa371ee42f439936f35b537e40a497"
+  },
+  {
+    "name": "message",
+    "url": "https://ui.shadcn.com/r/styles/radix-rhea/message.json",
+    "sha256": "540d819876bc916c3b8501db254f962a0b58c8a22c56afae56c4c170ec8ed722"
+  },
+  {
+    "name": "bubble",
+    "url": "https://ui.shadcn.com/r/styles/radix-rhea/bubble.json",
+    "sha256": "697d33a90e275d7cb79f85cbe4de43f0774463bad40c5ad8a43458c74d32cba5"
+  },
+  {
+    "name": "message-scroller",
+    "url": "https://ui.shadcn.com/r/styles/radix-rhea/message-scroller.json",
+    "sha256": "44a3a3b206bcb79defb18136d4cb3458134c5d92f17b0f021c83842b9db443a6"
+  },
+  {
+    "name": "marker",
+    "url": "https://ui.shadcn.com/r/styles/radix-rhea/marker.json",
+    "sha256": "31b8e1cd87af9c899b8065e2fefc8d7a116bae1b58866a0c8bf23a66f29ddae9"
+  },
+  {
+    "name": "questionnaire",
+    "url": "https://ui.shadcn.com/r/styles/radix-rhea/questionnaire.json",
+    "sha256": "5b8fbb63ecf78e58e21a6b28bd21c6577ce3e837fb0c6df02b6361b22e070243"
+  },
+  {
+    "name": "collapsible",
+    "url": "https://ui.shadcn.com/r/styles/radix-rhea/collapsible.json",
+    "sha256": "adcc33bdaab1988df3efe05ca4e9cbe0fd1352a5b133ee04a3c9a619d2927b05"
+  }
+]

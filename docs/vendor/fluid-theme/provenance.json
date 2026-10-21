@@ -1,0 +1,30 @@
+{
+  "retrievedAt": "2026-10-15",
+  "sources": [
+    {
+      "url": "https://raw.githubusercontent.com/mickadesign/fluid-functionalism/main/app/globals.css",
+      "file": "upstream-globals.css",
+      "sha256": "7c93aadf36138083e6d24dfb401e9de072d4e53adc85410f9490de8b9d1b8cf3"
+    },
+    {
+      "url": "https://www.fluidfunctionalism.com/r/type-scale.json",
+      "file": "type-scale.json",
+      "sha256": "3e4ba51be7b50ad2a7c019e6e95fb537924ab7bfd570696707feddcf69f5d4a9"
+    },
+    {
+      "url": "https://www.fluidfunctionalism.com/r/tokens.json",
+      "file": "tokens.json",
+      "sha256": "9673e81219c4e2c818af030fff5394e17df840f7c972cef4264ca9e7c0b0b978"
+    },
+    {
+      "url": "https://www.fluidfunctionalism.com/r/surfaces.json",
+      "file": "surfaces.json",
+      "sha256": "de336882f818d6f367d01044eabcfd30621cc1ca2a82488100e91dfb01176475"
+    }
+  ],
+  "adaptations": [
+    "Theme sections 1 and 2 extracted; px converted to rem at 16px.",
+    "Typography variables taken from type-scale registry; values unchanged.",
+    "Local Inter variable font file used."
+  ]
+}

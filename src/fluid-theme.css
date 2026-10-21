@@ -1,0 +1,304 @@
+/* Fluid Functionalism app/globals.css sections 1–2 and registry type-scale.
+ * Only px → rem conversion at a 16px root. See docs/vendor/fluid-theme. */
+:root {
+  color-scheme: light dark;
+}
+
+:root,
+.light,
+.dark {
+  /* ── Surfaces (8-level ladder) ──
+     Light: 2 color steps (floor, sunken) then flat #FFFFFF; shadow does the
+     work. Dark: additive white-opacity ladder over #171717. Each surface
+     pairs 1:1 with a shadow recipe (--shadow-1 .. --shadow-8). */
+  --surface-1: light-dark(#fafafa, #171717);
+  --surface-2: light-dark(#fcfcfc, #1e1e1e);
+  --surface-3: light-dark(#ffffff, #252525);
+  --surface-4: light-dark(#ffffff, #2c2c2c);
+  --surface-5: light-dark(#ffffff, #333333);
+  --surface-6: light-dark(#ffffff, #3a3a3a);
+  --surface-7: light-dark(#ffffff, #414141);
+  --surface-8: light-dark(#ffffff, #484848);
+
+  /* ── Semantic tokens ── */
+  --background: var(--surface-1);
+  --foreground: light-dark(#171717, #f5f5f5);
+  --card: var(--surface-3);
+  --card-foreground: light-dark(#171717, #f5f5f5);
+  /* Light `muted` decouples from surface-2: the light surface ladder is so
+     compressed (#FAFAFA → #FCFCFC → #FFFFFF) that bg-muted would read as
+     near-white, making anything sitting on it (Tabs track, etc.) blend
+     together. A slightly more grey value gives muted real semantic presence.
+     Dark keeps the ladder value (#1E1E1E = surface-2). */
+  --muted: light-dark(#f4f4f5, #1e1e1e);
+  --muted-foreground: light-dark(#737373, #a3a3a3);
+
+  /* ── Interactive states ── */
+  --accent: light-dark(#e5e5e5, #525252);
+  --accent-foreground: light-dark(#171717, #f5f5f5);
+  --selected: light-dark(#d4d4d4, #525252);
+
+  /* ── Borders ──
+     --border mixes from --foreground, so it tracks the theme automatically —
+     including inside nested forced scopes, where light-dark() re-resolves
+     --foreground before the mix happens. */
+  --border: color-mix(in oklab, var(--foreground) 12%, transparent);
+  --ring: light-dark(#e5e5e5, #404040);
+  --input: light-dark(#e5e5e5, #404040);
+
+  /* ── Error / Destructive ── */
+  --destructive: light-dark(#ef4444, #fca5a5);
+  --destructive-light: light-dark(#fef2f2, #450a0a);
+
+  /* ── Status (Banner) ──
+     Error reuses --destructive. Tailwind 500s in light mode and 300s in
+     dark mode (where the mark cut into a filled glyph turns dark), the same
+     steps as --destructive. */
+  --info: light-dark(#3b82f6, #93c5fd);
+  --success: light-dark(#22c55e, #86efac);
+  --warning: light-dark(#f59e0b, #fcd34d);
+
+  /* ── Focus indicator ──
+     Every component focus ring reads var(--focus-ring, #6B97FF), so this is
+     the single theming point. The literal fallback keeps registry components
+     self-contained when installed into projects without the variable. */
+  --focus-ring: #6b97ff;
+
+  /* ── Alpha checkerboard (color-picker swatches) ── */
+  --checker-a: light-dark(#bbbbbb, #1f1f1f);
+  --checker-b: light-dark(#ffffff, #2a2a2a);
+
+  /* ── Surface-relative interactive overlays (work on any elevation) ──
+     --overlay is the *tint direction* triplet — black for light surfaces,
+     white for dark. Components consume it as rgb(var(--overlay) / α), so it
+     stays an RGB triplet and switches per theme in section 2. --hover and
+     --active are the pre-mixed conveniences. */
+  --overlay: 0 0 0;
+  --hover: light-dark(rgb(0 0 0 / 0.04), rgb(255 255 255 / 0.06));
+  --active: light-dark(rgb(0 0 0 / 0.07), rgb(255 255 255 / 0.1));
+  /* See-through fill for secondary buttons. On the page background it
+     matches the solid --accent grey it replaced; on a panel or a tinted
+     banner it takes on the color underneath. Hover is lighter, like the
+     solid hover before it. */
+  --tint: light-dark(rgb(0 0 0 / 0.08), rgb(255 255 255 / 0.25));
+  --tint-hover: light-dark(rgb(0 0 0 / 0.065), rgb(255 255 255 / 0.2));
+
+  /* ── Shadow recipes ──
+     Light: additive stacked drops, halving offsets (1/3/6/12/24/48/96 px).
+     Dark: inset highlight + inset ring + stacked drops (per CodePen).
+     Structurally different, so each ladder is written out once here and the
+     active --shadow-N is selected per theme in section 2.
+     --shadow-color is intentionally static: it is also consumed directly by
+     components (input-message edge drop) and has never varied by theme. */
+  --shadow-color: rgb(0 0 0 / 0.06);
+  --shadow-light-1: 0 0 0 0.0625rem var(--shadow-color);
+  --shadow-light-2:
+    0 0 0 0.0625rem var(--shadow-color),
+    0 0.0625rem 0.0625rem -0.03125rem var(--shadow-color);
+  --shadow-light-3:
+    0 0 0 0.0625rem var(--shadow-color),
+    0 0.0625rem 0.0625rem -0.03125rem var(--shadow-color),
+    0 0.1875rem 0.1875rem -0.09375rem var(--shadow-color);
+  --shadow-light-4:
+    0 0 0 0.0625rem var(--shadow-color),
+    0 0.0625rem 0.0625rem -0.03125rem var(--shadow-color),
+    0 0.1875rem 0.1875rem -0.09375rem var(--shadow-color),
+    0 0.375rem 0.375rem -0.1875rem var(--shadow-color);
+  --shadow-light-5:
+    0 0 0 0.0625rem var(--shadow-color),
+    0 0.0625rem 0.0625rem -0.03125rem var(--shadow-color),
+    0 0.1875rem 0.1875rem -0.09375rem var(--shadow-color),
+    0 0.375rem 0.375rem -0.1875rem var(--shadow-color),
+    0 0.75rem 0.75rem -0.375rem var(--shadow-color);
+  --shadow-light-6:
+    0 0 0 0.0625rem var(--shadow-color),
+    0 0.0625rem 0.0625rem -0.03125rem var(--shadow-color),
+    0 0.1875rem 0.1875rem -0.09375rem var(--shadow-color),
+    0 0.375rem 0.375rem -0.1875rem var(--shadow-color),
+    0 0.75rem 0.75rem -0.375rem var(--shadow-color),
+    0 1.5rem 1.5rem -0.75rem var(--shadow-color);
+  --shadow-light-7:
+    0 0 0 0.0625rem var(--shadow-color),
+    0 0.0625rem 0.0625rem -0.03125rem var(--shadow-color),
+    0 0.1875rem 0.1875rem -0.09375rem var(--shadow-color),
+    0 0.375rem 0.375rem -0.1875rem var(--shadow-color),
+    0 0.75rem 0.75rem -0.375rem var(--shadow-color),
+    0 1.5rem 1.5rem -0.75rem var(--shadow-color),
+    0 3rem 3rem -1.5rem var(--shadow-color);
+  --shadow-light-8:
+    0 0 0 0.0625rem var(--shadow-color),
+    0 0.0625rem 0.0625rem -0.03125rem var(--shadow-color),
+    0 0.1875rem 0.1875rem -0.09375rem var(--shadow-color),
+    0 0.375rem 0.375rem -0.1875rem var(--shadow-color),
+    0 0.75rem 0.75rem -0.375rem var(--shadow-color),
+    0 1.5rem 1.5rem -0.75rem var(--shadow-color),
+    0 3rem 3rem -1.5rem var(--shadow-color),
+    0 6rem 6rem -3rem var(--shadow-color);
+  /* Surface-2/3 with the hairline moved INSIDE the box — for cards whose
+     border must stay within their own edge (the sidebar's stacked footer
+     callouts). Dark's recipes already draw their ring inset, so the dark
+     scopes alias --shadow-dark-2/3 directly. */
+  --shadow-light-2-inset:
+    inset 0 0 0 0.0625rem var(--shadow-color),
+    0 0.0625rem 0.0625rem -0.03125rem var(--shadow-color);
+  --shadow-light-3-inset:
+    inset 0 0 0 0.0625rem var(--shadow-color),
+    0 0.0625rem 0.0625rem -0.03125rem var(--shadow-color),
+    0 0.1875rem 0.1875rem -0.09375rem var(--shadow-color);
+
+  --dm-hi-base: rgba(255, 255, 255, 0.01);
+  --dm-hi-mid: rgba(255, 255, 255, 0.02);
+  --dm-hi-high: rgba(255, 255, 255, 0.04);
+  --dm-hi-peak: rgba(255, 255, 255, 0.06);
+  --dm-ring-base: rgba(255, 255, 255, 0.02);
+  --dm-ring-mid: rgba(255, 255, 255, 0.04);
+  --dm-ring-high: rgba(255, 255, 255, 0.06);
+  --dm-drop: rgba(0, 0, 0, 0.18);
+  --shadow-dark-1: inset 0 0 0 0.0625rem var(--dm-ring-base);
+  --shadow-dark-2:
+    inset 0 0.0625rem 0 0 var(--dm-hi-base),
+    inset 0 0 0 0.0625rem var(--dm-ring-base),
+    0 0.0625rem 0.0625rem -0.03125rem var(--dm-drop);
+  --shadow-dark-3:
+    inset 0 0.0625rem 0 0 var(--dm-hi-mid),
+    inset 0 0 0 0.0625rem var(--dm-ring-base),
+    0 0 0 0.0625rem rgba(0, 0, 0, 0.12),
+    0 0.0625rem 0.0625rem -0.03125rem var(--dm-drop),
+    0 0.1875rem 0.1875rem -0.09375rem var(--dm-drop);
+  --shadow-dark-4:
+    inset 0 0.0625rem 0 0 var(--dm-hi-mid),
+    inset 0 0 0 0.0625rem var(--dm-ring-mid),
+    0 0 0 0.0625rem rgba(0, 0, 0, 0.14),
+    0 0.0625rem 0.0625rem -0.03125rem var(--dm-drop),
+    0 0.1875rem 0.1875rem -0.09375rem var(--dm-drop),
+    0 0.375rem 0.375rem -0.1875rem var(--dm-drop);
+  --shadow-dark-5:
+    inset 0 0.0625rem 0 0 var(--dm-hi-high),
+    inset 0 0 0 0.0625rem var(--dm-ring-mid),
+    0 0 0 0.0625rem rgba(0, 0, 0, 0.16),
+    0 0.0625rem 0.0625rem -0.03125rem var(--dm-drop),
+    0 0.1875rem 0.1875rem -0.09375rem var(--dm-drop),
+    0 0.375rem 0.375rem -0.1875rem var(--dm-drop),
+    0 0.75rem 0.75rem -0.375rem var(--dm-drop);
+  --shadow-dark-6:
+    inset 0 0.0625rem 0 0 var(--dm-hi-high),
+    inset 0 0 0 0.0625rem var(--dm-ring-high),
+    0 0 0 0.0625rem rgba(0, 0, 0, 0.18),
+    0 0.0625rem 0.0625rem -0.03125rem var(--dm-drop),
+    0 0.1875rem 0.1875rem -0.09375rem var(--dm-drop),
+    0 0.375rem 0.375rem -0.1875rem var(--dm-drop),
+    0 0.75rem 0.75rem -0.375rem var(--dm-drop),
+    0 1.5rem 1.5rem -0.75rem var(--dm-drop);
+  --shadow-dark-7:
+    inset 0 0.0625rem 0 0 var(--dm-hi-peak),
+    inset 0 0 0 0.0625rem var(--dm-ring-high),
+    0 0 0 0.0625rem rgba(0, 0, 0, 0.2),
+    0 0.0625rem 0.0625rem -0.03125rem var(--dm-drop),
+    0 0.1875rem 0.1875rem -0.09375rem var(--dm-drop),
+    0 0.375rem 0.375rem -0.1875rem var(--dm-drop),
+    0 0.75rem 0.75rem -0.375rem var(--dm-drop),
+    0 1.5rem 1.5rem -0.75rem var(--dm-drop), 0 3rem 3rem -1.5rem var(--dm-drop);
+  --shadow-dark-8:
+    inset 0 0.0625rem 0 0 var(--dm-hi-peak),
+    inset 0 0 0 0.0625rem var(--dm-ring-high),
+    0 0 0 0.0625rem rgba(0, 0, 0, 0.22),
+    0 0.0625rem 0.0625rem -0.03125rem var(--dm-drop),
+    0 0.1875rem 0.1875rem -0.09375rem var(--dm-drop),
+    0 0.375rem 0.375rem -0.1875rem var(--dm-drop),
+    0 0.75rem 0.75rem -0.375rem var(--dm-drop),
+    0 1.5rem 1.5rem -0.75rem var(--dm-drop), 0 3rem 3rem -1.5rem var(--dm-drop),
+    0 6rem 6rem -3rem var(--dm-drop);
+
+  --shadow-1: var(--shadow-light-1);
+  --shadow-2: var(--shadow-light-2);
+  --shadow-3: var(--shadow-light-3);
+  --shadow-4: var(--shadow-light-4);
+  --shadow-5: var(--shadow-light-5);
+  --shadow-6: var(--shadow-light-6);
+  --shadow-7: var(--shadow-light-7);
+  --shadow-8: var(--shadow-light-8);
+  --shadow-2-inset: var(--shadow-light-2-inset);
+  --shadow-3-inset: var(--shadow-light-3-inset);
+}
+
+/* ============================================================================
+   2. THEME SWITCHING
+   ----------------------------------------------------------------------------
+   `color-scheme` is what flips every light-dark() token above; the classes
+   work on <html> (ThemeProvider) and on any subtree (forced-theme previews).
+   The only values that need manual switching are the --overlay triplet and
+   the shadow recipe selection — see the section-1 note.
+============================================================================ */
+
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    --overlay: 255 255 255;
+    --shadow-1: var(--shadow-dark-1);
+    --shadow-2: var(--shadow-dark-2);
+    --shadow-3: var(--shadow-dark-3);
+    --shadow-4: var(--shadow-dark-4);
+    --shadow-5: var(--shadow-dark-5);
+    --shadow-6: var(--shadow-dark-6);
+    --shadow-7: var(--shadow-dark-7);
+    --shadow-8: var(--shadow-dark-8);
+    --shadow-2-inset: var(--shadow-dark-2);
+    --shadow-3-inset: var(--shadow-dark-3);
+  }
+}
+
+.light {
+  color-scheme: light;
+  --overlay: 0 0 0;
+  --shadow-2-inset: var(--shadow-light-2-inset);
+  --shadow-3-inset: var(--shadow-light-3-inset);
+  --shadow-1: var(--shadow-light-1);
+  --shadow-2: var(--shadow-light-2);
+  --shadow-3: var(--shadow-light-3);
+  --shadow-4: var(--shadow-light-4);
+  --shadow-5: var(--shadow-light-5);
+  --shadow-6: var(--shadow-light-6);
+  --shadow-7: var(--shadow-light-7);
+  --shadow-8: var(--shadow-light-8);
+}
+
+.dark {
+  color-scheme: dark;
+  --overlay: 255 255 255;
+  --shadow-2-inset: var(--shadow-dark-2);
+  --shadow-3-inset: var(--shadow-dark-3);
+  --shadow-1: var(--shadow-dark-1);
+  --shadow-2: var(--shadow-dark-2);
+  --shadow-3: var(--shadow-dark-3);
+  --shadow-4: var(--shadow-dark-4);
+  --shadow-5: var(--shadow-dark-5);
+  --shadow-6: var(--shadow-dark-6);
+  --shadow-7: var(--shadow-dark-7);
+  --shadow-8: var(--shadow-dark-8);
+}
+
+:root {
+  --fs-display: 1.75rem;
+  --lh-display: 2.125rem;
+  --fs-display-compact: 1.5rem;
+  --lh-display-compact: 1.875rem;
+  --fs-title: 1rem;
+  --lh-title: 1.375rem;
+  --fs-title-compact: 0.9375rem;
+  --lh-title-compact: 1.25rem;
+  --fs-subtitle: 0.875rem;
+  --lh-subtitle: 1.25rem;
+  --fs-subtitle-compact: 0.8125rem;
+  --lh-subtitle-compact: 1.125rem;
+  --fs-body: 0.8125rem;
+  --lh-body: 1.25rem;
+  --fs-body-compact: 0.75rem;
+  --lh-body-compact: 1.125rem;
+  --fs-caption: 0.75rem;
+  --lh-caption: 1rem;
+  --fs-caption-compact: 0.6875rem;
+  --lh-caption-compact: 0.875rem;
+  --fs-micro: 0.6875rem;
+  --lh-micro: 0.875rem;
+  --fs-micro-compact: 0.625rem;
+  --lh-micro-compact: 0.75rem;
+}
