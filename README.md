@@ -25,6 +25,14 @@ some software is worth making even if only one person ever uses it.
 
 Harbor is built in that spirit: a place to work with coding agents, follow an idea, and shape it into something you can use. it brings conversations, local folders, terminals, and code review into one desktop app, with care for the small details you live with every day.
 
+![Harbor in light mode with a mix of coding agents and the San Francisco skyline during the day](docs/images/home-sf-light-day-workspace-projects.png)
+
+*San Francisco by day · light mode*
+
+![Harbor in dark mode with a mix of coding agents and the San Francisco skyline at night](docs/images/home-sf-dark-night-workspace-projects.png)
+
+*San Francisco at night · dark mode*
+
 ## a place for your work
 
 - **start where you are.** open a local folder, work in a Git worktree, or begin a freeform conversation without choosing a workspace.

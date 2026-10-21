@@ -4,6 +4,8 @@ import { emit } from "@tauri-apps/api/event";
 import type { Bootstrap } from "../src/lib/bindings/Bootstrap";
 import type { SessionRecord } from "../src/lib/bindings/SessionRecord";
 import type { SessionEvent } from "../src/lib/bindings/SessionEvent";
+import { populateShowcase } from "./showcase-fixture";
+const showcase = new URLSearchParams(location.search).has("showcase");
 const data: Bootstrap = {
   projects: [
     {
@@ -48,6 +50,7 @@ const data: Bootstrap = {
   worktrees: [],
   settings: { theme: "dark", notifications: false },
 };
+if (showcase) populateShowcase(data);
 if (new URLSearchParams(location.search).has("empty")) data.projects = [];
 const primeVersion = new URLSearchParams(location.search).get("prime");
 if (primeVersion)
@@ -139,8 +142,8 @@ const config = (model = fastModel) => [
     type: "select",
     currentValue: model,
     options: [
-      { value: fastModel, name: "Fast fixture" },
-      { value: deepModel, name: "Deep fixture" },
+      { value: fastModel, name: showcase ? "GPT-6.1 Sol" : "Fast fixture" },
+      { value: deepModel, name: showcase ? "GPT-6 Astra" : "Deep fixture" },
     ],
   },
   {
@@ -479,7 +482,7 @@ const label = document.createElement("div");
 label.textContent = "UI TEST FIXTURE · simulated IPC";
 label.style.cssText =
   "position:fixed;bottom:3px;left:50%;z-index:9999;font:13px monospace;color:#999;pointer-events:none";
-document.body.append(label);
+if (!showcase) document.body.append(label);
 
 Object.assign(window, {
   __harborFixture: {
