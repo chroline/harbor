@@ -4,17 +4,33 @@ import {
   cleanup,
   fireEvent,
   render,
+  renderHook,
   screen,
   waitFor,
 } from "@testing-library/react";
 import { MotionConfig } from "framer-motion";
 import userEvent from "@testing-library/user-event";
-import { ModelMenu, EffortControl, DiscoveryModelMenu } from "./ModelMenu";
-import { ModePicker } from "./ModePicker";
+import {
+  ModelMenu,
+  EffortControl,
+  DiscoveryModelMenu,
+  SessionModelMenu,
+} from "./ModelMenu";
+import { ModePicker, useSessionMode } from "./ModePicker";
+import type { SessionRecord } from "../lib/bindings/SessionRecord";
 import { chatMode } from "../lib/chat-mode";
 import type { ConfigOption } from "../lib/protocol";
+const configuration = vi.hoisted(() => ({
+  get: vi.fn(() => ({
+    busy: true,
+    pending: [{ id: "thinking", value: "high-id" }],
+  })),
+  blocked: () => true,
+  select: vi.fn(),
+}));
 vi.mock("../lib/store", () => ({
   useStore: () => ({
+    configuration,
     data: {
       providers: [
         { id: "codex", name: "Codex" },
@@ -71,6 +87,50 @@ const controls: ConfigOption[] = [
     ],
   },
 ];
+it("keeps existing-session effort and mode controls interactive while syncing", async () => {
+  const session = {
+    id: "chat",
+    providerId: "codex",
+    status: "idle",
+    mode: "gui",
+    configOptions: [
+      ...controls,
+      {
+        id: "mode",
+        category: "mode",
+        type: "select",
+        currentValue: "agent",
+        options: [
+          { value: "agent", name: "Agent" },
+          { value: "plan", name: "Plan" },
+        ],
+      },
+    ],
+  } as unknown as SessionRecord;
+  const { rerender } = render(<SessionModelMenu session={session} />);
+  const effort = screen.getByRole("button", { name: "Effort: High. Change" });
+  expect((effort as HTMLButtonElement).disabled).toBe(false);
+  await userEvent.click(effort);
+  await userEvent.click(screen.getByRole("menuitemradio", { name: /^Low/ }));
+  expect(configuration.select).toHaveBeenCalledWith(
+    session,
+    "thinking",
+    "low-id",
+  );
+  const { result } = renderHook(() => useSessionMode(session));
+  expect(result.current.busy).toBeFalsy();
+  expect(result.current.disabled).toBe(false);
+  const creation = renderHook(() => useSessionMode(session, false, true));
+  expect(creation.result.current.busy).toBe(true);
+  rerender(<SessionModelMenu session={session} blocking />);
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Effort: High. Change",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+});
 it("searches real model names and sends exact provider config IDs", async () => {
   const change = vi.fn();
   render(

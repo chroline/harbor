@@ -599,9 +599,11 @@ export function DiscoveryModelMenu({
 export function SessionModelMenu({
   session,
   disabled,
+  blocking = false,
 }: {
   session: SessionRecord;
   disabled?: boolean;
+  blocking?: boolean;
 }) {
   const { configuration } = useStore();
   const state = configuration.get(session.id);
@@ -612,7 +614,7 @@ export function SessionModelMenu({
       models={session.models}
       modes={session.modes}
       disabled={disabled}
-      busy={configuration.blocked(session.id)}
+      busy={blocking && configuration.blocked(session.id)}
       pendingSelections={Object.fromEntries(
         state.pending.map((p) => [p.id, p.value]),
       )}

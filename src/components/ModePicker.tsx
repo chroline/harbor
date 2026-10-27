@@ -134,6 +134,7 @@ export function discoveryMode(
 export function useSessionMode(
   session?: SessionRecord,
   disabled = false,
+  blocking = false,
 ): ModePickerProps {
   const { configuration } = useStore();
   const state = session ? configuration.get(session.id) : undefined;
@@ -148,7 +149,7 @@ export function useSessionMode(
       !!pending &&
       !!session &&
       ["working", "needs_input"].includes(session.status),
-    busy: state?.busy,
+    busy: blocking && state?.busy,
     error: state?.error,
     disabled:
       disabled ||

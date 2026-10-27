@@ -25,6 +25,7 @@ const mock = vi.hoisted(() => ({
   load: vi.fn().mockResolvedValue(undefined),
   setActiveSession: vi.fn(),
   call: vi.fn().mockResolvedValue(undefined),
+  configurationBlocked: false,
 }));
 vi.mock("../lib/api", () => ({
   call: mock.call,
@@ -77,7 +78,7 @@ vi.mock("../lib/store", () => ({
     setError: vi.fn(),
     configuration: {
       get: () => ({ busy: false, pending: [] }),
-      blocked: () => false,
+      blocked: () => mock.configurationBlocked,
     },
   }),
 }));
@@ -104,11 +105,26 @@ afterEach(() => {
   mock.messages = [];
   mock.loaded = true;
   mock.pendingRender = null;
+  mock.configurationBlocked = false;
   cleanup();
   localStorage.removeItem("harbor.task-tab-selection.chat");
   localStorage.removeItem("harbor.root-draft.chat");
   document.querySelectorAll(".test-chat-actions").forEach((el) => el.remove());
   vi.clearAllMocks();
+});
+it("allows sending while an existing chat's configuration is syncing or failed", async () => {
+  mock.configurationBlocked = true;
+  render(<Chat session={session} />);
+  fillEditor(screen.getByRole("textbox"), "Continue with this choice");
+  const send = screen.getByRole("button", { name: "Send message" });
+  expect((send as HTMLButtonElement).disabled).toBe(false);
+  fireEvent.click(send);
+  await waitFor(() =>
+    expect(mock.call).toHaveBeenCalledWith("send_prompt", {
+      sessionId: "chat",
+      text: "Continue with this choice",
+    }),
+  );
 });
 it("keeps the selected chat blank until its full history has loaded", () => {
   mock.loaded = false;

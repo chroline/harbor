@@ -79,7 +79,7 @@ it("cancels a queued change when cycling back to the confirmed mode", () => {
   expect(apply).not.toHaveBeenCalled();
 });
 
-it("serializes rapid changes and blocks sending through the final acknowledgment", async () => {
+it("serializes rapid changes and blocks chat creation through the final acknowledgment", async () => {
   const { queue, apply } = harness();
   let resolve!: (s: SessionRecord) => void;
   apply.mockImplementationOnce(
@@ -143,7 +143,7 @@ it("applies a queued choice after acknowledged cancellation and ignores archived
   expect(apply).toHaveBeenCalledOnce();
 });
 
-it("keeps sending blocked when a successful response did not confirm the selected mode", async () => {
+it("keeps chat creation blocked when a successful response did not confirm the selected mode", async () => {
   const { queue, apply } = harness();
   apply.mockResolvedValueOnce(session("idle", "agent"));
   queue.select(session(), "mode", "plan");

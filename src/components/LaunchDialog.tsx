@@ -72,7 +72,7 @@ export function LaunchDialog({
   const [error, setLocalError] = useState("");
   const beforeAdd = useRef<Set<string> | null>(null);
   const session = data.sessions.find((s) => s.id === sessionId);
-  const sessionMode = useSessionMode(session, busy);
+  const sessionMode = useSessionMode(session, busy, true);
   const discoveredCatalog = useCommandCatalog(
     data.providers.find((p) => p.id === provider),
     session?.cwd ?? workspace?.path ?? null,
@@ -290,7 +290,7 @@ export function LaunchDialog({
             }
             modelMenu={
               session ? (
-                <SessionModelMenu session={session} disabled={busy} />
+                <SessionModelMenu session={session} disabled={busy} blocking />
               ) : (
                 <DiscoveryModelMenu
                   state={modelState}

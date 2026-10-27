@@ -94,7 +94,6 @@ export function Chat({
     setActiveSession,
     setError,
     updateSession,
-    configuration,
   } = useStore();
   const [initialTab] = useState(
     () => standaloneTab ?? readTaskTabSelection(session.id),
@@ -308,7 +307,7 @@ export function Chat({
           (workerViaParent && working) ||
           workerWorking ||
           childOpening
-        : working || configuration.blocked(session.id))
+        : working)
     )
       return;
     const root = session.id;
@@ -926,7 +925,7 @@ export function Chat({
                           workerWorking ||
                           childOpening ||
                           (workerViaParent && working)
-                        : working || configuration.blocked(session.id))
+                        : working)
                     }
                     modePicker={modePicker}
                     placeholder={
@@ -956,7 +955,7 @@ export function Chat({
                       ) : (
                         <SessionModelMenu
                           session={session}
-                          disabled={!connected || working}
+                          disabled={!connected}
                         />
                       )
                     }

@@ -29,6 +29,8 @@ export class SessionConfiguration {
     return this.states.get(id) ?? empty;
   }
   blocked(id: string) {
+    // Only chat creation waits for confirmation. Existing chats keep their
+    // composer and selectors interactive while this queue syncs in the background.
     const s = this.get(id);
     return s.busy || s.pending.length > 0 || !!s.error;
   }
@@ -129,7 +131,7 @@ export class SessionConfiguration {
           ? record(updated.modes).currentModeId
           : change.id === "__legacy_model" ? record(updated.models).currentModelId : undefined);
       if (confirmed !== change.value) {
-        throw new Error("The provider did not confirm the selected setting. Retry or cancel the change before sending.");
+        throw new Error("The provider did not confirm the selected setting. Retry or cancel the change.");
       }
       this.sessions.set(id, updated);
       this.deps.update(updated);
