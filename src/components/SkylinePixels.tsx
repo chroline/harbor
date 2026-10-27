@@ -1,12 +1,12 @@
 import { useEffect, useRef, type RefObject } from "react";
+import {
+  disposeWovenLight,
+  drawWovenLight,
+  WOVEN_LIGHT,
+} from "@/lib/woven-light";
+import { createWovenLightMotion } from "@/lib/woven-light-motion";
 
-const FRAME_INTERVAL = 1000 / 24;
-const FOLLOW_MS = 65;
-const ARTWORK_SCALE = 1.1;
-const TILT_DEGREES = 8;
-const smooth = (value: number) => value * value * (3 - 2 * value);
-
-/** Fixed artwork pixels, a cursor-following light, and image-only card tilt. */
+/** Fixed circular dots over the separately blurred skyline image. */
 export function SkylinePixels({
   image,
   source,
@@ -17,166 +17,157 @@ export function SkylinePixels({
   active: boolean;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
+  const elapsed = useRef(0);
 
   useEffect(() => {
     const element = canvas.current;
     const artwork = image.current;
-    const landscape = element?.parentElement;
-    const surface = element?.closest<HTMLElement>(".skyline-scene");
-    if (!element || !artwork || !landscape || !surface || !active) return;
+    if (!element) return;
     delete element.dataset.ready;
+    if (!artwork || !active) return;
     const motion = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+    const scene = element.closest<HTMLElement>(
+      '[data-skyline-background="true"]',
+    );
+    const interaction = createWovenLightMotion();
+    let bounds: DOMRect | null = null;
     let context: CanvasRenderingContext2D | null = null;
     let pixels: ImageData | null = null;
-    let frame: ImageData | null = null;
-    const focus = { x: 0.5, y: 0.5 };
-    const target = { ...focus };
+    let raster: { width: number; height: number } = {
+      width: WOVEN_LIGHT.rasterWidth,
+      height: 0,
+    };
     let request = 0;
-    let lastFrame = 0;
-    let lastTick = 0;
+    let previous = 0;
+    let visible = true;
+    let composerActive = false;
 
-    const tilt = () => {
-      const x = motion?.matches ? 0 : (focus.y - 0.5) * TILT_DEGREES;
-      const y = motion?.matches ? 0 : (0.5 - focus.x) * TILT_DEGREES;
-      // Only the two artwork layers inherit these transforms, never the UI.
-      landscape.style.setProperty("--skyline-tilt-x", `${x}deg`);
-      landscape.style.setProperty("--skyline-tilt-y", `${y}deg`);
+    const paint = (seconds = 0) => {
+      if (!context || !pixels) return;
+      const frame = interaction.step(elapsed.current, seconds, motion?.matches);
+      drawWovenLight(
+        context,
+        pixels.data,
+        elapsed.current,
+        WOVEN_LIGHT.intensity,
+        raster,
+        frame,
+      );
+      if (element.dataset.ready !== "true") element.dataset.ready = "true";
+      const mode =
+        frame.focus === 1 ? "focused" : frame.following ? "cursor" : "ambient";
+      if (element.dataset.motion !== mode) element.dataset.motion = mode;
+      return frame;
     };
-
-    const paint = () => {
-      if (!context || !pixels || !frame) return;
-      if (motion?.matches) {
-        context.putImageData(pixels, 0, 0);
-      } else {
-        const { width, height, data } = pixels;
-        // Account for the overscan that keeps the tilted image edges hidden.
-        const centerX = (0.5 + (focus.x - 0.5) / ARTWORK_SCALE) * width;
-        const centerY = (0.5 + (focus.y - 0.5) / ARTWORK_SCALE) * height;
-        const radius = Math.min(width, height) * 0.38;
-        for (let y = 0; y < height; y++) {
-          const dy = (y - centerY) / radius;
-          for (let x = 0; x < width; x++) {
-            const dx = (x - centerX) / radius;
-            const distanceSquared = dx * dx + dy * dy;
-            const intensity =
-              distanceSquared < 1 ? smooth(1 - Math.sqrt(distanceSquared)) : 0;
-            const index = (y * width + x) * 4;
-            // Only brightness changes; every color sample stays in its original cell.
-            for (let channel = 0; channel < 3; channel++) {
-              const color = data[index + channel];
-              frame.data[index + channel] =
-                color + intensity * (20 + color * 0.35);
-            }
-            frame.data[index + 3] = 255;
-          }
-        }
-        context.putImageData(frame, 0, 0);
-      }
-      element.dataset.ready = "true";
-    };
-
-    const moving = () =>
-      Math.hypot(target.x - focus.x, target.y - focus.y) > 0.0005;
-
     const animate = (now: number) => {
       request = 0;
-      if (document.hidden || motion?.matches || !pixels) return;
-      const amount = 1 - Math.exp(-Math.min(now - lastTick, 100) / FOLLOW_MS);
-      focus.x += (target.x - focus.x) * amount;
-      focus.y += (target.y - focus.y) * amount;
-      if (!moving()) Object.assign(focus, target);
-      tilt();
-      lastTick = now;
-      // Keep the transform smooth at display rate; pixel painting costs more.
-      if (now - lastFrame >= FRAME_INTERVAL || !moving()) {
-        paint();
-        lastFrame = now;
-      }
-      // A stationary pointer needs no continuous redraws.
-      if (moving()) request = requestAnimationFrame(animate);
-    };
-
-    const followPointer = (event: PointerEvent) => {
-      if (event.pointerType === "touch" || motion?.matches) return;
-      // Measure the stationary container so tilt cannot feed back into itself.
-      const bounds = landscape.getBoundingClientRect();
-      if (!bounds.width || !bounds.height) return;
-      target.x = Math.max(
-        0,
-        Math.min(1, (event.clientX - bounds.left) / bounds.width),
-      );
-      target.y = Math.max(
-        0,
-        Math.min(1, (event.clientY - bounds.top) / bounds.height),
-      );
-      if (!request && !document.hidden && pixels && moving()) {
-        request = requestAnimationFrame(animate);
-      }
-    };
-
-    const resetPointer = () => {
-      Object.assign(target, { x: 0.5, y: 0.5 });
-      if (
-        !request &&
-        !document.hidden &&
-        !motion?.matches &&
-        pixels &&
-        moving()
-      )
+      if (document.hidden || !visible || motion?.matches || !pixels) return;
+      const seconds = Math.min(now - previous, 80) / 1000;
+      elapsed.current += seconds * WOVEN_LIGHT.speed;
+      previous = now;
+      const frame = paint(seconds);
+      // Once focused, the uniform dots and absent pool are completely static.
+      if (!composerActive || frame?.focus !== 1)
         request = requestAnimationFrame(animate);
     };
-
     const resume = () => {
       cancelAnimationFrame(request);
       request = 0;
-      if (motion?.matches) {
-        Object.assign(focus, { x: 0.5, y: 0.5 });
-        Object.assign(target, focus);
-      }
-      tilt();
-      if (document.hidden || !pixels) return;
-      paint();
-      if (!motion?.matches && moving())
+      if (document.hidden || !visible || !pixels) return;
+      const frame = paint();
+      previous = performance.now();
+      if (!motion?.matches && (!composerActive || frame?.focus !== 1))
         request = requestAnimationFrame(animate);
     };
-
     const prepare = () => {
-      if (!artwork.complete || !artwork.naturalWidth) return;
+      if (!artwork.complete || !artwork.naturalWidth || !artwork.naturalHeight)
+        return;
       const width = element.clientWidth;
       const height = element.clientHeight;
       if (!width || !height) return;
-      landscape.style.setProperty(
-        "--skyline-perspective",
-        `${Math.max(width, height) * 2.5}px`,
+      bounds = element.getBoundingClientRect();
+      // Keep the exact eight-pixel sampling grid, but present at display
+      // resolution. Reading artwork pixels must not demote the animation's
+      // canvas to a CPU-backed surface.
+      const sampling = document.createElement("canvas");
+      sampling.width = WOVEN_LIGHT.rasterWidth;
+      sampling.height = Math.round((height / width) * sampling.width);
+      raster = { width: sampling.width, height: sampling.height };
+      const ratio = Math.min(
+        window.devicePixelRatio || 1,
+        sampling.width / width,
       );
-      // Keep fine artwork detail while bounding work on large/Retina displays.
-      const size = Math.max(2, width / 750, height / 500);
-      element.width = Math.ceil(width / size);
-      element.height = Math.ceil(height / size);
+      element.width = Math.max(1, Math.round(width * ratio));
+      element.height = Math.max(1, Math.round(height * ratio));
       context = element.getContext("2d");
-      if (!context) return;
+      const sampler = sampling.getContext("2d", { willReadFrequently: true });
+      if (!context || !sampler) return;
       const scale = Math.max(
         width / artwork.naturalWidth,
         height / artwork.naturalHeight,
       );
       const cropWidth = width / scale;
       const cropHeight = height / scale;
-      // Match the image's cover / center top crop and shared CSS transform exactly.
-      context.drawImage(
+      // Both layers use cover / center, without any independent scaling.
+      sampler.drawImage(
         artwork,
         (artwork.naturalWidth - cropWidth) / 2,
-        0,
+        (artwork.naturalHeight - cropHeight) / 2,
         cropWidth,
         cropHeight,
         0,
         0,
-        element.width,
-        element.height,
+        sampling.width,
+        sampling.height,
       );
-      pixels = context.getImageData(0, 0, element.width, element.height);
-      frame = context.createImageData(element.width, element.height);
+      pixels = sampler.getImageData(0, 0, sampling.width, sampling.height);
+      sampling.width = sampling.height = 0;
       resume();
     };
+
+    const move = (event: PointerEvent) => {
+      if (
+        event.pointerType === "touch" ||
+        motion?.matches ||
+        !bounds?.width ||
+        !bounds.height
+      )
+        return;
+      const x = (event.clientX - bounds.left) / bounds.width;
+      const y = (event.clientY - bounds.top) / bounds.height;
+      if (x < 0 || x > 1 || y < 0 || y > 1) {
+        interaction.leave();
+        return;
+      }
+      interaction.move(x, y);
+    };
+    const enter = () => {
+      bounds = element.getBoundingClientRect();
+    };
+    const leave = () => interaction.leave();
+    const composerFocused = (target: EventTarget | null) =>
+      target instanceof Element &&
+      !!target.closest(".task-composer") &&
+      !!scene?.contains(target);
+    const setFocus = (target: EventTarget | null) => {
+      const focused = composerFocused(target);
+      composerActive = focused;
+      interaction.focus(focused);
+      element.dataset.composerActive = String(focused);
+      // Reduced motion still responds to focus, without scheduling animation.
+      if (motion?.matches) paint();
+      else if (!request) resume();
+    };
+    const focusIn = (event: FocusEvent) => setFocus(event.target);
+    const focusOut = (event: FocusEvent) => setFocus(event.relatedTarget);
+
+    scene?.addEventListener("pointerenter", enter);
+    scene?.addEventListener("pointermove", move, { passive: true });
+    scene?.addEventListener("pointerleave", leave);
+    scene?.addEventListener("pointercancel", leave);
+    scene?.addEventListener("focusin", focusIn);
+    scene?.addEventListener("focusout", focusOut);
+    setFocus(document.activeElement);
 
     artwork.addEventListener("load", prepare);
     const observer =
@@ -184,29 +175,35 @@ export function SkylinePixels({
         ? null
         : new ResizeObserver(prepare);
     observer?.observe(element);
+    const intersection =
+      typeof IntersectionObserver === "undefined"
+        ? null
+        : new IntersectionObserver(([entry]) => {
+            visible = entry.isIntersecting;
+            resume();
+          });
+    intersection?.observe(element);
     window.addEventListener("resize", prepare);
-    // Listen on the scene, leaving the decorative canvas transparent to clicks.
-    surface.addEventListener("pointermove", followPointer, { passive: true });
-    surface.addEventListener("pointerenter", followPointer, { passive: true });
-    surface.addEventListener("pointerleave", resetPointer);
-    window.addEventListener("blur", resetPointer);
     document.addEventListener("visibilitychange", resume);
     motion?.addEventListener("change", resume);
     prepare();
     return () => {
       cancelAnimationFrame(request);
+      if (context) disposeWovenLight(context);
       observer?.disconnect();
+      intersection?.disconnect();
       artwork.removeEventListener("load", prepare);
       window.removeEventListener("resize", prepare);
-      surface.removeEventListener("pointermove", followPointer);
-      surface.removeEventListener("pointerenter", followPointer);
-      surface.removeEventListener("pointerleave", resetPointer);
-      window.removeEventListener("blur", resetPointer);
       document.removeEventListener("visibilitychange", resume);
       motion?.removeEventListener("change", resume);
-      landscape.style.removeProperty("--skyline-tilt-x");
-      landscape.style.removeProperty("--skyline-tilt-y");
-      landscape.style.removeProperty("--skyline-perspective");
+      scene?.removeEventListener("pointerenter", enter);
+      scene?.removeEventListener("pointermove", move);
+      scene?.removeEventListener("pointerleave", leave);
+      scene?.removeEventListener("pointercancel", leave);
+      scene?.removeEventListener("focusin", focusIn);
+      scene?.removeEventListener("focusout", focusOut);
+      delete element.dataset.motion;
+      delete element.dataset.composerActive;
     };
   }, [image, source, active]);
 
@@ -214,6 +211,7 @@ export function SkylinePixels({
     <canvas
       ref={canvas}
       className="skyline-pixels"
+      data-effect="woven-light"
       data-active={active}
       aria-hidden="true"
     />

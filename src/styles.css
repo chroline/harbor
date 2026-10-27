@@ -3333,8 +3333,8 @@ html.transitioning *::after {
   background: var(--frame-solid);
 }
 [data-skyline-background="true"] {
-  --skyline-blur: 0px;
-  --skyline-image-opacity: var(--skyline-opacity);
+  --skyline-blur: 12px;
+  --skyline-image-opacity: 1;
   transition: --skyline-blur 350ms ease, --skyline-image-opacity 350ms ease;
 }
 [data-skyline-background="true"][data-skyline-variant="chat"] {
@@ -3407,19 +3407,18 @@ html.transitioning *::after {
   object-fit: cover;
   object-position: center top;
   filter: blur(var(--skyline-blur));
+  transform: scale(1.1);
 }
-.home-landscape > img,
-.skyline-pixels {
-  transform: perspective(var(--skyline-perspective, 2500px))
-    rotateX(var(--skyline-tilt-x, 0deg))
-    rotateY(var(--skyline-tilt-y, 0deg)) scale(1.1);
+[data-skyline-variant="home"] > .home-landscape > img {
+  object-position: center;
+  transform: none;
+  opacity: 0.2;
 }
 .skyline-pixels {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-  image-rendering: pixelated;
   opacity: 0;
   transition: opacity 350ms ease;
 }
