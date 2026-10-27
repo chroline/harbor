@@ -2,13 +2,19 @@ mod acp;
 mod attachments;
 mod commands;
 mod db;
+mod diagnostics;
 mod editors;
 #[cfg(test)]
 mod live_tests;
+#[cfg(test)]
+mod live_plan_tests;
+#[cfg(test)]
+mod provider_contract_tests;
 mod model_config;
+pub mod adapters;
 mod operations;
 mod providers;
-mod prime_sessions;
+mod sessions;
 mod subagents;
 mod terminal;
 mod tab_windows;
@@ -58,21 +64,22 @@ impl AppState {
             );
             return;
         }
-        let mut payload = if kind == "session/update" {
-            providers::normalize_update(payload)
+        let payload = if kind == "session/update" {
+            match self.db.get::<SessionRecord>("session", id)
+                .ok().and_then(|session| adapters::resolve(&session.provider_id).ok()) {
+                Some(adapter) => adapter.normalize_update(payload),
+                None => payload,
+            }
         } else {
             payload
         };
-        if kind == "cursor/task" && !payload["sessionId"].is_string() {
-            if let Ok(session) = self.db.get::<SessionRecord>("session",id) { payload["sessionId"] = json!(session.acp_session_id); }
-        }
         if kind == "session/update" {
             if let Ok(session) = self.db.get::<SessionRecord>("session", id) {
-                if session.provider_id == "grok" {
-                    if let Some(worker) = providers::forwarded_grok_worker(session.acp_session_id.as_deref().unwrap_or(""), &payload) {
-                        let child = worker["update"]["sessionId"].as_str().unwrap();
-                        if self.db.get::<SubagentRecord>("subagent", &worker_key(id, child)).is_err() {
-                            self.emit(id, "session/update", worker);
+                if let Ok(adapter)=adapters::resolve(&session.provider_id) {
+                    if let Some(worker)=adapter.forwarded_worker(session.acp_session_id.as_deref().unwrap_or(""),&payload) {
+                        let child=&worker.update.session_id;
+                        if self.db.get::<SubagentRecord>("subagent",&worker_key(id,child)).is_err() {
+                            self.emit(id,"session/update",serde_json::to_value(worker).unwrap());
                         }
                     }
                 }
@@ -87,18 +94,9 @@ impl AppState {
                 }
             }
         }
-        if kind == "cursor/task" || (kind == "session/update" && payload["update"]["sessionUpdate"] == "tool_call_update") {
+        if kind == "session/update" && payload["update"]["sessionUpdate"] == "tool_call_update" {
             if let Ok(session) = self.db.get::<SessionRecord>("session",id) {
-                for announcement in providers::worker_announcements(&session.provider_id,kind,&payload) { self.emit(id,"session/update",announcement); }
-            }
-        }
-        // Prime's roster is metadata, not a standard child announcement. Persist
-        // the same ownership records used by every other provider.
-        if let Some(children) = payload["update"]["_meta"]["ai.primeintellect.prime-agent"]["subagents"].as_array() {
-            for child in children {
-                if let Some(child_id) = child["id"].as_str() {
-                    self.emit(id, "session/update", json!({"sessionId":payload["sessionId"],"update":{"sessionUpdate":"subagent_update","sessionId":child_id,"title":child["sessionName"],"state":{"type":child["status"]}}}));
-                }
+                if let Ok(adapter)=adapters::resolve(&session.provider_id) { for announcement in adapter.worker_announcements(kind,&payload) { self.emit(id,"session/update",serde_json::to_value(announcement).unwrap()); } }
             }
         }
         if payload["update"]["sessionUpdate"] == "subagent_update" {
@@ -171,6 +169,7 @@ impl AppState {
         }
     }
     fn provider(&self, id: &str) -> Result<ProviderDefinition, String> {
+        require_provider(id)?;
         self.db.get("provider", id)
     }
     async fn connection(&self, id: &str) -> Result<Arc<Rpc>, String> {
@@ -295,14 +294,31 @@ async fn save_workspace(
         .await.map_err(|e| e.to_string())?
 }
 #[tauri::command]
-fn save_provider(
+async fn save_provider(
     state: tauri::State<'_, Arc<AppState>>,
     provider: ProviderDefinition,
 ) -> Result<(), String> {
-    if provider.id.is_empty() || provider.command.trim().is_empty() {
-        return Err("Provider ID and executable are required".into());
+    require_provider(&provider.id)?;
+    let _guard = state.operations.provider(&provider.id).await;
+    if provider.command.trim().is_empty() { return Err("Provider executable is required".into()); }
+    let mut saved = providers().into_iter().find(|p| p.id == provider.id).unwrap();
+    saved.command = provider.command.trim().into();
+    saved.args = provider.args;
+    saved.native_command = provider.native_command.trim().into();
+    state.db.put("provider", &saved.id, &saved)?;
+    // Stop active background probes immediately; their old results cannot persist preferences.
+    let stale = {
+        let connections = state.connections.lock().await;
+        connections.iter().filter(|(key,_)| *key == &format!("config:{}",saved.id) || key.starts_with(&format!("probe:{}:",saved.id)))
+            .map(|(_,rpc)| rpc.clone()).collect::<Vec<_>>()
+    };
+    for rpc in stale { rpc.stop().await; }
+    if let Some(slot) = state.discoveries.lock().await.remove(&saved.id) {
+        if let Some(discovery) = slot.lock().await.take() { discovery.stop().await; }
     }
-    state.db.put("provider", &provider.id, &provider)
+    state.connections.lock().await.remove(&format!("config:{}",saved.id));
+    state.command_catalogs.invalidate(&saved.id).await;
+    Ok(())
 }
 #[tauri::command]
 fn save_settings(state: tauri::State<'_, Arc<AppState>>, settings: Value) -> Result<(), String> {
@@ -312,23 +328,29 @@ fn save_settings(state: tauri::State<'_, Arc<AppState>>, settings: Value) -> Res
 async fn probe_provider(
     state: tauri::State<'_, Arc<AppState>>,
     provider_id: String,
-) -> Result<Value, String> {
-    let p = state.provider(&provider_id)?;
-    let path = acp::resolve_executable(&p.command);
-    let native = acp::resolve_executable(&p.native_command);
-    let version = if let Some(exe) = &native {
-        let mut cmd = tokio::process::Command::new(exe);
-        cmd.arg("--version").kill_on_drop(true);
-        match tokio::time::timeout(Duration::from_secs(5), cmd.output()).await {
-            Ok(Ok(o)) => String::from_utf8_lossy(&o.stdout).trim().to_string(),
-            _ => "Unknown".into(),
+) -> Result<ProviderProbe, String> {
+    let _guard = state.operations.provider(&provider_id).await;
+    let provider = state.provider(&provider_id)?;
+    let mut result = diagnostics::installation(&provider).await;
+    if result.status == ProbeStatus::MissingExecutable { return Ok(result); }
+    let scratch = tempfile::Builder::new().prefix("harbor-check-").tempdir().map_err(|e| e.to_string())?;
+    let cwd = scratch.path().to_string_lossy();
+    let key = format!("probe:{provider_id}:{}",id());
+    let rpc = {
+        let mut connections = state.connections.lock().await;
+        if state.quitting.load(Ordering::SeqCst) { return Err("Harbor is quitting".into()); }
+        match Rpc::start_discovery(&provider,&cwd).await {
+            Ok(rpc) => { connections.insert(key.clone(),rpc.clone()); rpc },
+            Err(error) => { result.message=error; return Ok(result); }
         }
-    } else {
-        "Not installed".into()
     };
-    Ok(
-        json!({"installed":path.is_some(),"path":path,"nativePath":native,"version":version,"worktrunk":acp::resolve_executable("wt").is_some(),"hint":p.install_hint}),
-    )
+    diagnostics::inspect(&rpc,&cwd,&mut result).await;
+    rpc.stop().await;
+    state.connections.lock().await.remove(&key);
+    if state.provider(&provider_id)?.command != provider.command || state.provider(&provider_id)?.args != provider.args {
+        return Err("Connection settings changed during the check. Check again.".into());
+    }
+    Ok(result)
 }
 fn capability(init: &Value) -> AgentCapabilities {
     AgentCapabilities{load_session:init["agentCapabilities"]["loadSession"]==true,resume_session:init["agentCapabilities"]["sessionCapabilities"]["resume"].is_object(),config_options:false,native_handoff:false,native_handoff_reason:"Same-conversation round trip has not been verified for this installed provider/version.".into(),raw:init.clone()}
@@ -339,18 +361,6 @@ async fn connect(
     load: bool,
 ) -> Result<SessionRecord, String> {
     let provider = state.provider(&session.provider_id)?;
-    let launch_state = state.clone();
-    let launch_session = session.clone();
-    let launch = match tokio::task::spawn_blocking(move || {
-        prime_sessions::prepare(&launch_state.db, &launch_state.data, &launch_session, provider, load)
-    }).await.map_err(|e| e.to_string()).and_then(|result| result) {
-        Ok(launch) => launch,
-        Err(error) => {
-            state.update(&session.id, |s| { s.status = "error".into(); s.error = Some(error.clone()); })?;
-            return Err(error);
-        }
-    };
-    let provider = &launch.provider;
     let session_id = session.id.clone();
     let generation = id();
     state
@@ -359,7 +369,7 @@ async fn connect(
         .unwrap()
         .insert(session_id.clone(), generation.clone());
     let weak = Arc::downgrade(state);
-    let replay = Arc::new(AtomicBool::new(load));
+    let replay = Arc::new(AtomicBool::new(true));
     let buffer = Arc::new(StdMutex::new(Vec::<(String, Value)>::new()));
     let replay_cb = replay.clone();
     let buffer_cb = buffer.clone();
@@ -408,7 +418,7 @@ async fn connect(
             }
         }
     });
-    let rpc = match Rpc::start(provider, &session.cwd, sink).await {
+    let rpc = match Rpc::start(&provider, &session.cwd, sink).await {
         Ok(r) => r,
         Err(e) => {
             state.update(&session.id, |s| {
@@ -424,36 +434,36 @@ async fn connect(
         .await
         .insert(session.id.clone(), rpc.clone());
     let result:Result<SessionRecord,String>=async {
-  let init=rpc.request("initialize",json!({"protocolVersion":1,"clientCapabilities":providers::client_capabilities(&provider.id),"clientInfo":{"name":"harbor","title":"Harbor","version":"0.1.0"}}),Some(Duration::from_secs(30))).await?;
+  let init=rpc.request("initialize",json!({"protocolVersion":1,"clientCapabilities":adapters::client_capabilities(crate::types::require_provider(&provider.id)?),"clientInfo":{"name":"harbor","title":"Harbor","version":"0.1.0"}}),Some(Duration::from_secs(30))).await?;
   if init["protocolVersion"]!=1{return Err("Agent did not negotiate ACP v1".into())}
   let mut caps=capability(&init);state.emit(&session.id,"initialized",init.clone());
-  caps.native_handoff=providers::verified_handoff(provider,&init).await;
-  if caps.native_handoff{caps.native_handoff_reason="Verified with codex-acp 2.1.1 and Codex CLI 0.154.0".into()}
+  let handoff=adapters::handoff_compatibility(&provider,&init).await?;
+  caps.native_handoff=handoff.available;caps.native_handoff_reason=handoff.reason;
   state.update(&session.id,|s|s.capabilities=caps.clone())?;
   // Existing CLI login is reused. Explicit authentication choices remain available on errors.
-  let (method,params)=launch.request(session,&caps,load)?;
+  let (method,params)=sessions::request(session,&caps,load)?;
   let mut response=rpc.request(method,params,Some(Duration::from_secs(90))).await?;
-  let acp_id=response["sessionId"].as_str().map(String::from).or_else(||if method!="session/new"{session.acp_session_id.clone()}else{None}).ok_or("Agent returned no session ID")?;
-  launch.remember(&state.db,session)?;
+  let acp_id=sessions::identity(&response,session.acp_session_id.as_deref(),load)?;
   caps.config_options=response["configOptions"].is_array();
-  if launch.resumed {
-   let mut config=model_config::from_response(&response);
-   let previous=ProviderConfiguration{agent_info:None,config_options:session.config_options.clone(),models:session.models.clone(),modes:Some(session.modes.clone())};
-   model_config::apply(&rpc,&acp_id,&mut config,&model_config::selections(&previous),false).await?;
-   response["configOptions"]=config.config_options;response["models"]=config.models;response["modes"]=config.modes.unwrap_or(Value::Null);
+  if load && rpc.plan_protocol.is_supported() && !response["modes"]["currentModeId"].is_string() {
+    if let Some(mode)=session.modes["currentModeId"].as_str() {
+      let mut config=model_config::from_response(&response);
+      model_config::apply(&rpc,&acp_id,&mut config,&json!({"__legacy_mode":mode}),true).await?;
+      response["modes"]=config.modes.unwrap_or(Value::Null);
+    }
   }
   if !load {if let Ok(saved)=state.db.get::<Value>("preference",&format!("{}:{}",session.project_id.as_deref().or(session.workspace_id.as_deref()).unwrap_or("__freeform__"),session.provider_id)) {
-   // Re-read the returned controls after each change: models may alter reasoning options.
-   for old in saved.as_array().into_iter().flatten(){let Some(current)=response["configOptions"].as_array().and_then(|opts|opts.iter().find(|o|o["id"]==old["id"])) else{continue};
-    let value=&old["currentValue"];let valid=if current["type"]=="boolean"{value.is_boolean()}else{current["options"].as_array().is_some_and(|opts|opts.iter().any(|o|o["value"]==*value||o["options"].as_array().is_some_and(|g|g.iter().any(|v|v["value"]==*value))))};
-    if valid&&current["currentValue"]!=*value{let mut p=json!({"sessionId":acp_id,"configId":old["id"],"value":value});if value.is_boolean(){p["type"]=json!("boolean")}match rpc.request("session/set_config_option",p,Some(Duration::from_secs(30))).await{Ok(result)=>{if result["configOptions"].is_array(){response["configOptions"]=result["configOptions"].clone()}},Err(e)=>state.emit(&session.id,"diagnostic",json!({"message":format!("Remembered setting could not be applied: {e}")}))}}
-   }
+   // Use the same mode routing and model-first ordering as the live selector.
+   let mut config=model_config::from_response(&response);
+   let selected=if saved.is_array(){model_config::selections(&ProviderConfiguration{agent_info:None,config_options:saved,models:Value::Null,modes:None})}else{saved};
+   if let Err(e)=model_config::apply(&rpc,&acp_id,&mut config,&selected,false).await{state.emit(&session.id,"diagnostic",json!({"message":format!("Remembered setting could not be applied: {e}")}));}
+   response["configOptions"]=config.config_options;response["models"]=config.models;response["modes"]=config.modes.unwrap_or(Value::Null);
   }}
   if load&&method=="session/load"{state.emit(&session.id,"history_reset",json!({}));}
-  {let mut pending=buffer.lock().unwrap();if load {for(k,v)in pending.drain(..){state.emit(&session.id,&k,v);}}replay.store(false,Ordering::SeqCst);}
   let has_requests = !rpc.inbound.lock().await.is_empty();
-  let updated=state.update(&session.id,|s|{s.acp_session_id=Some(acp_id.clone());s.native_session_id=if caps.native_handoff{Some(acp_id.clone())}else{None};s.status=if has_requests {"needs_input"} else {"idle"}.into();s.mode="gui".into();s.error=None;s.capabilities=caps;s.config_options=response.get("configOptions").cloned().unwrap_or(json!([]));s.models=response["models"].clone();s.modes=response["modes"].clone();})?;
-  state.emit(&session.id,"connected",json!({"agentInfo":init["agentInfo"],"sessionId":acp_id}));Ok(updated)
+  state.update(&session.id,|s|{s.acp_session_id=Some(acp_id.clone());s.native_session_id=if caps.native_handoff{Some(acp_id.clone())}else{None};s.status=if has_requests {"needs_input"} else {"idle"}.into();s.mode="gui".into();s.error=None;s.capabilities=caps;s.config_options=response.get("configOptions").cloned().unwrap_or(json!([]));s.models=response["models"].clone();s.modes=response["modes"].clone();})?;
+  {let mut pending=buffer.lock().unwrap();for(k,v)in pending.drain(..){state.emit(&session.id,&k,v);}replay.store(false,Ordering::SeqCst);}
+  state.emit(&session.id,"connected",json!({"agentInfo":init["agentInfo"],"sessionId":acp_id}));state.db.get("session", &session.id)
  }.await;
     if let Err(e) = &result {
         state.stop(&session.id).await;
@@ -483,6 +493,7 @@ async fn discover_provider_config(
     if state.quitting.load(Ordering::SeqCst) {
         return Err("Harbor is quitting".into());
     }
+    let _guard = state.operations.provider(&provider_id).await;
     let provider = state.provider(&provider_id)?;
     let slot = state
         .discoveries
@@ -538,6 +549,10 @@ async fn discover_provider_config(
             failed.stop().await;
         }
         state.connections.lock().await.remove(&key);
+    }
+    let current = state.provider(&provider_id)?;
+    if current.command != provider.command || current.args != provider.args {
+        return Err("Connection settings changed during discovery. Retry with the current executable.".into());
     }
     if let Ok(config) = &result {
         state
@@ -752,6 +767,7 @@ async fn authenticate(
     session_id: String,
     method_id: String,
 ) -> Result<SessionRecord, String> {
+    let _guard = state.operations.session(&session_id).await;
     let rpc = state.connection(&session_id).await?;
     rpc.request(
         "authenticate",
@@ -760,22 +776,12 @@ async fn authenticate(
     )
     .await?;
     let s: SessionRecord = state.db.get("session", &session_id)?;
-    let (method, params) = if let Some(id) = &s.acp_session_id {
-        (
-            "session/load",
-            json!({"sessionId":id,"cwd":s.cwd,"mcpServers":[]}),
-        )
-    } else {
-        ("session/new", json!({"cwd":s.cwd,"mcpServers":[]}))
-    };
+    let load = s.acp_session_id.is_some();
+    let (method, params) = sessions::request(&s, &s.capabilities, load)?;
     let response = rpc
         .request(method, params, Some(Duration::from_secs(90)))
         .await?;
-    let id = response["sessionId"]
-        .as_str()
-        .map(str::to_owned)
-        .or(s.acp_session_id)
-        .ok_or("Agent returned no session identity")?;
+    let id = sessions::identity(&response, s.acp_session_id.as_deref(), load)?;
     state.update(&session_id, |s| {
         s.acp_session_id = Some(id.clone());
         s.native_session_id = if s.capabilities.native_handoff {
@@ -797,57 +803,27 @@ async fn set_config(
     config_id: String,
     value: Value,
 ) -> Result<SessionRecord, String> {
+    let _session_guard = state.operations.session(&session_id).await;
     let r = state.connection(&session_id).await?;
     let _configuration_guard = r.configuration_lock.lock().await;
     let s: SessionRecord = state.db.get("session", &session_id)?;
-    if r.busy.load(Ordering::SeqCst) || s.mode != "gui" {
+    if r.busy.load(Ordering::SeqCst) || !r.inbound.lock().await.is_empty() || s.archived || s.mode != "gui" {
         return Err("Wait for the current turn to finish before changing configuration".into());
     }
-    let mut p = json!({"sessionId":s.acp_session_id,"configId":config_id,"value":value});
-    if value.is_boolean() {
-        p["type"] = json!("boolean")
-    }
-    let dedicated_mode = config_id == "__legacy_mode"
-        || model_config::has_matching_modes(&s.config_options, &s.modes, &config_id);
-    let result = if config_id == "__legacy_model" {
-        r.request(
-            "session/set_model",
-            json!({"sessionId":s.acp_session_id,"modelId":value}),
-            Some(Duration::from_secs(30)),
-        )
-        .await?
-    } else if dedicated_mode {
-        r.request(
-            "session/set_mode",
-            json!({"sessionId":s.acp_session_id,"modeId":value}),
-            Some(Duration::from_secs(30)),
-        )
-        .await?
-    } else {
-        r.request(
-            "session/set_config_option",
-            p,
-            Some(Duration::from_secs(30)),
-        )
-        .await?
+    let mut config = ProviderConfiguration {
+        agent_info: None,
+        config_options: s.config_options.clone(),
+        models: s.models.clone(),
+        modes: Some(s.modes.clone()),
     };
+    let wire = s.acp_session_id.as_deref().ok_or("No connected conversation")?;
+    model_config::apply(&r, wire, &mut config, &json!({config_id:value}), true).await?;
+    let preference = model_config::selections(&config);
     let updated = state.update(&session_id, |s| {
         s.error = None;
-        if let Some(opts) = result.get("configOptions") {
-            providers::apply_configuration_update(
-                s,
-                &json!({"sessionUpdate":"config_option_update","configOptions":opts}),
-            );
-        }
-        if config_id == "__legacy_model" {
-            s.models["currentModelId"] = value.clone()
-        }
-        if dedicated_mode {
-            providers::apply_configuration_update(
-                s,
-                &json!({"sessionUpdate":"current_mode_update","currentModeId":value}),
-            );
-        }
+        s.config_options = config.config_options;
+        s.models = config.models;
+        s.modes = config.modes.unwrap_or(Value::Null);
     })?;
     state.db.put(
         "preference",
@@ -856,7 +832,7 @@ async fn set_config(
             s.project_id.as_deref().or(s.workspace_id.as_deref()).unwrap_or("__freeform__"),
             s.provider_id
         ),
-        &updated.config_options,
+        &preference,
     )?;
     Ok(updated)
 }
@@ -879,10 +855,11 @@ fn worker_payload(kind: &str, mut payload: Value, child_id: &str, wire_id: &str)
 
 #[tauri::command]
 async fn open_subagent(state: tauri::State<'_, Arc<AppState>>, session_id: String, child_id: String) -> Result<(), String> {
+    let _guard = state.operations.session(&session_id).await;
     state.connection(&session_id).await?;
     let session: SessionRecord = state.db.get("session", &session_id)?;
     if session.mode != "gui" { return Err("Return to Chat first".into()); }
-    let child: SubagentRecord = state.db.get("subagent", &worker_key(&session_id, &child_id))
+    let _child: SubagentRecord = state.db.get("subagent", &worker_key(&session_id, &child_id))
         .map_err(|_| "This worker does not belong to this conversation")?;
     let slot = state.child_connections.lock().await.entry(worker_key(&session_id, &child_id))
         .or_insert_with(|| Arc::new(Mutex::new(None))).clone();
@@ -890,12 +867,6 @@ async fn open_subagent(state: tauri::State<'_, Arc<AppState>>, session_id: Strin
     if slot.as_ref().is_some_and(|c| c.rpc.alive.load(Ordering::SeqCst)) { return Ok(()); }
     if let Some(old) = slot.take() { old.rpc.stop().await; }
     let provider = state.provider(&session.provider_id)?;
-    let prime = provider.id == "prime";
-    let (provider, history) = if prime {
-        let state = state.inner().clone();
-        let session = session.clone();
-        tokio::task::spawn_blocking(move || subagents::prime_child(&state.db, &state.data, &session, &child, provider)).await.map_err(|e| e.to_string())??
-    } else { (provider, vec![]) };
     let weak = Arc::downgrade(state.inner());
     let root = session_id.clone(); let child_cb = child_id.clone();
     let generation = state.generations.lock().unwrap().get(&root).cloned();
@@ -922,26 +893,25 @@ async fn open_subagent(state: tauri::State<'_, Arc<AppState>>, session_id: Strin
     });
     let started_state = state.inner().clone();
     let started_key = worker_key(&session_id,&child_id);
-    let connection = if matches!(session.provider_id.as_str(),"codex" | "claude" | "pi") {
+    let connection = match adapters::resolve(&session.provider_id)?.descriptor().workers {
+        adapters::WorkerStrategy::ParentRelay {..} => {
         subagents::Connection {rpc:state.connection(&session_id).await?,wire_id:session.acp_session_id.clone().ok_or("Missing parent session ID")?,via_parent:true,capabilities:session.capabilities.raw.clone()}
-    } else { match subagents::attach(&provider,&session.cwd,&child_id,prime,sink,move |rpc| {
+    }, adapters::WorkerStrategy::DirectAttachment => { match subagents::attach(&provider,&session.cwd,&child_id,sink,move |rpc| {
         started_state.child_transports.lock().unwrap().insert(started_key,rpc);
     }).await {
         Ok(connection) => connection,
         Err(error) => {
             state.child_transports.lock().unwrap().remove(&worker_key(&session_id,&child_id));
-            if prime { return Err(error); }
-            let parent = state.connection(&session_id).await?;
-            subagents::Connection {rpc:parent,wire_id:session.acp_session_id.clone().ok_or("Missing parent session ID")?,via_parent:true,capabilities:session.capabilities.raw.clone()}
+            return Err(error);
         }
-    }};
+    }}, adapters::WorkerStrategy::Unsupported{reason}=>return Err(reason),
+    };
     if state.generations.lock().unwrap().get(&session_id).cloned() != generation || state.connection(&session_id).await.is_err() {
         connection.rpc.stop().await;
         state.child_transports.lock().unwrap().remove(&worker_key(&session_id,&child_id));
         return Err("The parent connection changed while opening the worker".into());
     }
     if !connection.via_parent { state.emit(&session_id,"child_history_reset",json!({"childId":child_id})); }
-    for update in history { state.emit(&session_id,"session/update",json!({"sessionId":child_id,"update":update})); }
     {
         let mut wire_guard = wire.lock().unwrap();
         for (kind,payload) in buffer.lock().unwrap().drain(..) {
@@ -958,6 +928,7 @@ async fn open_subagent(state: tauri::State<'_, Arc<AppState>>, session_id: Strin
 
 #[tauri::command]
 async fn send_subagent_prompt(state: tauri::State<'_, Arc<AppState>>, session_id: String, child_id: String, text: String, attachments: Option<Vec<PromptAttachment>>) -> Result<(), String> {
+    let guard = state.operations.session(&session_id).await;
     let files = attachments.unwrap_or_default();
     if text.trim().is_empty() && files.is_empty() { return Err("Write a message or attach a file first".into()); }
     state.connection(&session_id).await?;
@@ -966,6 +937,7 @@ async fn send_subagent_prompt(state: tauri::State<'_, Arc<AppState>>, session_id
     if matches!(activity,"working" | "running" | "queued" | "needs_input" | "requires_action") { return Err("Wait for this worker's current turn to finish".into()); }
     let slot = state.child_connections.lock().await.get(&worker_key(&session_id,&child_id)).cloned().ok_or("Open this worker before messaging it")?;
     let previous: SessionRecord = state.db.get("session",&session_id)?;
+    if previous.mode != "gui" || previous.archived { return Err("Return to the active chat before messaging its worker".into()); }
     let (rpc,wire_id,via_parent,capabilities) = {
         let slot = slot.lock().await; let c = slot.as_ref().ok_or("The worker is disconnected")?;
         if !c.rpc.alive.load(Ordering::SeqCst) { return Err("The worker is disconnected".into()); }
@@ -983,7 +955,7 @@ async fn send_subagent_prompt(state: tauri::State<'_, Arc<AppState>>, session_id
         let forwarded = if paths.is_empty() { text.clone() } else {
             format!("{}\n\nAttached files (forward these paths to the worker):\n{}", text, paths.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join("\n"))
         };
-        subagents::relay_prompt(&child,&forwarded)
+        subagents::relay_prompt(require_provider(&previous.provider_id)?,&child,&forwarded)?
     } else { text.clone() };
     if via_parent {
         if !text.trim().is_empty() { content[0] = json!({"type":"text","text":prompt}); }
@@ -991,10 +963,11 @@ async fn send_subagent_prompt(state: tauri::State<'_, Arc<AppState>>, session_id
     }
     state.emit(&session_id,"user_message",json!({"text":text,"childId":child_id,"attachments":file_metadata}));
     state.emit(&session_id,"child_status",json!({"childId":child_id,"state":"working"}));
+    drop(guard);
     let mut result = rpc.request("session/prompt",json!({"sessionId":wire_id,"prompt":content}),None).await;
     if via_parent && result.is_ok() {
         if let Err(error) = subagents::wait_for_children(&rpc,|| {
-            Ok(state.db.list::<SubagentRecord>("subagent")?.iter().any(|c| subagents::same_worker(&c.session_id,&child_id) && subagents::is_working(&c.state)))
+            Ok(state.db.subagents(&session_id)?.iter().any(|c| subagents::same_worker(&c.session_id,&child_id) && subagents::is_working(&c.state)))
         }).await { result=Err(error); }
     }
     rpc.busy.store(false,Ordering::SeqCst);
@@ -1011,22 +984,6 @@ async fn send_subagent_prompt(state: tauri::State<'_, Arc<AppState>>, session_id
     }
     match result {
         Ok(response) => {
-            // Prime's agent_message.send body is stored in a tool receipt, not
-            // an assistant text chunk. Import completed sends as visible messages.
-            if !via_parent && previous.provider_id == "prime" {
-                let refresh_state = state.inner().clone();
-                let refresh_session = previous.clone();
-                let refresh_child = child.clone();
-                let replay = tokio::task::spawn_blocking(move || {
-                    let provider = refresh_state.provider("prime")?;
-                    subagents::prime_child(&refresh_state.db, &refresh_state.data, &refresh_session, &refresh_child, provider)
-                }).await;
-                if let Ok(Ok((_, updates))) = replay {
-                    for update in updates.into_iter().filter(|u| u["sessionUpdate"] == "agent_communication") {
-                        state.emit(&session_id, "session/update", json!({"sessionId":child_id,"update":update}));
-                    }
-                }
-            }
             state.emit(&session_id,"turn_complete",json!({"childId":child_id,"stopReason":response["stopReason"]}));
             state.emit(&session_id,"child_status",json!({"childId":child_id,"state":"idle"}));
             Ok(())
@@ -1045,6 +1002,7 @@ async fn send_prompt(
     text: String,
     attachments: Option<Vec<PromptAttachment>>,
 ) -> Result<(), String> {
+    let guard = state.operations.session(&session_id).await;
     let files = attachments.unwrap_or_default();
     let rpc = state.connection(&session_id).await?;
     let configuration_guard = rpc.configuration_lock.lock().await;
@@ -1070,6 +1028,7 @@ async fn send_prompt(
         return Err(e);
     }
     drop(configuration_guard);
+    drop(guard);
     state.emit(&session_id, "user_message", json!({"text":text,"attachments":file_metadata}));
     let result = rpc
         .request(
@@ -1457,20 +1416,25 @@ async fn enter_terminal(
     if rpc.busy.load(Ordering::SeqCst) || !rpc.inbound.lock().await.is_empty() {
         return Err("Finish or stop the current turn and answer pending requests first".into());
     }
+    let workers = state.child_transports.lock().unwrap().iter()
+        .filter(|(key,_)| key.starts_with(&format!("{session_id}:")))
+        .map(|(_,rpc)| rpc.clone()).collect::<Vec<_>>();
+    for worker in workers {
+        if worker.busy.load(Ordering::SeqCst) || !worker.inbound.lock().await.is_empty() {
+            return Err("Finish or stop worker turns and answer their pending requests before entering terminal".into());
+        }
+    }
+    if state.db.subagents(&session_id)?.iter().any(|worker| subagents::is_working(&worker.state)) {
+        return Err("Wait for this conversation's workers to finish before entering terminal".into());
+    }
     let native_id = s
         .native_session_id
         .ok_or("No verified native session identity")?;
     let provider = state.provider(&s.provider_id)?;
-    if !providers::verified_handoff(&provider, &s.capabilities.raw).await {
+    if !adapters::handoff_compatibility(&provider, &s.capabilities.raw).await?.available {
         return Err("The installed provider version changed. Reconnect to check compatibility before switching.".into());
     }
-    let args = match provider.id.as_str() {
-        "codex" => vec!["resume".into(), native_id],
-        "claude" => vec!["--resume".into(), native_id],
-        "cursor" => vec!["--resume".into(), native_id],
-        "opencode" => vec!["--session".into(), native_id],
-        _ => return Err("Native resume adapter has not been verified".into()),
-    };
+    let args = adapters::native_resume_args(require_provider(&provider.id)?, &native_id)?;
     state.update(&session_id, |s| s.mode = "handoff".into())?;
     state.stop(&session_id).await;
     let sid = session_id.clone();
@@ -1606,11 +1570,11 @@ fn setup_path() {
     if let Ok(home) = std::env::var("HOME") {
         let mut paths = vec![
             PathBuf::from(format!("{home}/.local/bin")),
-            PathBuf::from(format!("{home}/.grok/bin")),
             PathBuf::from(format!("{home}/.cargo/bin")),
             PathBuf::from("/opt/homebrew/bin"),
             PathBuf::from("/usr/local/bin"),
         ];
+        paths.splice(1..1,adapters::IDS.iter().flat_map(|id| adapters::get(*id).extra_path_entries(Path::new(&home))));
         if let Ok(entries) = std::fs::read_dir(format!("{home}/.nvm/versions/node")) {
             let mut versions: Vec<_> = entries.flatten().map(|e| e.path().join("bin")).collect();
             versions.sort();

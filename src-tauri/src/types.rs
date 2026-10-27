@@ -382,86 +382,7 @@ pub fn now() -> f64 {
 pub fn id() -> String {
     uuid::Uuid::new_v4().to_string()
 }
-pub fn providers() -> Vec<ProviderDefinition> {
-    [
-        (
-            "codex",
-            "Codex",
-            "codex-acp",
-            vec![],
-            "codex",
-            "npm install -g @agentclientprotocol/codex-acp@2.1.1",
-            "mint",
-        ),
-        (
-            "claude",
-            "Claude Code",
-            "claude-agent-acp",
-            vec![],
-            "claude",
-            "npm install -g @agentclientprotocol/claude-agent-acp@0.88.0",
-            "peach",
-        ),
-        (
-            "cursor",
-            "Cursor",
-            "agent",
-            vec!["acp"],
-            "agent",
-            "Install Cursor CLI, then run agent login",
-            "violet",
-        ),
-        (
-            "pi",
-            "Pi",
-            "pi-acp",
-            vec![],
-            "pi",
-            "npm install -g pi-acp",
-            "rose",
-        ),
-        (
-            "prime",
-            "Prime Agent",
-            "prime-agent",
-            vec!["--mode", "acp"],
-            "prime-agent",
-            "Install Prime Agent 0.9.8 (verified ACP model controls) and authenticate with your provider",
-            "blue",
-        ),
-        (
-            "opencode",
-            "OpenCode",
-            "opencode",
-            vec!["acp"],
-            "opencode",
-            "Install OpenCode, then run opencode auth login",
-            "sand",
-        ),
-        (
-            "grok",
-            "Grok Build",
-            "grok",
-            vec!["--no-auto-update", "agent", "stdio"],
-            "grok",
-            "Install Grok Build: curl -fsSL https://x.ai/cli/install.sh | bash; then run grok login",
-            "sand",
-        ),
-    ]
-    .into_iter()
-    .map(
-        |(id, name, cmd, args, native, hint, color)| ProviderDefinition {
-            id: id.into(),
-            name: name.into(),
-            command: cmd.into(),
-            args: args.into_iter().map(String::from).collect(),
-            native_command: native.into(),
-            install_hint: hint.into(),
-            color: color.into(),
-        },
-    )
-    .collect()
-}
+pub fn providers() -> Vec<ProviderDefinition> { crate::adapters::providers() }
 
 #[derive(Clone, Debug, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -490,4 +411,42 @@ pub struct AvailableCommand {
 #[ts(export, export_to = "../../src/lib/bindings/")]
 pub struct AvailableCommandInput {
     pub hint: String,
+}
+
+pub use crate::adapters::{SupportedProviderId,require_provider};
+
+#[cfg(test)]
+mod provider_registry_tests {
+    use super::*;
+    #[test]
+    fn registry_is_closed_and_exports_browser_defaults() {
+        let providers = providers();
+        assert_eq!(providers.len(), crate::adapters::IDS.len());
+        for provider in &providers { require_provider(&provider.id).unwrap(); }
+        for id in ["", "custom", "cursor", "pi", "prime", "opencode"] {
+            assert!(require_provider(id).is_err());
+        }
+        let source = format!("// Generated from Rust adapters::providers(); do not edit.\nimport type {{ ProviderDefinition }} from './ProviderDefinition';\nimport type {{ SupportedProviderId }} from './SupportedProviderId';\nexport const supportedProviders = {} satisfies (ProviderDefinition & {{ id: SupportedProviderId }})[];\n", serde_json::to_string_pretty(&providers).unwrap());
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../src/lib/bindings/supported-providers.ts");
+        if std::fs::read_to_string(path).ok().as_deref() != Some(&source) { std::fs::write(path, source).unwrap(); }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, TS, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+#[ts(export, export_to = "../../src/lib/bindings/")]
+pub enum ProbeStatus { Ready, MissingExecutable, IncompatibleProtocol, AuthenticationRequired, TimedOut, ConnectionFailed }
+
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/lib/bindings/")]
+pub struct ProviderProbe {
+    pub status: ProbeStatus,
+    pub message: String,
+    pub path: Option<String>,
+    pub native_path: Option<String>,
+    pub version: Option<String>,
+    pub worktrunk: bool,
+    pub agent_info: Value,
+    pub auth_methods: Value,
 }

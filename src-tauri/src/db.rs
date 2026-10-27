@@ -35,7 +35,7 @@ impl Database {
         let version: u32 = c
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .map_err(|e| e.to_string())?;
-        if version > 2 {
+        if version > 3 {
             return Err(
                 "This database was created by a newer Harbor version. Update Harbor to open it."
                     .into(),
@@ -48,6 +48,7 @@ impl Database {
         if version < 2 {
             migrate_workspaces(&mut c)?;
         }
+        if version < 3 { migrate_providers(&mut c)?; }
         Ok(Self(Mutex::new(c)))
     }
     pub fn save_project(
@@ -173,6 +174,13 @@ impl Database {
         })
         .collect()
     }
+    pub fn subagents(&self, session: &str) -> Result<Vec<SubagentRecord>, String> {
+        let c = self.0.lock().map_err(|e| e.to_string())?;
+        let prefix = format!("{session}:");
+        let mut query = c.prepare("SELECT data FROM records WHERE kind='subagent' AND substr(id,1,length(?1))=?1").map_err(|e|e.to_string())?;
+        let rows = query.query_map([prefix], |row|row.get::<_,String>(0)).map_err(|e|e.to_string())?;
+        rows.map(|row|serde_json::from_str(&row.map_err(|e|e.to_string())?).map_err(|e|e.to_string())).collect()
+    }
     pub fn event(&self, session: &str, kind: &str, payload: Value) -> Result<SessionEvent, String> {
         let c = self.0.lock().map_err(|e| e.to_string())?;
         let time = now();
@@ -260,6 +268,53 @@ fn write_record(c: &Connection, kind: &str, id: &str, v: &impl Serialize) -> Res
     c.execute("INSERT INTO records VALUES(?1,?2,?3) ON CONFLICT(kind,id) DO UPDATE SET data=excluded.data", params![kind, id, serde_json::to_string(v).map_err(|e| e.to_string())?]).map_err(|e| e.to_string())?;
     Ok(())
 }
+/// Remove obsolete chat data only. No filesystem operation belongs in this migration.
+fn migrate_providers(c: &mut Connection) -> Result<(), String> {
+    use std::collections::HashSet;
+    let tx = c.transaction().map_err(|e| e.to_string())?;
+    let rows: Vec<(String, String, Value)> = {
+        let mut query = tx.prepare("SELECT kind,id,data FROM records").map_err(|e| e.to_string())?;
+        let raw = query.query_map([], |r| Ok((r.get::<_, String>(0)?,r.get::<_, String>(1)?,r.get::<_, String>(2)?)))
+            .map_err(|e| e.to_string())?;
+        raw.map(|row| {
+            let (kind,id,data) = row.map_err(|e| e.to_string())?;
+            let value = serde_json::from_str(&data).map_err(|e| format!("Cannot migrate {kind}/{id}: {e}"))?;
+            Ok((kind,id,value))
+        }).collect::<Result<_,String>>()?
+    };
+    let sessions: HashSet<_> = rows.iter().filter(|(kind,_,data)| kind == "session"
+        && data["providerId"].as_str().is_some_and(|id| require_provider(id).is_ok()))
+        .map(|(_,id,_)| id.as_str()).collect();
+    for (kind,id,data) in &rows {
+        let remove = match kind.as_str() {
+            "provider" => require_provider(id).is_err(),
+            "session" | "provider-title" => !sessions.contains(id.as_str()),
+            "subagent" => !sessions.iter().any(|session| id.starts_with(&format!("{session}:"))),
+            "shell-tab" => !data["session_id"].as_str().is_some_and(|id| sessions.contains(id)),
+            "preference" => id.rsplit_once(':').is_none_or(|(_,provider)| require_provider(provider).is_err()),
+            "prime_session" | "pi_worker_source" | "pi_worker_history" => true,
+            _ => false,
+        };
+        if remove {
+            tx.execute("DELETE FROM records WHERE kind=?1 AND id=?2",params![kind,id]).map_err(|e| e.to_string())?;
+        } else if kind == "provider" {
+            if !data.is_object() {
+                return Err(format!("Cannot migrate provider/{id}: expected an object"));
+            }
+            let mut saved = data.clone();
+            let definition = providers().into_iter().find(|p| p.id == *id).unwrap();
+            saved["id"] = Value::String(id.clone());
+            saved["name"] = Value::String(definition.name);
+            saved["installHint"] = Value::String(definition.install_hint);
+            saved["color"] = Value::String(definition.color);
+            write_record(&tx,kind,id,&saved)?;
+        }
+    }
+    tx.execute("DELETE FROM events WHERE session_id NOT IN (SELECT id FROM records WHERE kind='session')",[]).map_err(|e| e.to_string())?;
+    tx.pragma_update(None,"user_version",3).map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())
+}
+
 fn migrate_workspaces(c: &mut Connection) -> Result<(), String> {
     use crate::workspaces::*;
     let tx = c.transaction().map_err(|e| e.to_string())?;
@@ -324,7 +379,7 @@ mod workspace_tests {
             )
             .unwrap();
         }
-        let chat = json!({"id":"s","projectId":"p1","cwd":"/missing/tree","worktreeId":"tree","acpSessionId":"native"});
+        let chat = json!({"id":"s","providerId":"codex","projectId":"p1","cwd":"/missing/tree","worktreeId":"tree","acpSessionId":"native"});
         write_record(&c, "session", "s", &chat).unwrap();
         let tree = json!({"id":"tree","projectId":"p1","repo":"/missing/repo"});
         write_record(&c, "worktree", "tree", &tree).unwrap();
@@ -432,5 +487,87 @@ mod workspace_tests {
             .save_project(Some("unknown"), "Name", "folder", "gray", folder)
             .is_err());
         assert_eq!(db.list::<Project>("project").unwrap().len(), 2);
+    }
+}
+
+#[cfg(test)]
+mod provider_migration_tests {
+    use super::*;
+    use serde_json::json;
+    #[test]
+    fn supported_chat_survives_missing_provider_definition() {
+        let dir=tempfile::tempdir().unwrap();
+        let path=dir.path().join("harbor.sqlite");
+        let db=Database::open(&path).unwrap();
+        db.put("session","saved",&json!({"providerId":"codex","draft":"Keep","archived":true})).unwrap();
+        db.event("saved","user_message",json!({"text":"Keep"})).unwrap();
+        db.0.lock().unwrap().pragma_update(None,"user_version",2).unwrap();
+        drop(db);
+        let db=Database::open(&path).unwrap();
+        assert_eq!(db.get::<Value>("session","saved").unwrap()["draft"],"Keep");
+        assert_eq!(db.events("saved",0.,100).unwrap().len(),1);
+    }
+    #[test]
+    fn removes_obsolete_and_orphaned_chat_data_but_preserves_work() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("harbor.sqlite");
+        let db = Database::open(&path).unwrap();
+        let work = dir.path().join("working-file.txt");
+        std::fs::write(&work,"keep working files").unwrap();
+        for provider in ["codex","claude","grok","cursor","pi","prime","opencode","custom-test","missing-provider"] {
+            let chat = format!("chat-{provider}");
+            db.put("session",&chat,&json!({"id":chat,"providerId":provider,"archived":true,"cwd":dir.path(),"draft":"saved"})).unwrap();
+            db.put("subagent",&format!("{chat}:child"),&json!({"parentId":"native"})).unwrap();
+            db.put("provider-title",&chat,&true).unwrap();
+            db.put("shell-tab",&format!("shell-{provider}"),&json!({"session_id":chat})).unwrap();
+            db.put("preference",&format!("provider:{provider}"),&json!({"model":"saved"})).unwrap();
+            db.put("preference",&format!("workspace:{provider}"),&json!({"model":"saved"})).unwrap();
+            db.event(&chat,"user_message",json!({"text":"saved"})).unwrap();
+            if provider != "missing-provider" {
+                db.put("provider",provider,&json!({"id":provider,"command":"custom-path","args":["--flag"],"nativeCommand":"native-path"})).unwrap();
+            }
+        }
+        for kind in ["prime_session","pi_worker_source","pi_worker_history"] { db.put(kind,"orphan",&json!({})).unwrap(); }
+        for (kind,id,data) in [("provider-title","orphan",json!(true)),("subagent","orphan:child",json!({})),("shell-tab","orphan",json!({"session_id":"orphan"}))] { db.put(kind,id,&data).unwrap(); }
+        db.event("orphan","user_message",json!({})).unwrap();
+        for kind in ["workspace","project","worktree","archive"] { db.put(kind,"keep",&json!({"id":"keep","path":dir.path()})).unwrap(); }
+        db.0.lock().unwrap().pragma_update(None,"user_version",2).unwrap();
+        drop(db);
+        for _ in 0..2 {
+            let db = Database::open(&path).unwrap();
+            assert_eq!(db.list::<Value>("session").unwrap().len(),3);
+            for kind in ["provider","subagent","provider-title","shell-tab"] { assert_eq!(db.list::<Value>(kind).unwrap().len(),3,"{kind}"); }
+            assert_eq!(db.list::<Value>("preference").unwrap().len(),6);
+            for kind in ["prime_session","pi_worker_source","pi_worker_history"] { assert!(db.list::<Value>(kind).unwrap().is_empty()); }
+            for provider in ["codex","claude","grok"] {
+                let chat = format!("chat-{provider}");
+                assert_eq!(db.get::<Value>("session",&chat).unwrap()["draft"],"saved");
+                assert_eq!(db.events(&chat,0.,5000).unwrap().len(),1);
+                let saved = db.get::<Value>("provider",provider).unwrap();
+                assert_eq!(saved["command"],"custom-path");
+                assert_eq!(saved["args"],json!(["--flag"]));
+                assert_eq!(saved["nativeCommand"],"native-path");
+            }
+            assert!(db.events("orphan",0.,5000).unwrap().is_empty());
+            assert!(db.events("chat-cursor",0.,5000).unwrap().is_empty());
+            for kind in ["workspace","project","worktree","archive"] { assert_eq!(db.get::<Value>(kind,"keep").unwrap()["id"],"keep"); }
+            assert_eq!(std::fs::read_to_string(&work).unwrap(),"keep working files");
+        }
+    }
+    #[test]
+    fn provider_migration_failure_rolls_back_deletions_and_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("db.sqlite");
+        let db = Database::open(&path).unwrap();
+        db.put("provider","cursor",&json!({"id":"cursor"})).unwrap();
+        db.put("session","obsolete",&json!({"id":"obsolete","providerId":"cursor"})).unwrap();
+        db.event("obsolete","user_message",json!({})).unwrap();
+        db.0.lock().unwrap().execute_batch("PRAGMA user_version=2; CREATE TRIGGER prevent_event_delete BEFORE DELETE ON events BEGIN SELECT RAISE(ABORT,'fixture failure'); END;").unwrap();
+        drop(db);
+        assert!(Database::open(&path).is_err());
+        let c = Connection::open(&path).unwrap();
+        assert_eq!(read_values(&c,"provider").unwrap().len(),1);
+        assert_eq!(read_values(&c,"session").unwrap().len(),1);
+        assert_eq!(c.query_row("PRAGMA user_version",[],|r|r.get::<_,u32>(0)).unwrap(),2);
     }
 }

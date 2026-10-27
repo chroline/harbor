@@ -223,6 +223,9 @@ pub async fn apply(
             .filter(|v| v.is_array())
             .cloned()
             .ok_or("Agent did not return updated configuration")?;
+        if !config.config_options.as_array().is_some_and(|options| options.iter().any(|o| o["id"] == id && o["currentValue"] == *value)) {
+            return Err(format!("The provider did not confirm the selected {id}. Retry or choose another value."));
+        }
         let mode = config.config_options.as_array().into_iter().flatten().find(|o| o["id"].as_str().is_some_and(|id| has_matching_modes(&config.config_options, config.modes.as_ref().unwrap_or(&Value::Null), id))).map(|o| o["currentValue"].clone());
         if let Some(mode) = mode { update_mode(config, &mode); }
     }
@@ -237,7 +240,7 @@ mod tests {
 
     fn fixture() -> ProviderDefinition {
         ProviderDefinition {
-            id: "fixture".into(),
+            id: "codex".into(),
             name: "Fixture".into(),
             command: "node".into(),
             args: vec![format!(

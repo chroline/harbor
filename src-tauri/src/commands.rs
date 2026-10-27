@@ -87,6 +87,16 @@ impl Catalogs {
         }
         result
     }
+    pub async fn invalidate(&self, provider: &str) {
+        let prefix = format!("[{},", serde_json::to_string(provider).unwrap());
+        self.entries.lock().await.retain(|key,_| !key.starts_with(&prefix));
+        let stale = {
+            let mut active = self.active.lock().await;
+            let keys: Vec<_> = active.keys().filter(|key| key.starts_with(&prefix)).cloned().collect();
+            keys.into_iter().filter_map(|key| active.remove(&key)).collect::<Vec<_>>()
+        };
+        for rpc in stale { rpc.stop().await; }
+    }
     pub async fn stop(&self) {
         self.stopped.store(true, Ordering::SeqCst);
         for (_, rpc) in std::mem::take(&mut *self.active.lock().await) {
@@ -168,7 +178,7 @@ mod tests {
     }
     fn fixture(log: &std::path::Path, behavior: &str) -> ProviderDefinition {
         ProviderDefinition {
-            id: "fixture".into(),
+            id: "codex".into(),
             name: "Catalog fixture".into(),
             command: "node".into(),
             args: vec![

@@ -1,5 +1,7 @@
 //! ACP v1 JSON-RPC transport. Unknown extension payloads are retained verbatim.
 use crate::types::ProviderDefinition;
+use crate::adapters::{self, Capability};
+use crate::adapters::contract::{PlanProtocol,PermissionResponse};
 use serde_json::{json, Value};
 use std::{
     collections::{HashMap, HashSet},
@@ -54,6 +56,9 @@ pub struct Rpc {
     cwd: PathBuf,
     sink: Sink,
     discovery: bool,
+    pub plan_protocol: Capability<&'static dyn PlanProtocol>,
+    session_ids: Mutex<HashSet<String>>,
+    current_modes: Mutex<HashMap<String,String>>,
 }
 fn err(e: impl std::fmt::Display) -> String {
     e.to_string()
@@ -134,6 +139,7 @@ impl Rpc {
         sink: Sink,
         discovery: bool,
     ) -> Result<Arc<Self>, String> {
+        let adapter = adapters::resolve(&provider.id)?;
         let exe = resolve_executable(&provider.command).ok_or_else(|| {
             format!(
                 "{} is not installed or executable. {}",
@@ -153,8 +159,19 @@ impl Rpc {
         let input = child.stdin.take().ok_or("Missing stdin")?;
         let stdout = child.stdout.take().ok_or("Missing stdout")?;
         let stderr = child.stderr.take().ok_or("Missing stderr")?;
+        let plan_protocol = match adapter.plan_protocol() {
+            Capability::Supported(protocol) => {
+                let version=adapters::version(&provider.command,adapter.version_args()).await;
+                if protocol.enabled(version.as_deref(),&provider.args) {Capability::Supported(protocol)}
+                else {Capability::Unsupported{reason:"The configured version/arguments do not enable this native plan extension".into()}}
+            },
+            unsupported=>unsupported,
+        };
         let rpc = Arc::new(Self {
             discovery,
+            plan_protocol,
+            session_ids: Mutex::new(HashSet::new()),
+            current_modes: Mutex::new(HashMap::new()),
             input: Mutex::new(input),
             child: Mutex::new(child),
             pending: Mutex::new(HashMap::new()),
@@ -232,7 +249,7 @@ impl Rpc {
         input.flush().await.map_err(err)
     }
     pub async fn notify(&self, method: &str, params: Value) -> Result<(), String> {
-        self.send(json!({"jsonrpc":"2.0","method":method,"params":params}))
+        self.send(json!({"jsonrpc":"2.0","method":method,"params":params.clone()}))
             .await
     }
     pub async fn request(&self, method: &str, params: Value, timeout: Option<Duration>) -> Reply {
@@ -241,7 +258,7 @@ impl Rpc {
         let (tx, rx) = oneshot::channel();
         self.pending.lock().await.insert(key.clone(), tx);
         if let Err(e) = self
-            .send(json!({"jsonrpc":"2.0","id":id,"method":method,"params":params}))
+            .send(json!({"jsonrpc":"2.0","id":id,"method":method,"params":params.clone()}))
             .await
         {
             self.pending.lock().await.remove(&key);
@@ -258,7 +275,17 @@ impl Rpc {
         } else {
             rx.await.map_err(err)?
         };
-        result
+        let mut result = result?;
+        if matches!(method, "session/new" | "session/load" | "session/resume") {
+            let saved = params["sessionId"].as_str();
+            let sid = crate::sessions::identity(&result, saved, method != "session/new")?;
+            self.session_ids.lock().await.insert(sid.clone());
+            if let Some(protocol) = self.plan_protocol.supported().filter(|_| !result["modes"]["availableModes"].is_array()) {
+                let observed = self.current_modes.lock().await.get(&sid).cloned();
+                result["modes"] = serde_json::to_value(protocol.modes(observed.as_deref().or(if method == "session/new" {Some("default")} else {None}))).map_err(err)?;
+            }
+        }
+        Ok(result)
     }
     pub async fn answer(&self, id: Value, result: Value) -> Result<(), String> {
         let request = self
@@ -267,6 +294,10 @@ impl Rpc {
             .await
             .remove(&id.to_string())
             .ok_or("This request has already been answered or cancelled")?;
+        if request["method"] == "elicitation/create" && (!matches!(result["action"].as_str(), Some("accept" | "decline" | "cancel")) || (result["action"] == "accept" && !result["content"].is_object())) {
+            self.inbound.lock().await.insert(id.to_string(), request);
+            return Err("Invalid elicitation response".into());
+        }
         if request["method"] == "session/request_permission"
             && result["outcome"]["outcome"] == "selected"
         {
@@ -279,9 +310,14 @@ impl Rpc {
                 return Err("Invalid permission option".into());
             }
         }
+        let recorded_result = result.clone();
+        let result = match self.encode_response(&request,&result) {
+            Ok(value)=>value,
+            Err(error)=>{self.inbound.lock().await.insert(id.to_string(),request);return Err(error);}
+        };
         self.send(json!({"jsonrpc":"2.0","id":id,"result":result}))
             .await?;
-        (self.sink)("answered", json!({"id":id}));
+        (self.sink)("answered", json!({"id":id,"result":recorded_result}));
         Ok(())
     }
     async fn receive(self: &Arc<Self>, msg: Value) {
@@ -301,24 +337,30 @@ impl Rpc {
             }
             return;
         }
-        let wire_method = msg["method"].as_str().unwrap_or("");
-        let method = if wire_method.starts_with("_cursor/") {
-            &wire_method[1..]
-        } else {
-            wire_method
-        };
+        let method = msg["method"].as_str().unwrap_or("");
         let params = msg["params"].clone();
+        if method == "session/update" && params["update"]["sessionUpdate"] == "current_mode_update" {
+            if let (Some(sid),Some(mode))=(params["sessionId"].as_str(),params["update"]["currentModeId"].as_str()) {
+                self.current_modes.lock().await.insert(sid.into(),mode.into());
+            }
+        }
         if let Some(id) = msg.get("id") {
             if self.discovery {
-                let _ = self.send(json!({"jsonrpc":"2.0","id":id,"error":{"code":-32601,"message":"Client requests are unavailable during model discovery"}})).await;
+                let _ = self.send(json!({"jsonrpc":"2.0","id":id,"error":{"code":-32601,"message":"Client requests are unavailable in this background session"}})).await;
                 return;
             }
-            if [
-                "session/request_permission",
-                "cursor/ask_question",
-                "cursor/create_plan",
-            ]
-            .contains(&method)
+            if let Some(protocol)=self.plan_protocol.supported().filter(|protocol|protocol.method()==method) {
+                let fallback = self.session_plan_path(&params, false).await.and_then(|p| std::fs::read_to_string(p).ok());
+                match protocol.permission(&msg,fallback).and_then(|value|serde_json::to_value(value).map_err(err)) {
+                    Ok(permission)=>{
+                        self.inbound.lock().await.insert(id.to_string(),msg.clone());
+                        (self.sink)("request",permission);
+                    },
+                    Err(error)=>{let _=self.send(json!({"jsonrpc":"2.0","id":id,"error":{"code":-32602,"message":error}})).await;}
+                }
+                return;
+            }
+            if method == "session/request_permission" || (method == "elicitation/create" && params["mode"] != "url")
             {
                 let mut request = msg.clone();
                 request["method"] = json!(method);
@@ -346,20 +388,28 @@ impl Rpc {
             (self.sink)(method, params)
         }
     }
+    fn encode_response(&self,request:&Value,result:&Value)->Reply {
+        if let Some(protocol)=self.plan_protocol.supported().filter(|protocol|Some(protocol.method())==request["method"].as_str()) {
+            let decision:PermissionResponse=serde_json::from_value(result.clone()).map_err(err)?;
+            serde_json::to_value(protocol.response(&decision)?).map_err(err)
+        } else {Ok(result.clone())}
+    }
+    async fn session_plan_path(&self, p: &Value, write: bool) -> Option<PathBuf> {
+        let protocol=self.plan_protocol.supported()?;
+        let sid = p["sessionId"].as_str()?;
+        if !self.session_ids.lock().await.contains(sid) { return None; }
+        let home=std::env::var_os("HOME")?;
+        protocol.plan_path(Path::new(&home),&self.cwd,sid,p["path"].as_str().map(Path::new),write)
+    }
     async fn client_request(&self, method: &str, p: Value) -> Reply {
         match method {
-            "cursor/task" | "cursor/update_todos" => {
-                (self.sink)(method, p);
-                Ok(json!({}))
-            }
             "fs/read_text_file" => {
                 let requested = p["path"].as_str().ok_or("Missing path")?;
                 let canonical = Path::new(requested).canonicalize().map_err(err)?;
                 let path = if self.attachment_reads.lock().await.contains(&canonical) {
                     canonical
-                } else {
-                    workspace_path(&self.cwd, requested, false)?
-                };
+                } else if let Some(plan)=self.session_plan_path(&p,false).await { plan }
+                else { workspace_path(&self.cwd, requested, false)? };
                 if tokio::fs::metadata(&path).await.map_err(err)?.len() > 10 * 1024 * 1024 {
                     return Err("File exceeds 10 MiB".into());
                 }
@@ -377,8 +427,8 @@ impl Rpc {
                 Ok(json!({"content":content}))
             }
             "fs/write_text_file" => {
-                let path =
-                    workspace_path(&self.cwd, p["path"].as_str().ok_or("Missing path")?, true)?;
+                let path = if let Some(plan)=self.session_plan_path(&p,true).await { plan }
+                    else { workspace_path(&self.cwd, p["path"].as_str().ok_or("Missing path")?, true)? };
                 tokio::fs::write(path, p["content"].as_str().ok_or("Missing content")?)
                     .await
                     .map_err(err)?;
@@ -507,8 +557,13 @@ impl Rpc {
     pub async fn cancel_requests(&self) {
         let pending = std::mem::take(&mut *self.inbound.lock().await);
         for (_, req) in pending {
-            let _=self.send(json!({"jsonrpc":"2.0","id":req["id"],"result":{"outcome":{"outcome":"cancelled"}}})).await;
-            (self.sink)("answered", json!({"id":req["id"]}));
+            let recorded_result = if req["method"] == "elicitation/create" { json!({"action":"cancel"}) } else { json!({"outcome":{"outcome":"cancelled"}}) };
+            let reply=match self.encode_response(&req,&recorded_result) {
+                Ok(result)=>json!({"jsonrpc":"2.0","id":req["id"],"result":result}),
+                Err(message)=>json!({"jsonrpc":"2.0","id":req["id"],"error":{"code":-32603,"message":message}}),
+            };
+            let _=self.send(reply).await;
+            (self.sink)("answered", json!({"id":req["id"],"result":recorded_result}));
         }
     }
     async fn disconnected(&self, reason: &str) {
@@ -560,7 +615,7 @@ mod tests {
         let events = Arc::new(StdMutex::new(Vec::new()));
         let copy = events.clone();
         let provider = ProviderDefinition {
-            id: "fixture".into(),
+            id: "codex".into(),
             name: "Fixture".into(),
             command: "node".into(),
             args: vec![format!(
@@ -661,22 +716,6 @@ mod tests {
         rpc.stop().await;
     }
     #[tokio::test]
-    async fn cursor_extension_requests_are_acknowledged_and_forwarded() {
-        let (rpc, _temp, events, sid) = fixture().await;
-        prompt(&rpc, &sid, "telemetry").await.unwrap();
-        assert!(events
-            .lock()
-            .unwrap()
-            .iter()
-            .any(|(kind, p)| kind == "cursor/task" && p["agentId"] == "cursor-worker"));
-        assert!(events
-            .lock()
-            .unwrap()
-            .iter()
-            .any(|(kind, _)| kind == "cursor/update_todos"));
-        rpc.stop().await;
-    }
-    #[tokio::test]
     async fn permission_is_correlated_and_single_use() {
         let (rpc, _temp, events, id) = fixture().await;
         let r = rpc.clone();
@@ -705,6 +744,9 @@ mod tests {
         .await
         .unwrap();
         assert!(rpc.answer(request["id"].clone(), json!({})).await.is_err());
+        assert!(events.lock().unwrap().iter().any(|(kind,value)| kind == "answered"
+            && value["id"] == request["id"]
+            && value["result"]["outcome"]["optionId"] == "allow-once"));
         task.await.unwrap().unwrap();
         rpc.stop().await;
     }

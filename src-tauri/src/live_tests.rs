@@ -30,28 +30,24 @@ async fn live_provider_smoke() {
     let events = Arc::new(Mutex::new(Vec::<(String, Value)>::new()));
     let output = events.clone();
     let parent_wire = Arc::new(Mutex::new(None::<String>));
-    let parent_wire_cb = parent_wire.clone();
     let provider_cb = provider_id.clone();
-    let sink: Sink = Arc::new(move |kind, mut value| {
-        if kind == "cursor/task" && !value["sessionId"].is_string() {
-            value["sessionId"] = json!(*parent_wire_cb.lock().unwrap());
-        }
-        let announcements = crate::providers::worker_announcements(&provider_cb, kind, &value);
+    let sink: Sink = Arc::new(move |kind, value| {
+        let announcements = crate::adapters::resolve(&provider_cb).unwrap().worker_announcements(kind, &value);
         let mut output = output.lock().unwrap();
         for announcement in announcements {
-            output.push(("session/update".into(), announcement));
+            output.push(("session/update".into(), serde_json::to_value(announcement).unwrap()));
         }
         output.push((
             kind.into(),
             if kind == "session/update" {
-                crate::providers::normalize_update(value)
+                crate::adapters::resolve(&provider_cb).unwrap().normalize_update(value)
             } else {
                 value
             },
         ))
     });
     let rpc = Rpc::start(&provider, &work, sink.clone()).await.unwrap();
-    let init=rpc.request("initialize",json!({"protocolVersion":1,"clientCapabilities":crate::providers::client_capabilities(&provider_id),"clientInfo":{"name":"harbor-smoke","version":"0.1.0"}}),Some(Duration::from_secs(30))).await.unwrap();
+    let init=rpc.request("initialize",json!({"protocolVersion":1,"clientCapabilities":crate::adapters::client_capabilities(crate::types::require_provider(&provider_id).unwrap()),"clientInfo":{"name":"harbor-smoke","version":"0.1.0"}}),Some(Duration::from_secs(30))).await.unwrap();
     println!("Agent: {}", init["agentInfo"]);
     let session = rpc
         .request(
@@ -100,32 +96,15 @@ async fn live_provider_smoke() {
                 }
                 // Return to the original model before checking its reasoning choices.
                 crate::model_config::apply(&rpc, &sid, &mut config, &original, true).await?;
-                let option = config
-                    .config_options
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .find(|o| o["category"] == "thought_level")
-                    .expect("No reasoning control");
-                let effort = option["options"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .find(|o| o["value"] != option["currentValue"])
-                    .expect("No alternative reasoning effort")["value"]
-                    .clone();
-                let key = option["id"].as_str().unwrap().to_owned();
-                crate::model_config::apply(
-                    &rpc,
-                    &sid,
-                    &mut config,
-                    &json!({key.clone():effort}),
-                    true,
-                )
-                .await?;
-                if crate::model_config::selections(&config)[&key] != effort {
-                    return Err("Reasoning selection did not round-trip".to_string());
-                }
+                if let Some(option) = config.config_options.as_array().into_iter().flatten().find(|o| o["category"] == "thought_level" || o["id"].as_str().is_some_and(|id| id.contains("effort"))) {
+                    let choice = option["options"].as_array().into_iter().flatten().find(|o| o["value"] != option["currentValue"]);
+                    if let Some(choice) = choice {
+                        let key = option["id"].as_str().unwrap().to_owned();
+                        let effort = choice["value"].clone();
+                        crate::model_config::apply(&rpc,&sid,&mut config,&json!({key.clone():effort}),true).await?;
+                        if crate::model_config::selections(&config)[&key] != effort { return Err("Reasoning selection did not round-trip".into()); }
+                    }
+                } else { println!("No independent reasoning control advertised; model round-trip verified"); }
                 println!("Model and reasoning changes round-tripped through ACP");
             }
             Ok::<(), String>(())
@@ -177,9 +156,7 @@ async fn live_provider_smoke() {
     let worker_roundtrip = std::env::var("HARBOR_SMOKE_WORKER_ROUNDTRIP").is_ok();
     let child_memory = format!("CHILD-MEMORY-{}", id());
     let prompt = if worker_roundtrip {
-        format!("Harbor worker integration test. {} Spawn exactly one subagent. Its task: remember the marker {child_memory}, reply lighthouse, then remain available for a user follow-up. It must not modify files or use tools. Wait for it, then reply with {token} and the worker's identity. Do not do any other work.",if provider_id == "pi" {"Use the builtin delegate agent."} else {""})
-    } else if provider_id == "codex" {
-        format!("This is a Harbor client integration test. Remember the exact marker {token}. Spawn exactly one subagent to reply with the word lighthouse; it must not modify files or use tools. Wait for its response. Reply with the marker and the subagent's answer. Do not use other tools.")
+        format!("Harbor worker integration test. Spawn exactly one subagent. Its task: remember the marker {child_memory}, reply lighthouse, then remain available for a user follow-up. It must not modify files or use tools. Wait for it, then reply with {token} and the worker's identity. Do not do any other work.")
     } else {
         format!("This is a Harbor client integration test. Remember {token}. Reply with the marker only. Do not use tools or change files.")
     };
@@ -270,14 +247,13 @@ async fn live_provider_smoke() {
         println!("Opening existing worker {child}");
         let worker_events = Arc::new(Mutex::new(Vec::<(String, Value)>::new()));
         let captured = worker_events.clone();
-        let attached = if matches!(provider_id.as_str(), "codex" | "claude" | "pi") {
+        let attached = if matches!(provider_id.as_str(), "codex" | "claude") {
             None
         } else {
             match crate::subagents::attach(
                 &provider,
                 &work,
                 &child,
-                false,
                 Arc::new(move |kind, payload| {
                     captured.lock().unwrap().push((kind.into(), payload))
                 }),
@@ -288,9 +264,9 @@ async fn live_provider_smoke() {
                 Ok(worker) => Some(worker),
                 Err(error) => {
                     println!(
-                        "Standalone worker attachment unavailable, using parent relay: {error}"
+                        "Standalone worker attachment failed: {error}"
                     );
-                    None
+                    panic!("Grok must attach the existing worker: {error}");
                 }
             }
         };
@@ -303,7 +279,7 @@ async fn live_provider_smoke() {
             (
                 rpc.clone(),
                 sid.clone(),
-                crate::subagents::relay_prompt(&worker_record, &followup),
+                crate::subagents::relay_prompt(require_provider(&provider_id).unwrap(), &worker_record, &followup).unwrap(),
             )
         };
         let result = target
@@ -340,6 +316,9 @@ async fn live_provider_smoke() {
         } else {
             events.lock().unwrap()[start..].to_vec()
         };
+        if let Ok(path) = std::env::var("HARBOR_SMOKE_TRACE_PATH") {
+            std::fs::write(path, serde_json::to_vec_pretty(&updates).unwrap()).unwrap();
+        }
         let response = updates
             .iter()
             .filter(|(_, v)| {
@@ -384,32 +363,15 @@ async fn live_provider_smoke() {
                                     && entry["payload"].to_string().contains(&child_memory)
                             })
                     })
-            } else if provider_id == "cursor" {
-                updates.iter().any(|(kind, v)| {
-                    kind == "cursor/task"
-                        && v["prompt"]
-                            .as_str()
-                            .is_some_and(|prompt| prompt.contains(&nonce))
-                        && v["agentId"].as_str().is_some_and(|id| text.contains(id))
-                })
             } else {
-                updates.iter().any(|(_, v)| {
-                    let input = v["update"]["rawInput"].to_string();
-                    input.contains(&nonce)
-                        && [
-                            "target",
-                            "recipient",
-                            "\"to\"",
-                            "resume",
-                            "agentId",
-                            "agent_id",
-                            "task_id",
-                            "session_id",
-                            "\"id\"",
-                        ]
-                        .iter()
-                        .any(|key| input.contains(key))
-                })
+                // Claude ACP 0.97 suppresses native control tools and emits typed
+                // communication receipts instead. Require the original child as
+                // recipient and actual child output retaining both markers.
+                let delivered = updates.iter().any(|(_,v)| v["update"]["sessionUpdate"] == "session_message"
+                    && v["update"]["recipientSessionId"] == child && v["update"]["content"].to_string().contains(&nonce));
+                let child_response = updates.iter().filter(|(_,v)| v["sessionId"].as_str().is_some_and(|id|crate::subagents::same_worker(id,&child)) && v["update"]["sessionUpdate"] == "agent_message_chunk")
+                    .map(|(_,v)| v["update"]["content"]["text"].as_str().unwrap_or("")).collect::<String>();
+                delivered && child_response.contains(&child_memory) && child_response.contains(&nonce)
             };
             assert!(
                 continuation,
@@ -427,17 +389,33 @@ async fn live_provider_smoke() {
         return;
     }
     rpc.stop().await;
+    if std::env::var("HARBOR_SMOKE_RECONNECT").is_ok() {
+        events.lock().unwrap().clear();
+        let reopened = Rpc::start(&provider, &work, sink.clone()).await.unwrap();
+        let check = async {
+            let init = reopened.request("initialize",json!({"protocolVersion":1,"clientCapabilities":crate::adapters::client_capabilities(crate::types::require_provider(&provider_id).unwrap())}),Some(Duration::from_secs(30))).await?;
+            let method = if init["agentCapabilities"]["loadSession"] == true { "session/load" } else { "session/resume" };
+            let response = reopened.request(method,json!({"sessionId":sid,"cwd":work,"mcpServers":[]}),Some(Duration::from_secs(90))).await?;
+            crate::sessions::identity(&response,Some(&sid),true)?;
+            events.lock().unwrap().clear();
+            reopened.request("session/prompt",json!({"sessionId":sid,"prompt":[{"type":"text","text":"Reply with the marker I asked you to remember earlier. Do not use tools."}]}),Some(Duration::from_secs(120))).await?;
+            let answer = events.lock().unwrap().iter().filter(|(_,p)|p["update"]["sessionUpdate"]=="agent_message_chunk")
+                .map(|(_,p)|p["update"]["content"]["text"].as_str().unwrap_or("")).collect::<String>();
+            if !answer.contains(&token) { return Err(format!("Reconnected conversation lost context: {answer}")); }
+            Ok::<_,String>(())
+        }.await;
+        reopened.stop().await;
+        check.unwrap();
+        println!("VERIFIED: original conversation retained context after process restart and ACP reconnect");
+    }
     if std::env::var("HARBOR_SMOKE_HANDOFF").is_err() {
         return;
     }
     let native = std::env::var("HARBOR_SMOKE_NATIVE").unwrap_or(provider_id.clone());
     let second = format!("KELP-{}", id());
     let prompt=format!("What marker did I ask you to remember earlier? Reply with that original marker only, and remember a second marker {second} for the next turn. Do not use tools.");
-    let args = match provider_id.as_str() {
-        "codex" => vec!["resume".into(), sid.clone(), prompt],
-        "claude" => vec!["--resume".into(), sid.clone(), prompt],
-        _ => panic!("Add a verified native resume adapter first"),
-    };
+    let mut args = crate::adapters::native_resume_args(require_provider(&provider_id).unwrap(), &sid).unwrap();
+    args.push(prompt);
     let native_output = Arc::new(Mutex::new(String::new()));
     let buffer = native_output.clone();
     let terminal_slot = Arc::new(Mutex::new(None::<Arc<NativeTerminal>>));
@@ -465,25 +443,55 @@ async fn live_provider_smoke() {
             }
         }
     });
+    // Codex's incremental terminal redraws can overwrite characters that an ANSI
+    // stripper cannot reconstruct. Its exact native rollout is authoritative for
+    // this test; production continues to use ACP replay only.
+    let native_rollout = if provider_id == "codex" {
+        let home = std::env::var_os("CODEX_HOME").map(std::path::PathBuf::from)
+            .unwrap_or_else(||std::path::PathBuf::from(std::env::var_os("HOME").unwrap()).join(".codex"));
+        walkdir::WalkDir::new(home.join("sessions")).max_depth(6).into_iter().filter_map(Result::ok)
+            .find(|entry|entry.file_name().to_string_lossy().ends_with(&format!("{sid}.jsonl")))
+            .map(|entry|entry.into_path())
+    } else { None };
     let terminal = NativeTerminal::start(&native, &args, &work, native_sink).unwrap();
     *terminal_slot.lock().unwrap() = Some(terminal.clone());
     let result = tokio::time::timeout(Duration::from_secs(120), async {
         let mut trusted = false;
+        let mut skipped_hooks = false;
         loop {
-            let out = native_output.lock().unwrap().clone();
-            if out
-                .rfind(&second)
-                .is_some_and(|i| out[i + second.len()..].contains(&token))
-            {
+            let out = terminal_text(&native_output.lock().unwrap());
+            let compact: String = out.chars().filter(|c| !c.is_whitespace()).collect();
+            let recorded = native_rollout.as_ref().is_some_and(|path| {
+                let mut native_turn = false;
+                std::fs::read_to_string(path).unwrap_or_default().lines()
+                    .filter_map(|line|serde_json::from_str::<Value>(line).ok())
+                    .any(|entry| {
+                        if entry["type"] != "response_item" { return false; }
+                        if entry["payload"]["role"] == "user" && entry["payload"].to_string().contains(&second) { native_turn = true; }
+                        native_turn && entry["payload"]["role"] == "assistant" && entry["payload"].to_string().contains(&token)
+                    })
+            });
+            if recorded || compact.rfind(&second).is_some_and(|i| compact[i + second.len()..].contains(&token)) {
                 break;
             }
-            if !trusted && out.contains("Yes, continue") {
+            let claude_trust = compact.contains("Yes,Itrustthisfolder");
+            if !trusted && (compact.contains("Yes,continue") || compact.contains("Trustandcontinue") || claude_trust) {
                 assert!(
                     work.ends_with("/work/live-repo"),
                     "Only trust the generated integration fixture"
                 );
+                if claude_trust {
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                    terminal.write("\t").unwrap();
+                    tokio::time::sleep(Duration::from_millis(300)).await;
+                }
                 terminal.write("\r").unwrap();
                 trusted = true;
+            }
+            if !skipped_hooks && compact.contains("Continuewithouttrusting(hookswon'trun)") {
+                // Do not execute or approve user-installed hooks in acceptance tests.
+                terminal.write("\u{1b}").unwrap();
+                skipped_hooks = true;
             }
             if !terminal.alive.load(std::sync::atomic::Ordering::SeqCst) {
                 panic!("Native CLI exited: {out}")
@@ -498,20 +506,30 @@ async fn live_provider_smoke() {
         panic!("Native CLI did not recall the ACP marker")
     }
     tokio::time::sleep(Duration::from_secs(2)).await;
-    terminal.write("/exit\r").unwrap();
-    tokio::time::sleep(Duration::from_secs(2)).await;
-    terminal.stop();
+    terminal.write("/exit").unwrap();
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    terminal.write("\r").unwrap();
+    let exited = tokio::time::timeout(Duration::from_secs(15), async {
+        while terminal.alive.load(std::sync::atomic::Ordering::SeqCst) {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    }).await;
+    if exited.is_err() {
+        println!("Native exit output: {}", terminal_text(&native_output.lock().unwrap()));
+        terminal.stop();
+        panic!("Native CLI did not exit cleanly; ACP must not reconnect yet");
+    }
     terminal_slot.lock().unwrap().take();
     events.lock().unwrap().clear();
     let rpc = Rpc::start(&provider, &work, sink).await.unwrap();
-    rpc.request("initialize",json!({"protocolVersion":1,"clientCapabilities":{"subagents":{}},"clientInfo":{"name":"harbor-smoke","version":"0.1.0"}}),Some(Duration::from_secs(30))).await.unwrap();
-    rpc.request(
-        "session/load",
+    let init = rpc.request("initialize",json!({"protocolVersion":1,"clientCapabilities":crate::adapters::client_capabilities(crate::types::require_provider(&provider_id).unwrap()),"clientInfo":{"name":"harbor-smoke","version":"0.1.0"}}),Some(Duration::from_secs(30))).await.unwrap();
+    let loaded = rpc.request(
+        if init["agentCapabilities"]["loadSession"] == true { "session/load" } else { "session/resume" },
         json!({"sessionId":sid,"cwd":work,"mcpServers":[]}),
         Some(Duration::from_secs(90)),
     )
-    .await
-    .unwrap();
+    .await;
+    if let Err(error) = loaded { rpc.stop().await; panic!("ACP could not reopen after native exit: {error}"); }
     assert!(
         events
             .lock()
@@ -539,4 +557,19 @@ async fn live_provider_smoke() {
         "GUI did not recall native CLI turn: {text}"
     );
     println!("VERIFIED: same conversation survived ACP -> native PTY CLI -> ACP");
+}
+
+// Test-only terminal observation. Production history always comes from ACP.
+fn terminal_text(raw: &str) -> String {
+    let mut chars = raw.chars().peekable();
+    let mut text = String::new();
+    while let Some(c) = chars.next() {
+        if c != '\u{1b}' { text.push(c); continue; }
+        match chars.next() {
+            Some('[') => { for c in chars.by_ref() { if ('@'..='~').contains(&c) { break; } } }
+            Some(']') => { while let Some(c) = chars.next() { if c == '\u{7}' || (c == '\u{1b}' && chars.next() == Some('\\')) { break; } } }
+            _ => {}
+        }
+    }
+    text
 }

@@ -16,6 +16,10 @@ impl Operations {
         self.lock("session", id).await
     }
 
+    pub async fn provider(&self, id: &str) -> OwnedMutexGuard<()> {
+        self.lock("provider", id).await
+    }
+
     pub async fn workspace(&self, path: &str) -> OwnedMutexGuard<()> {
         let key = crate::workspaces::canonical_folder(path).unwrap_or_else(|_| path.into());
         self.lock("workspace", &key).await
