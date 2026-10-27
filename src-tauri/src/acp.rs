@@ -133,6 +133,13 @@ impl Rpc {
     ) -> Result<Arc<Self>, String> {
         Self::start_with_policy(provider, cwd, sink, true).await
     }
+    pub async fn start_title_generation(
+        provider: &ProviderDefinition,
+        cwd: &str,
+        sink: Sink,
+    ) -> Result<Arc<Self>, String> {
+        Self::start_with_policy(provider, cwd, sink, true).await
+    }
     async fn start_with_policy(
         provider: &ProviderDefinition,
         cwd: &str,

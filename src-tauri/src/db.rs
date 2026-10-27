@@ -227,6 +227,40 @@ impl Database {
         })
         .collect()
     }
+    pub fn has_user_message(&self, session: &str) -> Result<bool, String> {
+        self.0.lock().map_err(|e| e.to_string())?
+            .query_row("SELECT EXISTS(SELECT 1 FROM events WHERE session_id=?1 AND kind='user_message')", [session], |r| r.get(0))
+            .map_err(|e| e.to_string())
+    }
+    /// A generated title may only replace its original fallback. Provider titles
+    /// win even when their text happens to match that fallback.
+    pub fn set_session_title(
+        &self,
+        id: &str,
+        title: &str,
+        expected: Option<&str>,
+    ) -> Result<Option<SessionRecord>, String> {
+        let mut c = self.0.lock().map_err(|e| e.to_string())?;
+        let tx = c.transaction().map_err(|e| e.to_string())?;
+        let data: String = tx.query_row(
+            "SELECT data FROM records WHERE kind='session' AND id=?1", [id], |r| r.get(0),
+        ).map_err(|e| e.to_string())?;
+        let mut session: SessionRecord = serde_json::from_str(&data).map_err(|e| e.to_string())?;
+        let supplied: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM records WHERE kind='provider-title' AND id=?1)", [id], |r| r.get(0),
+        ).map_err(|e| e.to_string())?;
+        if session.archived || expected.is_some_and(|old| session.title != old || supplied) {
+            return Ok(None);
+        }
+        if expected.is_none() {
+            write_record(&tx, "provider-title", id, &true)?;
+        }
+        session.title = title.into();
+        // Naming a chat is not new activity; retain its sort order and UI state.
+        write_record(&tx, "session", id, &session)?;
+        tx.commit().map_err(|e| e.to_string())?;
+        Ok(Some(session))
+    }
     pub fn update_session(
         &self,
         id: &str,

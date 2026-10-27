@@ -229,7 +229,7 @@ export default function App() {
         workspaceId: workspace || null,
         providerId: provider,
         title:
-          text.split("\n")[0] || pendingFiles[0]?.name || "New conversation",
+          text.trim() || pendingFiles[0]?.name || "New conversation",
         newWorktree: canWorktree && tree,
         branch:
           branch.trim() || `harbor/task-${crypto.randomUUID().slice(0, 8)}`,

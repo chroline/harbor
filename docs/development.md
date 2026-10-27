@@ -45,6 +45,8 @@ the interface uses actual Fluid Functionalism registry components. see [integrat
 
 live provider tests are opt-in, can consume model usage, and use the provider’s existing login:
 
+For background naming, run `cargo test --manifest-path src-tauri/Cargo.toml live_title_generation -- --ignored --nocapture` with `HARBOR_TITLE_COMMAND` set to the ACP executable. `HARBOR_TITLE_PROVIDER` selects `codex` (default), `claude`, or `grok`; `HARBOR_TITLE_ARGS` optionally supplies a JSON array of arguments. This opens a temporary title-only session using the selected adapter.
+
 ```sh
 HARBOR_SMOKE_COMMAND=/absolute/path/to/codex-acp \
 HARBOR_SMOKE_WORKDIR=/absolute/path/to/test/repository \

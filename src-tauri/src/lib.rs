@@ -17,6 +17,7 @@ mod providers;
 mod sessions;
 mod subagents;
 mod terminal;
+mod titles;
 mod tab_windows;
 mod types;
 #[cfg(target_os = "macos")]
@@ -51,6 +52,7 @@ pub struct AppState {
     tab_windows: tab_windows::TabWindows,
     discoveries: Mutex<HashMap<String, Arc<Mutex<Option<model_config::Discovery>>>>>,
     command_catalogs: commands::Catalogs,
+    title_generator: titles::Generator,
     generations: StdMutex<HashMap<String, String>>,
     operations: operations::Operations,
     quitting: AtomicBool,
@@ -73,6 +75,13 @@ impl AppState {
         } else {
             payload
         };
+        if kind == "session/update" {
+            match titles::provider_title(&self.db, id, &payload) {
+                Ok(Some(session)) => { let _ = self.app.emit("session-changed", session); }
+                Err(error) => { let _ = self.app.emit("storage-error", error); }
+                _ => {}
+            }
+        }
         if kind == "session/update" {
             if let Ok(session) = self.db.get::<SessionRecord>("session", id) {
                 if let Ok(adapter)=adapters::resolve(&session.provider_id) {
@@ -182,6 +191,7 @@ impl AppState {
             .ok_or("This agent is disconnected. Reconnect to continue.".into())
     }
     async fn stop(&self, id: &str) {
+        self.title_generator.cancel(id).await;
         self.relay_targets.lock().unwrap().remove(id);
         let transports = {
             let mut children = self.child_transports.lock().unwrap();
@@ -206,6 +216,7 @@ impl AppState {
         }
     }
     async fn shutdown(&self) {
+        self.title_generator.stop().await;
         self.command_catalogs.stop().await;
         let terms = std::mem::take(&mut *self.terminals.lock().await);
         for (_, t) in terms {
@@ -657,11 +668,7 @@ async fn create_session(
     .await?;
     let session = SessionRecord {
         id: session_id,
-        title: if title.trim().is_empty() {
-            "New conversation".into()
-        } else {
-            title.chars().take(90).collect()
-        },
+        title: titles::fallback(&title),
         workspace_id,
         is_git: workspaces::git_directory(&cwd),
         project_id: None,
@@ -1012,6 +1019,7 @@ async fn send_prompt(
         return Err("Return to GUI mode first".into());
     }
     if rpc.busy.load(Ordering::SeqCst) { return Err("This agent is already working".into()); }
+    let first_prompt = !state.db.has_user_message(&session_id)?;
     let (content, file_metadata, paths) = attachments::prepare(&state.data, &text, &files, &s.capabilities.raw).await?;
     if rpc.busy.swap(true, Ordering::SeqCst) {
         return Err("This agent is already working".into());
@@ -1030,6 +1038,28 @@ async fn send_prompt(
     drop(configuration_guard);
     drop(guard);
     state.emit(&session_id, "user_message", json!({"text":text,"attachments":file_metadata}));
+    if first_prompt && !text.trim().is_empty() {
+        let state = state.inner().clone();
+        let original = s.title.clone();
+        let provider_id = s.provider_id.clone();
+        let session_id = session_id.clone();
+        let text = text.clone();
+        // Use a separate transport so naming can finish while the first turn
+        // is still working. Native title updates retain priority.
+        tauri::async_runtime::spawn(async move {
+            if state.quitting.load(Ordering::SeqCst)
+                || state.db.get::<SessionRecord>("session", &session_id).map_or(true, |s| s.archived)
+                || state.db.get::<bool>("provider-title", &session_id).unwrap_or(false) {
+                return;
+            }
+            let Ok(provider) = state.provider(&provider_id) else { return; };
+            if let Ok(title) = state.title_generator.generate(&session_id, &provider, &text).await {
+                if let Ok(Some(session)) = state.db.set_session_title(&session_id, &title, Some(&original)) {
+                    let _ = state.app.emit("session-changed", session);
+                }
+            }
+        });
+    }
     let result = rpc
         .request(
             "session/prompt",
@@ -1647,6 +1677,7 @@ pub fn run() {
                 tab_windows: tab_windows::TabWindows::default(),
                 discoveries: Mutex::new(HashMap::new()),
                 command_catalogs: commands::Catalogs::default(),
+                title_generator: titles::Generator::default(),
                 generations: StdMutex::new(HashMap::new()),
                 operations: operations::Operations::default(),
                 quitting: AtomicBool::new(false),

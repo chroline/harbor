@@ -129,7 +129,7 @@ export function LaunchDialog({
       const s = await call<SessionRecord>("create_session", {
         workspaceId: workspaceId || null,
         providerId: provider,
-        title: prompt.split("\n")[0] || files[0]?.name || "New conversation",
+        title: prompt.trim() || files[0]?.name || "New conversation",
         newWorktree: canWorktree && tree,
         branch,
         base,
