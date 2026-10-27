@@ -29,6 +29,8 @@ Woven light is implemented in the new-task UI at **40% intensity** and **0.5× m
 
 While animating, the background paints on every display refresh, including 120 Hz. Artwork is sampled once per image/size change on a separate canvas; the GPU retains the 3200-pixel sampling grid and filters directly into a display-resolution canvas. There is no intermediate enlargement or per-frame layout measurement. Hidden, offscreen, inactive, and reduced-motion scenes still stop scheduling animation. A single pool has twice the original falloff radius and the same peak brightness. In the product, it follows the cursor until the cursor leaves the frame. Composer focus fades the pool out and transitions all dots to 20% over 450 ms, then stops scheduling frames until blur. Interaction state stays outside React in `src/lib/woven-light-motion.ts`; the GPU and Canvas fallback share the same size endpoints and focus blend.
 
+To measure the actual app, open `http://127.0.0.1:1420/?skyline-performance` in development and select **Measure animation (10 seconds)**. This opt-in probe counts canvas paints and separately reports RAF cadence; it is excluded from production builds. `/tests/skyline-performance.html?skyline=day` runs the same page with deterministic fixture IPC and lighting. `/tests/skyline-comparison.html` compares frozen frames with the previous renderer. On the local 120 Hz browser at 1280×720 and DPR 2, the actual page measured 120 fps (9.8 ms p95 frame interval), up from the previous fixture baseline of 21.6 fps. This is a browser measurement, not a native packaged WebKit measurement.
+
 The lab lives in `labs/backgrounds.html` and `src/design-lab/`. It uses bundled artwork, makes no provider calls, and does not change the app's saved settings. It is a development-only entry point, excluded from the production app bundle. A URL fragment such as `#dither` opens a specific study directly.
 
 ## visual feedback
@@ -51,7 +53,7 @@ the TypeScript suite covers streamed chunks, duplicate events, parent/child rout
 
 the interface uses actual Fluid Functionalism registry components. see [integration details and compatibility patches](fluid-functionalism.md).
 
-`tests/ui.html` is an explicitly labeled deterministic browser IPC fixture. it is excluded from the production bundle. Ego-browser verified launch/configuration, model-dependent effort changes, worker views, syntax highlighting, unified/split review, draft and panel retention, keyboard search/focus, reduced motion, 900×620 layout, and both neutral themes.
+`tests/ui.html` is an explicitly labeled deterministic browser IPC fixture. Add `?skyline=dawn`, `day`, `sunset`, or `night` to check a fixed background period. it is excluded from the production bundle. Ego-browser verified launch/configuration, model-dependent effort changes, worker views, syntax highlighting, unified/split review, draft and panel retention, keyboard search/focus, reduced motion, 900×620 layout, and both neutral themes.
 
 live provider tests are opt-in, can consume model usage, and use the provider’s existing login:
 

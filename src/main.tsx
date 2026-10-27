@@ -10,6 +10,14 @@ import { StandaloneTab } from "./components/StandaloneTab";
 import { desktop } from "./lib/api";
 import "./styles.css";
 
+// Opt-in local measurement of the actual app; removed from production builds.
+if (
+  import.meta.env.DEV &&
+  new URLSearchParams(location.search).has("skyline-performance")
+) {
+  void import("../tests/skyline-performance-probe");
+}
+
 // Include the toolbar in Vite dev and packaged development builds only.
 const Agentation =
   import.meta.env.DEV || import.meta.env.MODE === "development"

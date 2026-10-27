@@ -1,5 +1,6 @@
 import { planRequests, reviewText } from "./providers/plan-reviews";
 import { supportedProviders } from "../src/lib/bindings/supported-providers";
+import { skylineTimeOfDay } from "../src/lib/skyline-period";
 // Deterministic browser-only IPC fixture. Not included in the production entry or bundle.
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
@@ -40,7 +41,11 @@ const data: Bootstrap = {
   sessions: [],
   archives: [],
   worktrees: [],
-  settings: { theme: "dark", notifications: false },
+  settings: {
+    theme: "dark",
+    notifications: false,
+    skylineTimeOfDay: skylineTimeOfDay(new URLSearchParams(location.search).get("skyline")),
+  },
 };
 if (showcase) populateShowcase(data);
 const archiveAlignment = new URLSearchParams(location.search).has("archive-alignment");
