@@ -21,6 +21,12 @@ when moving from the old ad-hoc build, macOS may ask once more for each protecte
 
 `npm run desktop:verify-signing` checks the actual app signature, signs a modified temporary copy, and verifies that the changed copy satisfies the original app identity. `npm run desktop` runs Tauri's unbundled hot-reload executable and does not use this packaged identity; use the built `.app` when checking folder permission persistence. release signing can override the local certificate with `APPLE_SIGNING_IDENTITY`.
 
+## background design lab
+
+With `npm run dev` running, open [Background studies](http://127.0.0.1:1420/labs/backgrounds.html) for six independent animated treatments: Light tide, Woven light, Liquid glass, Contour field, Dither bloom, and Chromatic echo. All studies share the selected city and lighting so they can be compared fairly. Dawn and Day use the light palette for the preview, composer, and lab controls; Sunset and Night use the dark palette. Open any study to preview it behind an editable sample composer, adjust intensity and speed, or add it to the browser-local shortlist. Pause and reduced-motion preferences stop animation; offscreen and hidden previews also pause.
+
+The lab lives in `labs/backgrounds.html` and `src/design-lab/`. It uses bundled artwork, makes no provider calls, and does not change the app's saved settings. It is a development-only entry point, excluded from the production app bundle. A URL fragment such as `#dither` opens a specific study directly.
+
 ## visual feedback
 
 [Agentation](https://www.agentation.com/) is installed as a pinned development dependency. its toolbar appears in the bottom-right corner in `npm run dev` and `npm run desktop`. to package a development app with the toolbar, run `npm run desktop:build:dev` and open `src-tauri/target/debug/bundle/macos/Harbor.app`. this uses `npm run build:dev` to include Agentation in the bundled frontend. development assets go into `dist-dev/`, separate from production's `dist/`, so a production frontend build cannot replace them while Tauri is compiling. click an element, write feedback, and copy the annotations into your coding agent. the toolbar and its package code are excluded from production builds (`npm run build` and `npm run desktop:build`).
