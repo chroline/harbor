@@ -3649,14 +3649,11 @@ html.transitioning *::after {
   color: var(--muted-foreground);
 }
 .command-reference {
-  color: var(--blue-600, #2563eb);
-  font-weight: 700;
+  @apply text-blue-400;
+  font-weight: 500;
   font-variation-settings:
-    "wght" 700,
+    "wght" 500,
     "opsz" 14;
-}
-.dark .command-reference {
-  color: #78a9ff;
 }
 .command-menu {
   width: min(28rem, var(--radix-popover-trigger-width));
