@@ -275,11 +275,7 @@ function Editor({
         return;
       }
     }
-    if (
-      event.key === "Enter" &&
-      (event.metaKey || event.ctrlKey) &&
-      !event.shiftKey
-    ) {
+    if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       event.stopPropagation();
       onSubmit();

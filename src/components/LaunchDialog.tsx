@@ -352,7 +352,7 @@ export function LaunchDialog({
         <footer className="launch-footer">
           <div className="launch-shortcuts">
             <span>
-              <kbd>⌘ ↵</kbd> {session ? "Start task" : "Connect"}
+              <kbd>↵</kbd> {session ? "Start task" : "Connect"}
             </span>
             <span>
               <kbd>esc</kbd> Close

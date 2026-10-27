@@ -3277,6 +3277,16 @@ html.transitioning *::after {
   width: 100%;
   min-width: 0;
 }
+/* Keep loading surfaces and the submit spinner opaque; dim only the disabled
+   editor and control contents so their opacity never compounds. */
+.task-composer-layout[aria-busy="true"] .task-composer,
+.task-composer-layout[aria-busy="true"] button:disabled {
+  opacity: 1;
+}
+.task-composer-layout[aria-busy="true"] .command-editor,
+.task-composer-layout[aria-busy="true"] button:disabled:not(.task-composer-action) > .relative {
+  opacity: 0.7;
+}
 .task-composer-context {
   display: flex;
   align-items: center;

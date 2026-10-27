@@ -10,13 +10,15 @@ open **Harbor.app** if you have a local build, or follow the [development guide]
 
 home contains the task composer and workspace picker. tasks belong directly to a local workspace folder; adding a workspace does not require a project. use **add workspace** in the sidebar or composer to choose any local folder. existing project records remain available, but project shortcuts select their workspace for new tasks. agents are selected in the composer and configured in settings. conversations appear under their saved workspace in the sidebar.
 
-1. open settings and select your agent. configure the ACP executable and arguments, one argument per line. check connection setup to see executable paths, native version, and Worktrunk availability.
+1. open settings and select your agent. configure its executable; **advanced** contains arguments, one per line, and a separate native CLI if needed. use **save and check** to verify executable paths, native version, ACP compatibility, authentication, and temporary session creation without submitting a prompt.
 2. authenticate in the provider’s own CLI if necessary. Harbor reuses that login; ACP authentication methods appear when advertised.
 3. select an agent and model on home, even before adding a workspace. reasoning choices refresh when the model changes. Harbor discovers these through a reusable ACP session in a temporary directory, without sending a prompt or creating a Harbor chat or worktree. some providers may retain that blank session in their own history.
 4. leave **no workspace** selected for a freeform chat. Harbor keeps its working files in an app-managed conversation folder and never calls Git or Worktrunk for it. these chats appear under no workspace and retain their files when archived. for folder work, add a workspace using any local directory and select it in the composer. Git checkout roots also offer the existing checkout or a new Worktrunk branch. your selected model and reasoning effort are validated and applied to the new session. new worktrees require an existing commit and `wt` on PATH. provider-advertised modes can be selected before launch or in an existing chat; valid model preferences are remembered per provider.
 5. start the task. approvals, tool activity, worker transcripts, plans, and code appear in the conversation. review changes in unified or split view; open files with your configured external editor.
 
-executable paths may be absolute. Harbor includes standard Homebrew, `~/.local/bin`, `~/.grok/bin`, Cargo, and installed NVM Node locations in its launch PATH. arguments are passed directly without shell interpolation. arbitrary custom ACP executables can be configured in settings.
+executable paths may be absolute. Harbor includes standard Homebrew, `~/.local/bin`, `~/.grok/bin`, Cargo, and installed NVM Node locations in its launch PATH. arguments are passed directly without shell interpolation. only Claude Code, OpenAI Codex, and Grok Build are supported. Executable overrides configure these integrations; there is no custom-agent entry.
+
+if an agent is installed under another name, choose **configure executable** beside the connection error or in the model menu. enter a command name or use **browse** to select its file. for example, point Grok Build at `/path/to/grok`. **advanced** contains its launch arguments (`--no-auto-update`, `agent`, and `stdio` for Grok Build) and the optional separate native CLI executable. when the ACP and native CLI use the same executable, changing the ACP executable updates both; separately configured adapters keep their own native CLI. **save changes** applies the connection and reloads model discovery. **save and check** establishes a real ACP session and distinguishes missing executables, authentication failures, protocol incompatibility, and timeouts. It displays advertised sign-in methods when available. the same fields are available under settings → agent connections.
 
 ## arrange the sidebar
 
@@ -30,7 +32,7 @@ drag any task tab sideways to reorder it; the tab follows the pointer and swaps 
 
 ## worker conversations
 
-each task contains a tab for its parent conversation and a tab for every subagent in the top bar. new subagents appear automatically without interrupting the active conversation. use the tabs or their arrow-key navigation to switch conversations. selecting a worker opens its existing conversation so you can send a follow-up. parent and child drafts, messages, approvals, and turn completion remain separate. Prime resumes the exact child session with its existing context. OpenCode exposes loadable child sessions. Codex, Claude, Cursor, and Pi use a clearly labeled parent relay with native worker messaging/resume tools where direct child input is unavailable. Claude's delayed child completion is tracked after the parent turn ends. a custom provider must expose worker identities and support either direct recovery or native continuation through its parent.
+each task contains a tab for its parent conversation and a tab for every subagent in the top bar. new subagents appear automatically without interrupting the active conversation. use the tabs or their arrow-key navigation to switch conversations. selecting a worker opens its existing conversation so you can send a follow-up. parent and child drafts, messages, approvals, and turn completion remain separate. Grok Build opens the existing child session directly. OpenAI Codex and Claude Code use a clearly labeled parent relay with native worker messaging/resume tools. Claude's delayed child completion and typed parent/worker messages remain visible after the parent turn ends. Failed worker attachment retains history and reports the failure rather than creating a replacement worker.
 
 see [provider compatibility](providers.md) and the [live verification record](subagent-verification.md) for the tested continuation routes.
 
@@ -50,6 +52,10 @@ the mode picker beside the model shows the current working mode. changes made du
 | ⌘ t | new terminal tab in the current task |
 | ⌘ w | close the active terminal tab |
 | ⌘ ⇧ t | switch chat / native terminal when supported |
-| ⌘ enter (ctrl enter on other platforms) / enter | send / newline |
+| enter / shift enter | send / newline |
 | shift tab in the chat input | cycle the modes advertised by the connected provider |
 | escape | close dialogs |
+
+## upgrading to three-provider support
+
+The first launch migrates Harbor's database to version 3. Chats from removed providers, including archived chats and custom agents, are permanently removed along with their transcripts, worker records, connection settings, and cached preferences. Working files, freeform chat folders, projects, workspaces, Git worktrees, recovery archives, and native CLI history are preserved. The upgrade does not uninstall CLIs or remove their credentials.

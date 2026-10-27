@@ -107,17 +107,16 @@ it("keeps executable configuration open when saving clears the connection error"
   );
 });
 
-it("uses the same modifier shortcut and button action without sending on Enter or during composition", () => {
+it("sends on Enter and the button, but not on Shift+Enter or during composition", () => {
   const submit = vi.fn();
   render(<TaskComposer {...defaults} onSubmit={submit} />);
   const input = screen.getByRole("textbox");
-  fireEvent.keyDown(input, { key: "Enter" });
-  fireEvent.keyDown(input, { key: "Enter", metaKey: true, isComposing: true });
+  fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+  fireEvent.keyDown(input, { key: "Enter", isComposing: true });
   expect(submit).not.toHaveBeenCalled();
-  fireEvent.keyDown(input, { key: "Enter", metaKey: true });
-  fireEvent.keyDown(input, { key: "Enter", ctrlKey: true });
+  fireEvent.keyDown(input, { key: "Enter" });
   fireEvent.click(screen.getByRole("button", { name: "Send message" }));
-  expect(submit).toHaveBeenCalledTimes(3);
+  expect(submit).toHaveBeenCalledTimes(2);
 });
 
 it.each([{ actionDisabled: true }, { busy: true }, { disabled: true }])(

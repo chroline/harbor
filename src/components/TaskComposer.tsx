@@ -52,7 +52,7 @@ export function TaskComposer({
   const [fileError, setFileError] = useState<string | null>(null);
   const label = onStop ? "Stop response" : actionLabel;
   return (
-    <div className="task-composer-layout">
+    <div className="task-composer-layout" aria-busy={busy || undefined}>
       <SizeProvider size="compact">
         {context && (
           <div className="task-composer-context">
@@ -100,7 +100,6 @@ export function TaskComposer({
         className="task-composer"
         size="default"
         minRows={2}
-        submitOn="mod-enter"
         onKeyDownCapture={(e) => {
           if (
             e.target instanceof HTMLElement &&
@@ -160,6 +159,7 @@ export function TaskComposer({
               className="task-composer-action"
               size="icon-compact"
               aria-label={label}
+              aria-busy={busy || undefined}
               disabled={
                 onStop
                   ? input.disabled
