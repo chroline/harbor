@@ -1,4 +1,5 @@
 import { planRequests } from "../../tests/providers/plan-reviews";
+import { questionRequests } from "../../tests/providers/questions";
 // @vitest-environment jsdom
 import { beforeAll, afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -266,21 +267,21 @@ describe("ACP interactions", () => {
   };
   it("submits typed form answers and exact child/request IDs", async () => {
     render(<RequestCard sessionId="host" request={request} />);
-    fireEvent.change(screen.getByRole("combobox", { name: "Scope *" }), {
-      target: { value: "backend" },
-    });
+    fireEvent.click(screen.getByRole("radio", { name: "Backend" }));
+    fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
     fireEvent.click(screen.getByRole("checkbox", { name: "Unit" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "Browser" }));
+    fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
     fireEvent.change(screen.getByRole("textbox", { name: "Other" }), {
       target: { value: "Keep compatibility" },
     });
-    fireEvent.change(screen.getByRole("combobox", { name: "Approve" }), {
-      target: { value: "false" },
-    });
+    fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
+    fireEvent.click(screen.getByRole("radio", { name: "No" }));
+    fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
     fireEvent.change(screen.getByRole("spinbutton", { name: "Count" }), {
       target: { value: "2" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Submit answers" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     await waitFor(() =>
       expect(call).toHaveBeenCalledWith("answer_request", {
         sessionId: "host",
@@ -298,7 +299,7 @@ describe("ACP interactions", () => {
       }),
     );
   });
-  it.each(["Decline", "Cancel"])(
+  it.each(["Skip", "Cancel"])(
     "supports %s without inventing answers",
     async (action) => {
       render(<RequestCard sessionId="host" request={request} />);
@@ -306,7 +307,7 @@ describe("ACP interactions", () => {
       await waitFor(() =>
         expect(call).toHaveBeenCalledWith(
           "answer_request",
-          expect.objectContaining({ result: { action: action.toLowerCase() } }),
+          expect.objectContaining({ result: { action: action === "Skip" ? "decline" : "cancel" } }),
         ),
       );
     },
@@ -314,19 +315,39 @@ describe("ACP interactions", () => {
   it("allows retry after a failed response", async () => {
     call.mockRejectedValueOnce(new Error("Transport unavailable"));
     render(<RequestCard sessionId="host" request={request} />);
-    fireEvent.click(screen.getByRole("button", { name: "Decline" }));
+    fireEvent.click(screen.getByRole("button", { name: "Skip" }));
     await waitFor(() =>
       expect(setError).toHaveBeenCalledWith("Error: Transport unavailable"),
     );
     call.mockResolvedValueOnce(undefined);
-    fireEvent.click(screen.getByRole("button", { name: "Decline" }));
+    fireEvent.click(screen.getByRole("button", { name: "Skip" }));
     await waitFor(() => expect(call).toHaveBeenCalledTimes(2));
+  });
+  it("retains the choice and note when submitting fails, and retries the same answer", async () => {
+    call.mockRejectedValueOnce(new Error("Transport unavailable"));
+    render(<RequestCard sessionId="host" request={questionRequests.codex} />);
+    fireEvent.click(screen.getByRole("radio", { name: "Blue" }));
+    fireEvent.change(screen.getByRole("textbox", { name: /Something else/ }), { target: { value: "Navy" } });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "Blue" }).getAttribute("aria-checked")).toBe("true");
+    expect((screen.getByRole("textbox", { name: /Something else/ }) as HTMLTextAreaElement).value).toBe("Navy");
+    call.mockResolvedValueOnce(undefined);
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await waitFor(() => expect(call).toHaveBeenCalledTimes(2));
+    expect(call.mock.calls[0]).toEqual(call.mock.calls[1]);
+  });
+  it("starts a fresh draft when a provider reuses a request ID for a different question", () => {
+    const view = render(<RequestCard sessionId="host" request={questionRequests.claude} />);
+    fireEvent.click(screen.getByRole("radio", { name: "Blue" }));
+    fireEvent.change(screen.getByRole("textbox", { name: /Something else/ }), { target: { value: "Navy" } });
+    view.rerender(<RequestCard sessionId="host" request={{ ...questionRequests.claude, params: { ...questionRequests.claude.params, toolCallId: "next-question" } }} />);
+    expect(screen.getByRole("radio", { name: "Blue" }).getAttribute("aria-checked")).toBe("false");
+    expect((screen.getByRole("textbox", { name: /Something else/ }) as HTMLTextAreaElement).value).toBe("");
   });
   it("does not submit missing required answers or unsupported schemas", () => {
     const view = render(<RequestCard sessionId="host" request={request} />);
-    fireEvent.submit(
-      screen.getByRole("button", { name: "Submit answers" }).closest("form")!,
-    );
+    fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
     expect(screen.getByRole("alert").textContent).toContain("Answer Scope");
     expect(call).not.toHaveBeenCalled();
     view.rerender(
@@ -346,7 +367,7 @@ describe("ACP interactions", () => {
     );
     expect(
       screen
-        .getByRole("button", { name: "Submit answers" })
+        .getByRole("button", { name: "Continue" })
         .hasAttribute("disabled"),
     ).toBe(true);
   });

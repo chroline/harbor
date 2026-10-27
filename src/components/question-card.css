@@ -1,0 +1,57 @@
+/* Fluid owns the flow and controls; Harbor supplies the shared plan-card surfaces. */
+.request-card.request-card-question {
+  padding: 0;
+  overflow: visible;
+  max-width: none;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.chat-transcript .request-card-question {
+  margin-inline: calc(-1 * var(--transcript-message-inset));
+  width: calc(100% + 2 * var(--transcript-message-inset));
+}
+.harbor-question-card {
+  max-width: none;
+  min-width: 0;
+}
+.harbor-question-card[data-fluid-questions] {
+  padding: 0;
+}
+.harbor-question-card[aria-disabled="true"] [data-slot="question-content"] {
+  opacity: 0.65;
+}
+.question-card-description {
+  margin: 0 0 0.5rem;
+  white-space: pre-line;
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.harbor-question-card [data-fluid-hover-index] {
+  overflow-wrap: anywhere;
+}
+.question-card-preview {
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 14rem;
+  overflow: auto;
+  background: var(--hover);
+  border-radius: var(--radius-lg);
+  font-size: 0.75rem;
+}
+.question-card-error,
+.question-card-unsupported {
+  overflow-wrap: anywhere;
+}
+.question-card-error {
+  color: var(--destructive);
+  font-size: 0.8125rem;
+}
+.request-card-question > .request-child-label {
+  padding: 1rem 1.25rem 0;
+  margin: 0;
+}

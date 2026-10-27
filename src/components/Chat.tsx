@@ -1218,7 +1218,6 @@ export function RequestCard({
   const { setError } = useStore();
   const [busy, setBusy] = useState(false);
   const [answerError, setAnswerError] = useState<string>();
-  const [questionAttempt, setQuestionAttempt] = useState(0);
   const p = request.params;
   const answer = async (result: unknown) => {
     setBusy(true);
@@ -1234,22 +1233,21 @@ export function RequestCard({
     } catch (e) {
       setError(String(e));
       setAnswerError(String(e));
-      setQuestionAttempt((v) => v + 1);
     } finally {
       setBusy(false);
     }
   };
   const review = planReview(request, providerId);
   return (
-    <Card className={`request-card${review ? " request-card-plan" : ""}`}>
+    <Card className={`request-card${review ? " request-card-plan" : request.method === "elicitation/create" ? " request-card-question" : ""}`}>
       {childName && <p className="request-child-label">{childName}</p>}
       {review ? <PlanReview review={review} busy={busy} error={answerError} onSelect={(choice) => void answer({outcome:{outcome:"selected",optionId:choice.id}})} /> : <>
-      <div className="request-heading">
+      {request.method !== "elicitation/create" && <div className="request-heading">
         <ShieldCheck size={rem(16)} />
-        <strong>{request.method === "elicitation/create" ? "Your input is needed" : "Your permission is needed"}</strong>
-      </div>
+        <strong>Your permission is needed</strong>
+      </div>}
       {request.method === "elicitation/create" ? (
-        <ElicitationForm key={questionAttempt} params={p} busy={busy} onAnswer={(result) => void answer(result)} />
+        <ElicitationForm key={JSON.stringify([request.id, p.toolCallId, p.message, p.requestedSchema])} params={p} busy={busy} error={answerError} onAnswer={(result) => void answer(result)} />
       ) : request.method === "session/request_permission" ? (
         <>
           <p>

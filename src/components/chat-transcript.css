@@ -215,9 +215,6 @@
 .fluid-questionnaire [data-slot="questionnaire-choices"] {
   gap: 0;
 }
-.request-card.request-card-question {
-  padding: 1.125rem;
-}
 @media (prefers-reduced-motion: reduce) {
   [data-slot="trace-line"][data-status="running"] > [data-slot="trace-title"] {
     animation: none;

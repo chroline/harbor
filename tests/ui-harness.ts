@@ -1,4 +1,5 @@
 import { planRequests, reviewText } from "./providers/plan-reviews";
+import { questionRequests } from "./providers/questions";
 import { supportedProviders } from "../src/lib/bindings/supported-providers";
 import { skylineTimeOfDay } from "../src/lib/skyline-period";
 // Deterministic browser-only IPC fixture. Not included in the production entry or bundle.
@@ -488,6 +489,14 @@ if (!showcase) document.body.append(label);
 
 Object.assign(window, {
   __harborFixture: {
+    showQuestion: async (provider: string) => {
+      const s = data.sessions.at(-1)!;
+      await event(s, "disconnected", {});
+      await event(s, "user_message", { text: "Ask me a question using the question tool." });
+      await event(s, "request", structuredClone(questionRequests[provider]));
+      s.status = "needs_input";
+      await changed(s);
+    },
     failNext: (command: string, message: string) => failures.set(command, message),
     pauseNext: (command: string) => {
       let release!: () => void;

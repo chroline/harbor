@@ -262,14 +262,17 @@ option {
   }
 }
 code,
-pre,
-kbd {
+pre {
   font-family: "SFMono-Regular", Consolas, monospace;
 }
-kbd {
-  font-size: 0.8125rem;
-  color: var(--dim);
-  white-space: nowrap;
+@layer base {
+  /* Component keycaps supply their own type and contrast through utilities. */
+  kbd {
+    font-family: "SFMono-Regular", Consolas, monospace;
+    font-size: 0.8125rem;
+    color: var(--dim);
+    white-space: nowrap;
+  }
 }
 a {
   color: var(--primary);
@@ -2906,9 +2909,6 @@ html.transitioning *::after {
   width: 100%;
 }
 .request-card {
-  padding: 1.125rem;
-}
-.request-card.request-card-question {
   padding: 1.125rem;
 }
 .request-questions fieldset {
