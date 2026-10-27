@@ -1,4 +1,3 @@
-import { ProviderConnectionButton } from "./ProviderConnectionButton";
 import { supportedProviderId, defaultProvider } from "../lib/providers";
 import { prepareAttachments, restoreDraftFiles } from "../lib/attachments";
 import {
@@ -6,6 +5,7 @@ import {
   type AvailableCommand,
 } from "../lib/commands";
 import { DiscoveryModelMenu, SessionModelMenu } from "./ModelMenu";
+import { ProviderConnectionButton } from "./ProviderConnectionButton";
 import { useCommandCatalog } from "../lib/command-catalog";
 import { useProviderConfig } from "../lib/provider-config";
 import { json } from "../lib/api";
@@ -288,7 +288,6 @@ export function LaunchDialog({
                 )}
               </>
             }
-            configurationAction={<ProviderConnectionButton providerId={provider} disabled={busy} />}
             modelMenu={
               session ? (
                 <SessionModelMenu session={session} disabled={busy} />
@@ -300,6 +299,9 @@ export function LaunchDialog({
                   disabled={busy}
                 />
               )
+            }
+            configurationAction={
+              <ProviderConnectionButton providerId={provider} disabled={busy} />
             }
           />
 

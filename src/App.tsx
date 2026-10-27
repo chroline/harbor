@@ -1,4 +1,3 @@
-import { ProviderConnectionButton } from "./components/ProviderConnectionButton";
 import { supportedProviderId, defaultProvider } from "./lib/providers";
 import {
   prepareAttachments,
@@ -83,6 +82,7 @@ import {
   providerGlyph,
 } from "./components/shared";
 import { DiscoveryModelMenu } from "./components/ModelMenu";
+import { ProviderConnectionButton } from "./components/ProviderConnectionButton";
 import { useCommandCatalog } from "./lib/command-catalog";
 import { useProviderConfig } from "./lib/provider-config";
 import { Chat } from "./components/Chat";
