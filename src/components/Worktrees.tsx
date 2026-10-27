@@ -10,7 +10,8 @@ import {
 import { Tabs, TabsList, TabItem, TabPanel } from "./ui/tabs";
 import { Badge } from "./ui/badge";
 import { InputCopy } from "./ui/input-copy";
-import { useEffect, useState } from "react";
+import { Banner, BannerDescription } from "./ui/banner";
+import { useEffect, useRef, useState } from "react";
 import {
   GitBranch,
   Archive,
@@ -34,8 +35,12 @@ export function Worktrees({
   const [tab, setTab] = useState<"active" | "archives">("active");
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
   const [busy, setBusy] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const loadGeneration = useRef(0);
   const load = async () => {
+    const generation = ++loadGeneration.current;
     setBusy(true);
+    setLoadError(null);
     try {
       const lists = await Promise.all(
         data.workspaces
@@ -48,16 +53,21 @@ export function Worktrees({
             }));
           }),
       );
+      if (generation !== loadGeneration.current) return;
       setRows(lists.flat());
       await refresh();
     } catch (e) {
-      setError(String(e));
+      if (generation === loadGeneration.current)
+        setLoadError(e instanceof Error ? e.message : String(e));
     } finally {
-      setBusy(false);
+      if (generation === loadGeneration.current) setBusy(false);
     }
   };
   useEffect(() => {
     void load();
+    return () => {
+      loadGeneration.current++;
+    };
   }, [
     data.workspaces
       .map((w) => `${w.id}:${w.name}:${w.path}:${w.available}:${w.isGitRoot}`)
@@ -114,7 +124,21 @@ export function Worktrees({
         </Button>
       </div>
       <TabPanel value="active">
-        {rows.length ? (
+        {loadError && (
+          <Banner status="error" className="worktrees-load-error">
+            <BannerDescription>
+              Couldn’t refresh worktrees. {loadError}
+              {rows.length > 0 &&
+                " Previously loaded worktrees are shown below."}
+            </BannerDescription>
+          </Banner>
+        )}
+        {busy && !rows.length ? (
+          <div className="large-empty" role="status">
+            <RefreshCw size={rem(24)} className="spin" aria-hidden="true" />
+            <p>Loading worktrees…</p>
+          </div>
+        ) : rows.length ? (
           <div className="worktree-table-wrap">
             <Table>
               <TableHeader>
@@ -136,12 +160,18 @@ export function Worktrees({
                     (s) => s.worktreeId === tree?.id && !s.archived,
                   );
                   return (
-                    <TableRow key={str(row.path)} index={index}>
+                    <TableRow
+                      key={`${str(row.workspace)}:${str(row.path)}`}
+                      index={index}
+                    >
                       <TableCell>
                         <strong>{str(row.branch, "Detached HEAD")}</strong>
                         <InputCopy
                           value={str(row.path)}
                           label="Worktree path"
+                          labelHidden
+                          wrap
+                          size="compact"
                         />
                       </TableCell>
                       <TableCell>{str(row.workspace)}</TableCell>
@@ -172,7 +202,7 @@ export function Worktrees({
               </TableBody>
             </Table>
           </div>
-        ) : (
+        ) : !loadError ? (
           <div className="large-empty">
             <div className="empty-icon">
               <GitBranch size={rem(30)} />
@@ -188,7 +218,7 @@ export function Worktrees({
               </span>
             </Button>
           </div>
-        )}
+        ) : null}
       </TabPanel>
       <TabPanel value="archives">
         {archiveCount > 0 && (

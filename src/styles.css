@@ -2808,11 +2808,33 @@ html.transitioning *::after {
 .worktree-table-wrap {
   overflow-x: auto;
 }
+.worktrees-load-error {
+  margin-bottom: 1rem;
+}
+.worktree-table-wrap table {
+  table-layout: fixed;
+}
+.worktree-table-wrap th:nth-child(2) {
+  width: 22%;
+}
+.worktree-table-wrap th:nth-child(3) {
+  width: 8rem;
+}
+.worktree-table-wrap th:last-child {
+  width: 2rem;
+}
 .worktree-table-wrap td {
   vertical-align: middle;
+  overflow-wrap: anywhere;
 }
 .worktree-table-wrap td:first-child {
-  min-width: 15rem;
+  min-width: 0;
+}
+.worktree-table-wrap td:first-child > strong {
+  display: block;
+  color: var(--foreground);
+  font-weight: 500;
+  overflow-wrap: anywhere;
 }
 .conversation-content {
   display: flex;
