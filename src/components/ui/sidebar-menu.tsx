@@ -37,6 +37,7 @@ import {
 } from "@/lib/size-context";
 import { useFluidHover, type ItemRect } from "@/hooks/use-fluid-hover";
 import type { IconComponent } from "@/lib/icon-context";
+import { LoaderCircle } from "@/lib/icons";
 import { resolveSlotTemplate, SlotElement } from "@/components/ui/sidebar-core";
 import { FluidHoverHighlight } from "@/components/fluid-hover-highlight";
 
@@ -900,11 +901,15 @@ function MenuRowLabel({
   lit,
   emphasized,
   textClass,
+  trailing,
 }: {
   content: ReactNode;
   lit: boolean;
   emphasized: boolean;
   textClass: string;
+  /** Loading spinner or attention mark. Sits after the label and before any
+   *  caller-supplied trailing control (a chevron, a shortcut). */
+  trailing?: ReactNode;
 }) {
   const nodes = Children.toArray(content);
   const textParts: string[] = [];
@@ -929,13 +934,20 @@ function MenuRowLabel({
         )}
       >
         {content}
+        {trailing}
       </span>
     );
   }
 
   return (
     <>
-      <span className={cn("inline-grid min-w-0 text-left", textClass)}>
+      <span
+        className={cn(
+          "inline-grid min-w-0 text-left",
+          trailing && "flex-1",
+          textClass,
+        )}
+      >
         {/* Ghost: reserves width at the heaviest weight, hidden from AT.
             Both cells truncate so a long label clips with an ellipsis
             instead of wrapping the row. The trim box spans cap height to
@@ -964,8 +976,76 @@ function MenuRowLabel({
           {label}
         </span>
       </span>
+      {trailing}
       {rest}
     </>
+  );
+}
+
+function markLabel(value: boolean | string | undefined, fallback: string) {
+  if (value === true) return fallback;
+  if (typeof value === "string" && value.trim()) return value;
+  return "";
+}
+
+/** Trailing row mark. Loading takes the slot: a busy row is already signaling,
+ *  and a spinner is the clearer of the two. The announcement is visually
+ *  hidden text so the row's accessible name carries it ("Title, Working"). */
+function MenuRowMark({
+  loading,
+  attention,
+  attentionTone = "warning",
+  unseen,
+}: {
+  loading?: boolean | string;
+  attention?: boolean | string;
+  attentionTone?: "warning" | "danger";
+  /** Blue dot for a finished turn the user has not opened. */
+  unseen?: boolean | string;
+}) {
+  const item = useContext(MenuItemContext);
+  const lit = (item?.isActiveRow ?? false) || (item?.isHovered ?? false);
+  const loadingLabel = markLabel(loading, "loading");
+  const attentionLabel = markLabel(attention, "needs attention");
+  const unseenLabel = markLabel(unseen, "unread");
+  // A busy or waiting row already has the user's eye. The unread dot is the
+  // quiet signal that a finished turn is sitting unopened.
+  const label = loadingLabel || attentionLabel || unseenLabel;
+  if (!label) return null;
+  const isLoading = !!loadingLabel;
+  const isAttention = !isLoading && !!attentionLabel;
+  const tone = attentionTone === "danger" ? "danger" : "warning";
+  return (
+    <span
+      data-sidebar="menu-status"
+      data-state={isLoading ? "loading" : isAttention ? "attention" : "unseen"}
+      data-tone={isLoading ? undefined : isAttention ? tone : "info"}
+      title={label}
+      className="ml-auto flex size-4 shrink-0 items-center justify-center"
+    >
+      <span className="sr-only">, {label}</span>
+      {isLoading ? (
+        <LoaderCircle
+          size={rem(14)}
+          className={cn(
+            "animate-spin motion-reduce:animate-none",
+            lit ? "text-foreground" : "text-muted-foreground",
+          )}
+        />
+      ) : (
+        <span
+          aria-hidden="true"
+          className={cn(
+            "size-2 rounded-full",
+            isAttention
+              ? tone === "danger"
+                ? "bg-destructive"
+                : "bg-warning"
+              : "bg-info",
+          )}
+        />
+      )}
+    </span>
   );
 }
 
@@ -1007,6 +1087,19 @@ export interface SidebarMenuButtonProps
    *  semantic `status` vocabulary doesn't fit. Overrides the dot derived
    *  from `status`. Ignored when `icon` is set. */
   dot?: "filled" | "ring";
+  /** Trailing spinner. `true` announces "loading"; a string is the specific
+   *  announcement ("Working") and the tooltip. Also sets `aria-busy`. */
+  loading?: boolean | string;
+  /** Trailing attention dot for a row that needs the user. `true` announces
+   *  "needs attention"; a string is the specific announcement ("Needs you").
+   *  Hidden while `loading` is set — the spinner already marks the row. */
+  attention?: boolean | string;
+  /** Attention dot color. Errors use danger; a request or cleanup uses warning. */
+  attentionTone?: "warning" | "danger";
+  /** Blue dot after a finished turn the user has not opened. `true` announces
+   *  "unread"; a string is the specific announcement. Hidden while loading or
+   *  attention is set. */
+  unseen?: boolean | string;
   render?: ReactElement;
   asChild?: boolean;
 }
@@ -1020,6 +1113,10 @@ const SidebarMenuButton = forwardRef<HTMLButtonElement, SidebarMenuButtonProps>(
       icon: Icon,
       status,
       dot,
+      loading,
+      attention,
+      attentionTone,
+      unseen,
       render,
       asChild,
       className,
@@ -1134,6 +1231,16 @@ const SidebarMenuButton = forwardRef<HTMLButtonElement, SidebarMenuButtonProps>(
           lit={lit}
           emphasized={effectiveActive}
           textClass={textClass}
+          trailing={
+            loading || attention || unseen ? (
+              <MenuRowMark
+                loading={loading}
+                attention={attention}
+                attentionTone={attentionTone}
+                unseen={unseen}
+              />
+            ) : undefined
+          }
         />
         {status === "unread" && <span className="sr-only">, unread</span>}
       </>
@@ -1155,6 +1262,7 @@ const SidebarMenuButton = forwardRef<HTMLButtonElement, SidebarMenuButtonProps>(
           "data-size": size,
           "data-active": effectiveActive ? "true" : undefined,
           "data-status": status,
+          "aria-busy": loading ? true : undefined,
           "aria-current": effectiveActive ? "page" : undefined,
           tabIndex: tabIdx,
           className: cn(
@@ -1534,6 +1642,17 @@ export interface SidebarMenuSubButtonProps extends AnchorHTMLAttributes<HTMLAnch
   isActive?: boolean;
   size?: "sm" | "md";
   icon?: IconComponent;
+  /** Trailing spinner. `true` announces "loading"; a string is the specific
+   *  announcement ("Working") and the tooltip. Also sets `aria-busy`. */
+  loading?: boolean | string;
+  /** Trailing attention dot. `true` announces "needs attention"; a string is
+   *  the specific announcement ("Needs you"). Hidden while `loading` is set. */
+  attention?: boolean | string;
+  /** Attention dot color. Errors use danger; a request or cleanup uses warning. */
+  attentionTone?: "warning" | "danger";
+  /** Blue dot after a finished turn the user has not opened. Hidden while
+   *  loading or attention is set. */
+  unseen?: boolean | string;
   render?: ReactElement;
   asChild?: boolean;
 }
@@ -1547,6 +1666,10 @@ const SidebarMenuSubButton = forwardRef<
       isActive = false,
       size = "md",
       icon: Icon,
+      loading,
+      attention,
+      attentionTone,
+      unseen,
       render,
       asChild,
       className,
@@ -1607,6 +1730,7 @@ const SidebarMenuSubButton = forwardRef<
           "data-sidebar": "menu-sub-button",
           "data-size": size,
           "data-active": isActive ? "true" : undefined,
+          "aria-busy": loading ? true : undefined,
           "aria-current": isActive ? "page" : undefined,
           tabIndex: tabIdx,
           className: cn(
@@ -1642,6 +1766,16 @@ const SidebarMenuSubButton = forwardRef<
             emphasized={isActive}
             textClass={
               size === "sm" ? typeClass("body", "compact") : sizeClasses.text
+            }
+            trailing={
+              loading || attention || unseen ? (
+                <MenuRowMark
+                  loading={loading}
+                  attention={attention}
+                  attentionTone={attentionTone}
+                  unseen={unseen}
+                />
+              ) : undefined
             }
           />
         </>

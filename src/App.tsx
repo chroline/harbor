@@ -51,8 +51,6 @@ import {
   type CSSProperties,
 } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { motion } from "framer-motion";
-import { spring } from "./lib/springs";
 import {
   GitBranch,
   Settings2,
@@ -69,7 +67,6 @@ import {
   Pin,
   PinOff,
   LoaderCircle,
-  ChevronRight,
 } from "@/lib/icons";
 import { Button } from "./components/ui/button";
 import {
@@ -93,7 +90,12 @@ import { Settings } from "./components/Settings";
 import { Worktrees } from "./components/Worktrees";
 import { useStore } from "./lib/store";
 import { call, desktop, json } from "./lib/api";
-import { record, str } from "./lib/protocol";
+import {
+  record,
+  str,
+  sessionNeedsAttention,
+  summarizeSessionMarks,
+} from "./lib/protocol";
 import type { SessionRecord } from "./lib/bindings/SessionRecord";
 import {
   restoreHistory,
@@ -105,6 +107,7 @@ import {
 import { useShellLayout, WINDOW_GUTTER } from "./lib/shell-layout";
 import { NO_WORKSPACE_ID, useSidebarOrder } from "./lib/sidebar-order";
 import { usePinnedChats } from "./lib/pinned-chats";
+import { useUnseenTurns } from "./lib/unseen-turns";
 import { SidebarKeyboardShortcut } from "./components/SidebarKeyboardShortcut";
 import {
   ChromeSidebarDivider,
@@ -187,13 +190,12 @@ export default function App() {
     }),
     (s) => s.id,
   );
-  const needs = sessions.filter((s) =>
-    ["needs_input", "error", "cleanup_pending"].includes(s.status),
-  );
+  const needs = sessions.filter((s) => sessionNeedsAttention(s.status));
   const active =
     typeof view === "object"
       ? sessions.find((s) => s.id === view.session)
       : undefined;
+  const unseen = useUnseenTurns(sessions, active?.id);
   const go = (next: View) => {
     setHistory((current) => visit(current, next));
     setSearch(false);
@@ -428,42 +430,53 @@ export default function App() {
     items = sidebarOrder.sort(group, items, (s) => s.id);
     const Row = pinned ? SidebarMenuItem : SidebarMenuSubItem;
     const RowButton = pinned ? SidebarMenuButton : SidebarMenuSubButton;
-    return items.map((s) => (
-      <Row key={s.id}>
-        <SidebarRowMenu
-          label={s.title}
-          reorder={sidebarOrder.row(
-            group,
-            s.id,
-            s.title,
-            items.map((item) => item.id),
-          )}
-          actions={[
-            {
-              label: pinnedChatIds.includes(s.id)
-                ? "Unpin conversation"
-                : "Pin conversation",
-              icon: pinnedChatIds.includes(s.id) ? PinOff : Pin,
-              onSelect: () => togglePinnedChat(s.id),
-            },
-            {
-              label: "Archive conversation…",
-              icon: Archive,
-              onSelect: () => setDeleting(s),
-              destructive: true,
-            },
-          ]}
-        >
-          <RowButton
-            asChild
-            isActive={active?.id === s.id}
-            icon={providerGlyph(s.providerId)}
+    return items.map((s) => {
+      const mark = summarizeSessionMarks(
+        [s.status],
+        unseen.has(s.id) ? 1 : 0,
+      );
+      return (
+        <Row key={s.id}>
+          <SidebarRowMenu
+            label={s.title}
+            reorder={sidebarOrder.row(
+              group,
+              s.id,
+              s.title,
+              items.map((item) => item.id),
+            )}
+            actions={[
+              {
+                label: pinnedChatIds.includes(s.id)
+                  ? "Unpin conversation"
+                  : "Pin conversation",
+                icon: pinnedChatIds.includes(s.id) ? PinOff : Pin,
+                onSelect: () => togglePinnedChat(s.id),
+              },
+              {
+                label: "Archive conversation…",
+                icon: Archive,
+                onSelect: () => setDeleting(s),
+                destructive: true,
+              },
+            ]}
           >
-            <button onClick={() => go({ session: s.id })}>{s.title}</button>
-          </RowButton>
-        </SidebarRowMenu>
-      </Row>
-    ));
+            <RowButton
+              asChild
+              isActive={active?.id === s.id}
+              icon={providerGlyph(s.providerId)}
+              title={mark.loading ?? mark.attention ?? mark.unseen}
+              loading={mark.loading}
+              attention={mark.attention}
+              attentionTone={mark.attentionTone}
+              unseen={mark.unseen}
+            >
+              <button onClick={() => go({ session: s.id })}>{s.title}</button>
+            </RowButton>
+          </SidebarRowMenu>
+        </Row>
+      );
+    });
   };
   const title =
     active?.title ??
@@ -704,6 +717,16 @@ export default function App() {
                       : sessions.filter((s) => s.workspaceId === w.id);
                   const open = !collapsedWorkspaces.has(w.id);
                   const chatsId = `workspace-chats-${w.id ?? "none"}`;
+                  // Expanded trees show the mark on each chat. Collapsed, the
+                  // parent is the only visible signal that something inside
+                  // is working or waiting.
+                  const workspaceMark = summarizeSessionMarks(
+                    open ? [] : workspaceSessions.map((s) => s.status),
+                    open
+                      ? 0
+                      : workspaceSessions.filter((s) => unseen.has(s.id))
+                          .length,
+                  );
                   const startWorkspaceTask = () => {
                     setCollapsedWorkspaces((current) => {
                       const next = new Set(current);
@@ -735,13 +758,25 @@ export default function App() {
                       >
                         <SidebarMenuButton
                           icon={open ? FolderOpen : Folder}
-                          className="group/parent-row"
                           style={
                             {
                               "--row-gutter": "var(--row-gutter-hover)",
                             } as CSSProperties
                           }
-                          title={w.path}
+                          title={
+                            [
+                              w.path,
+                              workspaceMark.attention ??
+                                workspaceMark.loading ??
+                                workspaceMark.unseen,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ") || undefined
+                          }
+                          loading={workspaceMark.loading}
+                          attention={workspaceMark.attention}
+                          attentionTone={workspaceMark.attentionTone}
+                          unseen={workspaceMark.unseen}
                           aria-expanded={open}
                           aria-controls={chatsId}
                           onClick={() =>
@@ -754,29 +789,12 @@ export default function App() {
                           }
                         >
                           {w.name}
-                          <span className="ml-auto -mr-0.5 flex size-6 shrink-0 items-center justify-center">
-                            <motion.span
-                              className="inline-flex"
-                              animate={{ rotate: open ? 90 : 0 }}
-                              transition={spring.fast}
-                            >
-                              <ChevronRight
-                                size={rem(16)}
-                                strokeWidth={1.5}
-                                className={`text-muted-foreground transition-opacity duration-80 ${
-                                  open
-                                    ? "opacity-0 group-hover/parent-row:opacity-100 group-focus-within/parent-row:opacity-100"
-                                    : "opacity-100"
-                                }`}
-                              />
-                            </motion.span>
-                          </span>
                         </SidebarMenuButton>
                       </SidebarRowMenu>
                       <SidebarMenuSub
                         id={chatsId}
                         open={open}
-                        className="ml-4 border-l-0"
+                        className="ml-0 border-l-0 pl-0"
                         aria-label={`Chats in ${w.name}`}
                       >
                         {chatRows(

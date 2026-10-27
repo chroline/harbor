@@ -5,6 +5,9 @@ import {
   options,
   values,
   timeline,
+  sessionIsLoading,
+  sessionNeedsAttention,
+  summarizeSessionMarks,
 } from "./protocol";
 import type { SessionEvent } from "./bindings/SessionEvent";
 let sequence = 0;
@@ -978,6 +981,41 @@ it("keeps invocation ranges aligned when a long user message is trimmed for disp
       message.text.slice(range.start, range.end),
     ),
   ).toEqual(["$build"]);
+});
+
+it("classifies sidebar loading and attention, with attention winning a mixed summary", () => {
+  expect(sessionIsLoading("working")).toBe(true);
+  expect(sessionIsLoading("connecting")).toBe(true);
+  expect(sessionIsLoading("archiving")).toBe(true);
+  expect(sessionIsLoading("needs_input")).toBe(false);
+  expect(sessionNeedsAttention("needs_input")).toBe(true);
+  expect(sessionNeedsAttention("error")).toBe(true);
+  expect(sessionNeedsAttention("cleanup_pending")).toBe(true);
+  expect(sessionNeedsAttention("working")).toBe(false);
+  expect(summarizeSessionMarks(["idle", "completed"])).toEqual({});
+  expect(summarizeSessionMarks(["connecting"])).toEqual({
+    loading: "Connecting",
+  });
+  expect(summarizeSessionMarks(["working", "archiving"])).toEqual({
+    loading: "2 loading",
+  });
+  expect(summarizeSessionMarks(["error"])).toEqual({
+    attention: "Interrupted",
+    attentionTone: "danger",
+  });
+  expect(summarizeSessionMarks(["needs_input", "working"])).toEqual({
+    attention: "Needs you",
+    attentionTone: "warning",
+  });
+  expect(
+    summarizeSessionMarks(["cleanup_pending", "error", "working"]),
+  ).toEqual({
+    attention: "2 need attention",
+    attentionTone: "danger",
+  });
+  expect(summarizeSessionMarks(["completed"], 1)).toEqual({ unseen: "Unread" });
+  expect(summarizeSessionMarks(["idle"], 2)).toEqual({ unseen: "2 unread" });
+  expect(summarizeSessionMarks(["working"], 1)).toEqual({ loading: "Working" });
 });
 
 it("renders Claude typed worker-message receipts in their own conversations and deduplicates replay", () => {

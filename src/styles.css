@@ -378,6 +378,7 @@ a {
   --window-content-inset: 0.875rem;
   --chrome-control-gap: 1.125rem;
   --chrome-control-end-inset: calc(var(--chrome-control-gap) - 0.3125rem);
+  --sidebar-row-end-inset: calc(var(--chrome-control-gap) - 0.4375rem);
   display: flex;
   flex-direction: column;
   width: 100%;
@@ -2623,20 +2624,30 @@ html.transitioning *::after {
   z-index: 1;
   background: transparent;
 }
-/* Keep the leading content aligned with the window controls. End row hit
-   targets at the same edge as the forward arrow's unchanged hit target. */
+/* Keep leading content aligned with the window controls and trailing content
+   aligned with the forward arrow's painted tip. */
 .harbor-sidebar [data-sidebar="group"],
 .harbor-sidebar [data-sidebar="header"],
 .harbor-sidebar [data-sidebar="footer"] {
   padding-inline-start: calc(var(--window-content-inset) - 0.5rem);
-  padding-inline-end: var(--chrome-control-end-inset);
+  padding-inline-end: var(--sidebar-row-end-inset);
 }
 .harbor-sidebar [data-sidebar="group-action"] {
-  right: calc(var(--chrome-control-end-inset) + 0.5rem);
+  right: calc(var(--sidebar-row-end-inset) + 0.5rem);
 }
 .harbor-sidebar [data-sidebar="separator"] {
   margin-inline-start: var(--window-content-inset);
-  margin-inline-end: calc(var(--chrome-control-end-inset) + 0.5rem);
+  margin-inline-end: calc(var(--sidebar-row-end-inset) + 0.5rem);
+}
+.harbor-sidebar [data-sidebar="menu-sub-button"] {
+  /* Indent the contents, leaving the row's hit area and highlight full width. */
+  padding-inline-start: 2rem;
+}
+.harbor-sidebar [data-sidebar="menu-sub-button"] [data-sidebar="menu-status"] {
+  /* Use the indentation gutter so status changes never move the provider icon. */
+  position: absolute;
+  inset-inline-start: 0.5rem;
+  margin-inline-start: 0;
 }
 .harbor-picker {
   min-width: 0;

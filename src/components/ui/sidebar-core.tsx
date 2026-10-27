@@ -1262,7 +1262,7 @@ interface SidebarGroupContextValue {
   toggle: () => void;
   contentId: string;
   /** How many header action buttons overlay the label's right edge — the
-   *  collapsible label pads itself so its chevron clears them. */
+   *  collapsible label pads itself so its text clears them. */
   actionsCount: number;
 }
 
@@ -1365,12 +1365,7 @@ const SidebarGroup = forwardRef<HTMLDivElement, SidebarGroupProps>(
         inner = (
           <>
             {kids.slice(0, labelIdx)}
-            {/* Header hover scope: hovering anywhere on the row — the
-                overlaid action cluster included, which never :hovers the
-                label element itself — reveals the label's chevron. Kept
-                position-static so the cluster's absolute box still anchors
-                to the group and stays on the rows' action axis. */}
-            <div className="group/group-header w-full">
+            <div className="w-full">
               {kids[labelIdx]}
               {headerActions}
             </div>
@@ -1443,11 +1438,8 @@ export interface SidebarGroupLabelProps extends HTMLAttributes<HTMLDivElement> {
 const SidebarGroupLabel = forwardRef<HTMLDivElement, SidebarGroupLabelProps>(
   ({ className, render, asChild, children, ...props }, ref) => {
     const sizeVariant = useSizeVariant();
-    const sizeClasses = useSize();
     const group = useContext(SidebarGroupContext);
     const shape = useShape();
-    const icons = useIcons();
-    const ChevronRightIcon = icons["chevron-right"];
     const { template, content } = resolveSlotTemplate(render, asChild, children);
 
     // Truncate only the leading text; element children (count badges,
@@ -1471,9 +1463,7 @@ const SidebarGroupLabel = forwardRef<HTMLDivElement, SidebarGroupLabelProps>(
       content
     );
 
-    // Inside a collapsible group the label becomes the toggle. Design
-    // treatment is unchanged — hover only raises the label's contrast and
-    // reveals a chevron (kept visible while collapsed as the reopen cue).
+    // Inside a collapsible group the label becomes the toggle.
     if (group) {
       return (
         <SlotElement
@@ -1486,13 +1476,7 @@ const SidebarGroupLabel = forwardRef<HTMLDivElement, SidebarGroupLabelProps>(
             "aria-expanded": group.open,
             "aria-controls": group.contentId,
             onClick: group.toggle,
-            // The action cluster overlays the label's right edge, so the label
-            // pads past it — far enough that the hover-revealed chevron lands
-            // one cluster gap (0.25rem) to its left and the whole trailing run
-            // keeps a single rhythm. Cluster width is 1.5rem per action plus 0.25rem
-            // between them; add that gap again, less the 0.5rem the group's
-            // padding already gives back: 28n + 6. The cluster is always
-            // visible, so the reservation is permanent.
+            // Reserve space for the overlaid header action cluster.
             style:
               group.actionsCount > 0
                 ? ({ "--group-actions-pad": `${pixelsToRem(group.actionsCount * 28 + scaledSize(6))}` } as CSSProperties)
@@ -1509,41 +1493,7 @@ const SidebarGroupLabel = forwardRef<HTMLDivElement, SidebarGroupLabelProps>(
             ...props,
           }}
         >
-          <>
-            {labelContent}
-            {/* The chevron occupies an action-sized box, so it reads as one more
-                icon in the row rather than a smaller glyph tacked on the end.
-                One chevron-right glyph for both states, sprung 90° to point
-                down while the group is open — the motion wrapper is what
-                animates: Tailwind's rotate-* sets the standalone CSS `rotate`
-                property, which transition-transform never covers. While open
-                the whole box collapses to zero width at rest so the label text
-                keeps the full row; hover/focus (or an open action popup)
-                reveals it. Collapsed keeps it visible as the reopen cue. */}
-            {/* No width/opacity transition: animating the box's width slides
-                the glyph in from the side — the chevron should simply be
-                there once the header is hovered. */}
-            <span
-              className={cn(
-                "ml-auto flex h-6 shrink-0 items-center justify-center overflow-hidden",
-                group.open
-                  ? "w-0 opacity-0 group-hover/group-header:w-6 group-hover/group-header:opacity-100 group-focus-within/group-header:w-6 group-focus-within/group-header:opacity-100 group-has-[[data-sidebar=group-action]:is([data-state=open],[data-popup-open],[aria-expanded=true])]/group-header:w-6 group-has-[[data-sidebar=group-action]:is([data-state=open],[data-popup-open],[aria-expanded=true])]/group-header:opacity-100 pointer-coarse:w-6 pointer-coarse:opacity-100"
-                  : "w-6 opacity-100"
-              )}
-            >
-              <motion.span
-                className="inline-flex"
-                animate={{ rotate: group.open ? 90 : 0 }}
-                transition={spring.fast}
-              >
-                <ChevronRightIcon
-                  size={rem(sizeClasses.icon)}
-                  strokeWidth={1.5}
-                  className="shrink-0"
-                />
-              </motion.span>
-            </span>
-          </>
+          {labelContent}
         </SlotElement>
       );
     }

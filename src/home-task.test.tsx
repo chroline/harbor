@@ -942,6 +942,78 @@ it("drags a chat without navigating, rejects another group and cancels with Esca
   vi.unstubAllGlobals();
 });
 
+it("marks working chats with a spinner and chats that need you with an attention dot", () => {
+  mocks.initialSessions = [
+    {
+      ...session,
+      id: "busy",
+      title: "Running task",
+      status: "working",
+      workspaceId: "workspace",
+    },
+    {
+      ...session,
+      id: "ask",
+      title: "Waiting on you",
+      status: "needs_input",
+    },
+    {
+      ...session,
+      id: "broken",
+      title: "Failed task",
+      status: "error",
+    },
+    session,
+  ];
+  render(<App />);
+  const running = screen.getByRole("button", { name: /Running task,\s*Working/ });
+  expect(running.getAttribute("aria-busy")).toBe("true");
+  expect(running.getAttribute("title")).toBe("Working");
+  expect(
+    running.querySelector('[data-sidebar="menu-status"][data-state="loading"]'),
+  ).toBeTruthy();
+  expect(running.querySelector('[data-icon="LoaderCircle"]')).toBeTruthy();
+
+  const waiting = screen.getByRole("button", {
+    name: /Waiting on you,\s*Needs you/,
+  });
+  expect(waiting.getAttribute("aria-busy")).toBeNull();
+  expect(waiting.getAttribute("title")).toBe("Needs you");
+  expect(
+    waiting.querySelector(
+      '[data-sidebar="menu-status"][data-state="attention"][data-tone="warning"]',
+    ),
+  ).toBeTruthy();
+
+  const failed = screen.getByRole("button", {
+    name: /Failed task,\s*Interrupted/,
+  });
+  expect(failed.getAttribute("title")).toBe("Interrupted");
+  expect(
+    failed.querySelector('[data-state="attention"][data-tone="danger"]'),
+  ).toBeTruthy();
+  expect(
+    screen
+      .getByRole("button", { name: session.title })
+      .querySelector('[data-sidebar="menu-status"]'),
+  ).toBeNull();
+  expect(document.querySelector(".notification-count")?.textContent).toBe("2");
+
+  fireEvent.click(screen.getByRole("button", { name: "repo" }));
+  const collapsed = screen.getByRole("button", { name: /repo,\s*Working/ });
+  expect(collapsed.getAttribute("aria-expanded")).toBe("false");
+  expect(collapsed.getAttribute("title")).toBe("/repo · Working");
+  expect(
+    collapsed.querySelector('[data-state="loading"]'),
+  ).toBeTruthy();
+  expect(screen.queryByRole("button", { name: /Running task/ })).toBeNull();
+
+  fireEvent.click(screen.getByRole("button", { name: "No workspace" }));
+  expect(
+    screen.getByRole("button", { name: /No workspace,\s*2 need attention/ }),
+  ).toBeTruthy();
+});
+
 it("starts tasks directly in a workspace with no project", async () => {
   mocks.extraWorkspaces = [
     {

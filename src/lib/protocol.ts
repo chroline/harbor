@@ -823,6 +823,58 @@ export const statusLabel = (s: string) =>
     archiving: "Archiving",
     archived: "Archived",
   })[s] ?? s;
+
+const SESSION_LOADING = new Set(["working", "connecting", "archiving"]);
+const SESSION_ATTENTION = new Set(["needs_input", "error", "cleanup_pending"]);
+
+/** Agent is in progress — the sidebar shows a spinner, not a settled row. */
+export function sessionIsLoading(status: string) {
+  return SESSION_LOADING.has(status);
+}
+
+/** The user has to act. Same set as the notification bell. */
+export function sessionNeedsAttention(status: string) {
+  return SESSION_ATTENTION.has(status);
+}
+
+export interface SessionMark {
+  loading?: string;
+  attention?: string;
+  /** Errors are danger; a request or cleanup is warning. */
+  attentionTone?: "warning" | "danger";
+  /** A finished turn the user has not opened yet. */
+  unseen?: string;
+}
+
+/** One conversation, or a collapsed parent's summary of hidden children.
+ *  Attention wins over loading, and both win over an unseen finish: a row
+ *  that needs the user is the one to open. */
+export function summarizeSessionMarks(
+  statuses: string[],
+  unseenCount = 0,
+): SessionMark {
+  const attention = statuses.filter(sessionNeedsAttention);
+  if (attention.length === 1) {
+    return {
+      attention: statusLabel(attention[0]),
+      attentionTone: attention[0] === "error" ? "danger" : "warning",
+    };
+  }
+  if (attention.length > 1) {
+    return {
+      attention: `${attention.length} need attention`,
+      attentionTone: attention.some((status) => status === "error")
+        ? "danger"
+        : "warning",
+    };
+  }
+  const loading = statuses.filter(sessionIsLoading);
+  if (loading.length === 1) return { loading: statusLabel(loading[0]) };
+  if (loading.length > 1) return { loading: `${loading.length} loading` };
+  if (unseenCount === 1) return { unseen: "Unread" };
+  if (unseenCount > 1) return { unseen: `${unseenCount} unread` };
+  return {};
+}
 export function elapsed(since: number) {
   const minutes = Math.max(0, Math.floor((Date.now() - since) / 60000));
   return minutes < 1
