@@ -1814,11 +1814,6 @@ html.standalone #root {
   *::after {
     transition: none !important;
     scroll-behavior: auto !important;
-  }
-  /* Response clipping follows scroll geometry and must remain active. */
-  *:not(.transcript-responses),
-  *::before,
-  *::after {
     animation: none !important;
   }
 }

@@ -31,6 +31,18 @@
   scrollbar-color: var(--border) transparent;
   scroll-padding: 1.25rem;
 }
+/* While following output, let the scroller move the viewport. Native scroll
+   anchoring would jump to each new line before the animation can start. */
+.conversation-scroll [data-slot="message-scroller-viewport"]:not([data-scrollable~="end"]) {
+  overflow-anchor: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  /* The primitive uses auto for follow-output updates. CSS supplies the smooth
+     behavior after its immediate opening scroll has finished. */
+  .conversation-scroll [data-slot="message-scroller-viewport"][data-autoscrolling]:not([data-pending-scroll]) {
+    scroll-behavior: smooth;
+  }
+}
 .conversation-scroll [data-slot="message-scroller-content"] {
   width: 100%;
 }
