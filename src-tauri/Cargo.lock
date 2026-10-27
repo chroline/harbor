@@ -1457,8 +1457,12 @@ name = "harbor"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "block2",
  "flate2",
  "libc",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
  "portable-pty",
  "rusqlite",
  "serde",
