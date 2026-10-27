@@ -513,9 +513,15 @@ export function Chat({
   const firstTabId = tabItems[0]?.id;
   useLayoutEffect(() => {
     const list = tabList.current;
-    if (!list || !onTabDividerChange) return;
-    const update = () =>
-      onTabDividerChange(activeTab !== firstTabId || list.scrollLeft > 0.5);
+    if (!list) return;
+    const update = () => {
+      const remaining = Math.max(
+        0,
+        list.scrollWidth - list.clientWidth - list.scrollLeft,
+      );
+      list.style.setProperty("--task-tabs-overflow", `${remaining}px`);
+      onTabDividerChange?.(activeTab !== firstTabId || list.scrollLeft > 0.5);
+    };
     update();
     list.addEventListener("scroll", update, { passive: true });
     const observer = new ResizeObserver(update);
@@ -524,7 +530,7 @@ export function Chat({
       list.removeEventListener("scroll", update);
       observer.disconnect();
     };
-  }, [activeTab, firstTabId, tabsTarget, onTabDividerChange]);
+  }, [activeTab, firstTabId, tabItems.length, tabsTarget, onTabDividerChange]);
 
   useEffect(() => {
     const list = tabList.current;
@@ -630,68 +636,69 @@ export function Chat({
               >
                 {tabItems.map((tab) => {
                   const detached = taskTabs.detached.includes(tab.id);
+                  const floating = taskTabs.dragging === tab.id;
+                  const surface = (
+                    <div
+                      className={`task-tab-surface${floating ? " topbar task-tab-floating" : ""}`}
+                      {...taskTabs.surfaceProps(tab.id)}
+                    >
+                      <Tabs.Trigger
+                        value={tab.id}
+                        title={
+                          detached
+                            ? `${tab.title} · Open in standalone window`
+                            : tab.id === "parent"
+                              ? "Parent conversation"
+                              : tab.title
+                        }
+                        asChild
+                      >
+                        <Button
+                          variant={activeTab === tab.id ? "primary" : "ghost"}
+                          size="compact"
+                          className="task-tab"
+                          onClick={() => {
+                            if (detached) taskTabs.focus(tab.id);
+                          }}
+                        >
+                          {detached ? (
+                            <ExternalLink size={rem(14)} aria-hidden="true" />
+                          ) : tab.shellId ? (
+                            <TerminalSquare size={rem(14)} aria-hidden="true" />
+                          ) : null}
+                          <span className="task-tab-label">
+                            {detached ? "Open in standalone window" : tab.title}
+                          </span>
+                          {!detached && tab.status && (
+                            <span
+                              className="task-tab-status"
+                              data-status={tab.status}
+                              aria-hidden="true"
+                            />
+                          )}
+                        </Button>
+                      </Tabs.Trigger>
+                      {!!tab.shellId && !detached && (
+                        <IconButton
+                          label={`Close ${tab.title}`}
+                          size="icon-compact"
+                          className="terminal-tab-close"
+                          onClick={() => void terminals.close(tab.shellId)}
+                        >
+                          <X size={rem(12)} />
+                        </IconButton>
+                      )}
+                    </div>
+                  );
                   return (
                     <div
                       className={`task-tab-item${tab.shellId ? " terminal-tab" : ""}`}
                       key={tab.id}
                       {...taskTabs.props(tab.id, tab.title, tabIds)}
                     >
-                      <div
-                        className="task-tab-surface"
-                        {...taskTabs.surfaceProps(tab.id)}
-                      >
-                        <Tabs.Trigger
-                          value={tab.id}
-                          title={
-                            detached
-                              ? `${tab.title} · Open in standalone window`
-                              : tab.id === "parent"
-                                ? "Parent conversation"
-                                : tab.title
-                          }
-                          asChild
-                        >
-                          <Button
-                            variant={activeTab === tab.id ? "primary" : "ghost"}
-                            size="compact"
-                            className="task-tab"
-                            onClick={() => {
-                              if (detached) taskTabs.focus(tab.id);
-                            }}
-                          >
-                            {detached ? (
-                              <ExternalLink size={rem(14)} aria-hidden="true" />
-                            ) : tab.shellId ? (
-                              <TerminalSquare
-                                size={rem(14)}
-                                aria-hidden="true"
-                              />
-                            ) : null}
-                            <span className="task-tab-label">
-                              {detached
-                                ? "Open in standalone window"
-                                : tab.title}
-                            </span>
-                            {!detached && tab.status && (
-                              <span
-                                className="task-tab-status"
-                                data-status={tab.status}
-                                aria-hidden="true"
-                              />
-                            )}
-                          </Button>
-                        </Tabs.Trigger>
-                        {!!tab.shellId && !detached && (
-                          <IconButton
-                            label={`Close ${tab.title}`}
-                            size="icon-compact"
-                            className="terminal-tab-close"
-                            onClick={() => void terminals.close(tab.shellId)}
-                          >
-                            <X size={rem(12)} />
-                          </IconButton>
-                        )}
-                      </div>
+                      {floating
+                        ? createPortal(surface, document.body)
+                        : surface}
                     </div>
                   );
                 })}

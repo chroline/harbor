@@ -1232,6 +1232,18 @@ a {
   padding: 0.25rem;
   min-width: 0;
   flex: 0 1 auto;
+  /* Ease the clipped edge away as the last tab scrolls fully into view. */
+  --task-tabs-fade-size: min(3rem, var(--task-tabs-overflow, 0px), 50%);
+  -webkit-mask-image: linear-gradient(
+    to right,
+    #000 calc(100% - var(--task-tabs-fade-size)),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to right,
+    #000 calc(100% - var(--task-tabs-fade-size)),
+    transparent 100%
+  );
 }
 .task-tabs-toolbar {
   display: flex;
@@ -1248,13 +1260,16 @@ a {
   flex: 0 0 15rem;
 }
 .task-tab-item {
+  /* Keep the rail's intrinsic width when its surface moves into the drag layer. */
+  width: 15rem;
   touch-action: pan-y;
   user-select: none;
 }
 .task-tab-item:has(.terminal-tab-close) .task-tab {
   padding-right: 2rem;
 }
-.task-tab-item .task-tab-label {
+.task-tab-item .task-tab-label,
+.task-tab-floating .task-tab-label {
   flex: 1;
 }
 .task-tab-surface {
@@ -1262,13 +1277,14 @@ a {
   width: 100%;
   border-radius: var(--radius-lg);
 }
-.task-tab-item[data-tab-dragging] {
-  z-index: 2;
-}
-.task-tab-item[data-tab-dragging] .task-tab-surface {
+.task-tab-floating {
+  padding: 0;
   background: var(--chrome-solid);
   box-shadow: var(--shadow-3);
   cursor: grabbing;
+}
+.task-tab-floating:has(.terminal-tab-close) .task-tab {
+  padding-right: 2rem;
 }
 .detached-tab-placeholder {
   align-items: center;

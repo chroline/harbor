@@ -95,9 +95,10 @@ export function useTaskTabs(
   const [detached, setDetached] = useState<string[]>([]);
   const [motion, setMotion] = useState<TabMotion | null>(null);
   const drag = useRef<Drag | null>(null);
-  const landing = useRef<
-    { node: HTMLElement; left: number; top: number }[] | null
-  >(null);
+  const surfaces = useRef(new Map<string, HTMLElement>());
+  const landing = useRef<{ id: string; left: number; top: number }[] | null>(
+    null,
+  );
   const suppressClick = useRef(false);
   const revision = useRef(0);
   const latest = useRef({ detach, onError });
@@ -140,8 +141,9 @@ export function useTaskTabs(
     const previous = landing.current;
     landing.current = null;
     if (reducedMotion()) return;
-    for (const { node, left, top } of previous) {
-      if (!node.isConnected) continue;
+    for (const { id, left, top } of previous) {
+      const node = surfaces.current.get(id);
+      if (!node?.isConnected) continue;
       const rect = node.getBoundingClientRect();
       const x = left - rect.left;
       const y = top - rect.top;
@@ -162,11 +164,10 @@ export function useTaskTabs(
       const current = drag.current;
       drag.current = null;
       if (!current?.active) return;
-      landing.current = current.slots.map(({ node }) => {
-        const surface =
-          node.querySelector<HTMLElement>(".task-tab-surface") ?? node;
+      landing.current = current.slots.map(({ id, node }) => {
+        const surface = surfaces.current.get(id) ?? node;
         const rect = surface.getBoundingClientRect();
-        return { node: surface, left: rect.left, top: rect.top };
+        return { id, left: rect.left, top: rect.top };
       });
       suppressClick.current = true;
       if (current.node.hasPointerCapture?.(current.pointer))
@@ -306,8 +307,13 @@ export function useTaskTabs(
         onError(String(error)),
       );
     },
-    surfaceProps: (id: string): { style?: CSSProperties } =>
-      motion?.id === id
+    surfaceProps: (id: string) => ({
+      "data-task-tab-surface": id,
+      ref: (node: HTMLDivElement | HTMLSpanElement | null) => {
+        if (node) surfaces.current.set(id, node);
+        else surfaces.current.delete(id);
+      },
+      ...(motion?.id === id
         ? {
             style: {
               position: "fixed",
@@ -319,9 +325,10 @@ export function useTaskTabs(
               zIndex: 9999,
               pointerEvents: "none",
               transition: "none",
-            },
+            } as CSSProperties,
           }
-        : {},
+        : {}),
+    }),
     props: (
       id: string,
       _label: string,
@@ -359,8 +366,8 @@ export function useTaskTabs(
           ...list.querySelectorAll<HTMLElement>("[data-task-tab-id]"),
         ];
         for (const tab of nodes)
-          for (const animation of tab
-            .querySelector(".task-tab-surface")
+          for (const animation of surfaces.current
+            .get(tab.dataset.taskTabId!)
             ?.getAnimations?.() ?? [])
             animation.cancel();
         drag.current = {

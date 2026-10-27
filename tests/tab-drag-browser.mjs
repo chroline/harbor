@@ -1,6 +1,6 @@
 // Run with Vite: ego-browser nodejs < tests/tab-drag-browser.mjs
 const assert = (await import("node:assert/strict")).default;
-const task = await taskSpace("Harbor live tab motion");
+const task = await taskSpace("Harbor drag clipping investigation");
 const page = task.page("p1");
 await page.goto("http://127.0.0.1:1420/tests/ui.html");
 await page.waitForSelector('[aria-label="Describe a new task"]');
@@ -21,16 +21,17 @@ await page.mouse.move(geometry.first.x, geometry.first.y);
 // The actual tab follows the pointer; its neighbors animate before release.
 const duringDrag = await page.evaluate((id) => {
   const wrapper = [...document.querySelectorAll('[data-task-tab-id]')].find((tab) => tab.dataset.taskTabId === id);
-  const surface = wrapper.querySelector('.task-tab-surface');
+  const surface = [...document.querySelectorAll('[data-task-tab-surface]')].find((tab) => tab.dataset.taskTabSurface === id) ?? wrapper.querySelector('.task-tab-surface');
   return {
     fixed: getComputedStyle(surface).position === 'fixed',
+    outsideScrollRail: !surface.closest('[role="tablist"]'),
     transformed: surface.style.transform.includes('translate3d'),
     neighborsMoving: [...document.querySelectorAll('[data-task-tab-id]')].filter((tab) => tab !== wrapper).some((tab) => tab.style.transform && !tab.style.transform.startsWith('translate3d(0px')),
     tooltip: !!document.querySelector('.task-tab-drag-preview'),
     indicator: !!document.querySelector('[data-tab-drop]'),
   };
 }, geometry.id);
-assert.deepEqual(duringDrag, { fixed: true, transformed: true, neighborsMoving: true, tooltip: false, indicator: false });
+assert.deepEqual(duringDrag, { fixed: true, outsideScrollRail: true, transformed: true, neighborsMoving: true, tooltip: false, indicator: false });
 console.log(await page.screenshot({ path: "/tmp/harbor-live-tab-motion.png" }));
 await page.mouse.up();
 await page.waitForFunction((id) => document.querySelector('[data-task-tab-id]').dataset.taskTabId === id, geometry.id);

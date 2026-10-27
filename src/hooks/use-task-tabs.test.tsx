@@ -7,6 +7,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
+import { createPortal } from "react-dom";
 import {
   moveTaskTab,
   orderTaskTabs,
@@ -33,20 +34,28 @@ function Strip({
   const ordered = orderTaskTabs(tabs, state.order);
   return (
     <div role="tablist">
-      {ordered.map((tab) => (
-        <button
-          key={tab.id}
-          {...state.props(
-            tab.id,
-            tab.id,
-            ordered.map((t) => t.id),
-          )}
-        >
+      {ordered.map((tab) => {
+        const surface = (
           <span className="task-tab-surface" {...state.surfaceProps(tab.id)}>
             {tab.id}
           </span>
-        </button>
-      ))}
+        );
+        return (
+          <button
+            key={tab.id}
+            aria-label={tab.id}
+            {...state.props(
+              tab.id,
+              tab.id,
+              ordered.map((t) => t.id),
+            )}
+          >
+            {state.dragging === tab.id
+              ? createPortal(surface, document.body)
+              : surface}
+          </button>
+        );
+      })}
       <output>{state.detached.join(",")}</output>
     </div>
   );
@@ -86,14 +95,12 @@ it("reorders across tab types by dragging and retains that order after remount",
   });
   fireEvent.pointerMove(window, { clientX: 550, clientY: 20 });
   expect(
-    screen
-      .getByRole("button", { name: "parent" })
-      .querySelector<HTMLElement>(".task-tab-surface")!.style.position,
+    document.querySelector<HTMLElement>('[data-task-tab-surface="parent"]')!
+      .style.position,
   ).toBe("fixed");
   expect(
-    screen
-      .getByRole("button", { name: "parent" })
-      .querySelector<HTMLElement>(".task-tab-surface")!.style.transform,
+    document.querySelector<HTMLElement>('[data-task-tab-surface="parent"]')!
+      .style.transform,
   ).toContain("450px");
   expect(
     screen.getByRole("button", { name: "worker:one" }).style.transform,
@@ -111,6 +118,31 @@ it("reorders across tab types by dragging and retains that order after remount",
     "shell:two",
     "parent",
   ]);
+});
+it("lifts the real surface outside the scrolling rail and returns it after cancellation", () => {
+  render(<Strip />);
+  dragSetup();
+  fireEvent.pointerDown(screen.getByRole("button", { name: "parent" }), {
+    button: 0,
+    clientX: 100,
+    clientY: 20,
+  });
+  fireEvent.pointerMove(window, { clientX: 140, clientY: 35 });
+  const floating = document.querySelector<HTMLElement>(
+    '[data-task-tab-surface="parent"]',
+  )!;
+  expect(floating.parentElement).toBe(document.body);
+  expect(floating.getAttribute("style")).toContain("position: fixed");
+  expect(screen.getByRole("button", { name: "parent" }).style.height).toBe(
+    "40px",
+  );
+  fireEvent.keyDown(window, { key: "Escape" });
+  expect(
+    screen
+      .getByRole("button", { name: "parent" })
+      .querySelector(".task-tab-surface"),
+  ).not.toBeNull();
+  expect(document.body.querySelector(":scope > .task-tab-surface")).toBeNull();
 });
 it("swaps at the pointer crossing 50 percent, even when grabbed near the right edge", () => {
   render(<Strip />);
