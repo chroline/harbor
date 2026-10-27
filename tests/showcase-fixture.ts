@@ -1,3 +1,4 @@
+import { supportedProviders } from "../src/lib/bindings/supported-providers";
 import type { Bootstrap } from "../src/lib/bindings/Bootstrap";
 
 /** Realistic, synthetic content for documentation screenshots; no live agents. */
@@ -36,19 +37,13 @@ export function populateShowcase(data: Bootstrap) {
       isGitRoot: true,
     },
   ];
-  data.providers = [
-    ["codex", "Codex", "mint"],
-    ["claude", "Claude Code", "peach"],
-    ["cursor", "Cursor", "violet"],
-    ["pi", "Pi", "rose"],
-    ["opencode", "OpenCode", "sand"],
-  ].map(([id, name, color]) => ({ ...data.providers[0], id, name, color }));
+  data.providers = supportedProviders;
   const conversations = [
     ["harbor", "Polish the new task page", "codex"],
     ["harbor", "Add keyboard navigation", "claude"],
-    ["harbor", "Review workspace switching", "cursor"],
-    ["website", "Refresh the home page", "pi"],
-    ["website", "Improve mobile navigation", "opencode"],
+    ["harbor", "Review workspace switching", "grok"],
+    ["website", "Refresh the home page", "claude"],
+    ["website", "Improve mobile navigation", "codex"],
   ];
   data.sessions = conversations.map(([workspaceId, title, providerId], index) => ({
     id: `showcase-${index}`,

@@ -1,3 +1,5 @@
+import { planRequests, reviewText } from "./providers/plan-reviews";
+import { supportedProviders } from "../src/lib/bindings/supported-providers";
 // Deterministic browser-only IPC fixture. Not included in the production entry or bundle.
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
@@ -34,44 +36,24 @@ const data: Bootstrap = {
       isGitRoot: false,
     },
   ],
-  providers: [
-    {
-      id: "codex",
-      name: "Codex · fixture",
-      command: "fixture-agent",
-      args: [],
-      nativeCommand: "",
-      installHint: "Deterministic UI fixture",
-      color: "mint",
-    },
-  ],
+  providers: supportedProviders.map((p) => ({...p, command:"fixture-agent", nativeCommand:"", installHint:"Deterministic UI fixture"})),
   sessions: [],
   archives: [],
   worktrees: [],
   settings: { theme: "dark", notifications: false },
 };
 if (showcase) populateShowcase(data);
+const archiveAlignment = new URLSearchParams(location.search).has("archive-alignment");
+if (archiveAlignment && showcase) {
+  data.sessions[0].title = "Explore OliverSpec";
+  data.sessions[0].worktreeId = "fixture-owned-worktree";
+  data.settings.theme = "light";
+}
 if (new URLSearchParams(location.search).has("empty")) data.projects = [];
-const primeVersion = new URLSearchParams(location.search).get("prime");
-if (primeVersion)
-  data.providers = [
-    { ...data.providers[0], id: "prime", name: "Prime Agent · fixture" },
-  ];
-const cursorFixture = new URLSearchParams(location.search).has("cursor");
-if (cursorFixture)
-  data.providers = [
-    { ...data.providers[0], id: "cursor", name: "Cursor · fixture" },
-  ];
-const modeId = cursorFixture ? "mode" : "collaboration_mode";
-const modeValues = cursorFixture
-  ? ["agent", "plan", "ask"]
-  : ["default", "plan"];
-const fastModel = primeVersion
-  ? JSON.stringify(["fixture", "model/fast"])
-  : "fast";
-const deepModel = primeVersion
-  ? JSON.stringify(["fixture", "model/deep"])
-  : "deep";
+const modeId = "collaboration_mode";
+const modeValues = ["default", "plan"];
+const fastModel = "fast";
+const deepModel = "deep";
 const pickerCatalog = new URLSearchParams(location.search).has("picker");
 const fixtureCommands = pickerCatalog
   ? [
@@ -131,10 +113,17 @@ const fixtureCommands = pickerCatalog
       { name: "skill:check", description: "Check the workspace" },
     ];
 const calls: { command: string; args: any }[] = [];
+const failures = new Map<string, string>();
+const pausedCommands = new Map<string, { wait: Promise<void>; release: () => void }>();
+if (archiveAlignment) {
+  let release!: () => void;
+  const wait = new Promise<void>((resolve) => { release = resolve; });
+  pausedCommands.set("delete_session", { wait, release });
+}
 let branches = ["main", "develop", "fix/retry", "origin/main"];
 let sequence = 0;
 const events: SessionEvent[] = [];
-const config = (model = fastModel) => [
+const config = (model = fastModel, provider = "codex") => [
   {
     id: "model",
     name: "Model",
@@ -156,8 +145,7 @@ const config = (model = fastModel) => [
       (value) => ({ value, name: value }),
     ),
   },
-  ...(!primeVersion
-    ? [
+  ...[
         {
           id: modeId,
           name: "Mode",
@@ -169,9 +157,11 @@ const config = (model = fastModel) => [
             name: value[0].toUpperCase() + value.slice(1),
           })),
         },
-      ]
-    : []),
-];
+      ],
+].filter((o) => provider !== "grok" || o.category === "model").map((o) => o.id === modeId && provider === "claude" ? {
+  ...o, id:"mode", category:"mode", options:[{value:"default",name:"Manual"},{value:"acceptEdits",name:"Accept edits"},{value:"plan",name:"Plan"}],
+} : o);
+const grokModes = (currentModeId = "default") => ({currentModeId, availableModes:[{id:"default",name:"Default"},{id:"plan",name:"Plan"}]});
 async function changed(s: SessionRecord) {
   s.updatedAt = Date.now();
   await emit("session-changed", structuredClone(s));
@@ -197,6 +187,13 @@ const detachedTabs = new Map<string, any>();
 mockIPC(
   async (command, args: any) => {
     calls.push({ command, args: structuredClone(args) });
+    const paused = pausedCommands.get(command);
+    if (paused) await paused.wait;
+    const failure = failures.get(command);
+    if (failure) {
+      failures.delete(command);
+      throw new Error(failure);
+    }
     const s = data.sessions.find((s) => s.id === args?.sessionId);
     switch (command) {
       case "plugin:window|set_theme":
@@ -204,31 +201,28 @@ mockIPC(
         return;
       case "bootstrap":
         return structuredClone(data);
+      case "list_editors":
+        return [
+          { value: "/Applications/Zed.app", label: "Zed" },
+          { value: "/Applications/Visual Studio Code.app", label: "Visual Studio Code" },
+        ];
+      case "save_provider": {
+        const index = data.providers.findIndex((p) => p.id === args.provider.id);
+        if (index < 0) data.providers.push(structuredClone(args.provider));
+        else data.providers[index] = structuredClone(args.provider);
+        return;
+      }
       case "discover_commands":
         return fixtureCommands;
       case "discover_provider_config": {
-        if (primeVersion === "old")
-          return {
-            agentInfo: {
-              name: "prime-agent",
-              title: "Prime Agent",
-              version: "0.9.4",
-            },
-            configOptions: [],
-            models: null,
-          };
-        const controls = config(args.selections?.model ?? fastModel);
-        if (
-          controls[1].options.some((o) => o.value === args.selections?.effort)
-        )
-          controls[1].currentValue = args.selections.effort;
-        if (controls[2] && modeValues.includes(args.selections?.[modeId]))
-          controls[2].currentValue = args.selections[modeId];
+        const controls = config(args.selections?.model ?? fastModel, args.providerId);
+        for (const control of controls) {
+          if (control.options.some((o) => o.value === args.selections?.[control.id])) control.currentValue = args.selections[control.id];
+        }
         return {
-          agentInfo: primeVersion
-            ? { name: "prime-agent", version: "0.9.8" }
-            : undefined,
+          agentInfo: { name: args.providerId, version: "fixture" },
           configOptions: controls,
+          modes: args.providerId === "grok" ? grokModes(args.selections?.__legacy_mode) : null,
           models: null,
         };
       }
@@ -267,14 +261,14 @@ mockIPC(
           mode: "gui",
           createdAt: Date.now(),
           updatedAt: Date.now(),
-          configOptions: config(args.initialConfig?.model ?? fastModel).map(
+          configOptions: config(args.initialConfig?.model ?? fastModel, args.providerId).map(
             (o) => ({
               ...o,
               currentValue: args.initialConfig?.[o.id] ?? o.currentValue,
             }),
           ),
           models: null,
-          modes: null,
+          modes: args.providerId === "grok" ? grokModes(args.initialConfig?.__legacy_mode) : null,
           capabilities: {
             loadSession: true,
             resumeSession: false,
@@ -301,7 +295,8 @@ mockIPC(
         return structuredClone(session);
       }
       case "set_config":
-        if (args.configId === "model") s!.configOptions = config(args.value);
+        if (args.configId === "__legacy_mode") s!.modes = grokModes(args.value);
+        else if (args.configId === "model") s!.configOptions = config(args.value, s!.providerId);
         else
           (s!.configOptions as any[]).find(
             (o) => o.id === args.configId,
@@ -365,7 +360,7 @@ mockIPC(
       case "get_events":
         return events.filter(
           (e) => e.sessionId === args.sessionId && e.sequence > args.after,
-        );
+        ).slice(0, args.limit ?? 5000);
       case "open_subagent":
         await event(s!, "child_connected", {
           childId: args.childId,
@@ -386,7 +381,9 @@ mockIPC(
                   );
                 })?.payload as any)
               : undefined;
-          await event(s!, "answered", { id: original?.id ?? routed });
+          await event(s!, "answered", { id: original?.id ?? routed, result:args.result });
+          s!.status = "idle";
+          await changed(s!);
         }
         return;
       case "cancel_turn":
@@ -459,15 +456,15 @@ mockIPC(
         return branches;
       case "list_worktrees":
         return [
-          { path: "/fixture/repository", branch: "main", is_main: true },
+          { path: data.workspaces.find((w) => w.id === args.workspaceId)?.path ?? "/fixture/repository", branch: "main", is_main: true },
           {
-            path: "/fixture/worktrees/retry",
+            path: `${data.workspaces.find((w) => w.id === args.workspaceId)?.path ?? "/fixture/repository"}/../worktrees/retry`,
             branch: "fix/retry",
             is_main: false,
           },
         ];
       case "probe_provider":
-        return { installed: true, version: "fixture", worktrunk: true };
+        return { status: "ready", message:"Connected and authenticated", path:"/fixture/agent", nativePath:null, version: "fixture", worktrunk: true, agentInfo:{}, authMethods:[] };
       default:
         throw new Error("Unimplemented fixture command: " + command);
     }
@@ -486,6 +483,16 @@ if (!showcase) document.body.append(label);
 
 Object.assign(window, {
   __harborFixture: {
+    failNext: (command: string, message: string) => failures.set(command, message),
+    pauseNext: (command: string) => {
+      let release!: () => void;
+      const wait = new Promise<void>((resolve) => { release = resolve; });
+      pausedCommands.set(command, { wait, release });
+    },
+    resume: (command: string) => {
+      pausedCommands.get(command)?.release();
+      pausedCommands.delete(command);
+    },
     terminalOutput: async (id: string, text: string) => {
       const terminal = shellTerminals.get(id)!;
       const bytes = Array.from(new TextEncoder().encode(text));
@@ -498,6 +505,22 @@ Object.assign(window, {
     },
     terminalStatus: (id: string, title: string, alive = true) => {
       Object.assign(shellTerminals.get(id)!, { title, alive });
+    },
+    showPlan: async (provider: string, text = reviewText) => {
+      const request = JSON.parse(JSON.stringify(planRequests[provider]).replaceAll(JSON.stringify(reviewText).slice(1,-1), JSON.stringify(text).slice(1,-1)));
+      const s = data.sessions.at(-1)!;
+      await event(s, "disconnected", {});
+      await event(s, "user_message", {text:"Review this plan"});
+      if (provider === "codex") await event(s, "session/update", {sessionId:"wire-root",update:{sessionUpdate:"agent_message_chunk",content:{type:"text",text}}});
+      await event(s, "request", request);
+      s.status="needs_input";
+      await changed(s);
+    },
+    restore: async (saved: {data: Bootstrap; events: SessionEvent[]}) => {
+      Object.assign(data,structuredClone(saved.data));
+      events.splice(0,events.length,...structuredClone(saved.events));
+      sequence=Math.max(0,...events.map(e=>e.sequence));
+      for (const session of data.sessions) await changed(session);
     },
     snapshot: () => structuredClone({ data, calls, events }),
     branches: (count: number) => {
@@ -524,6 +547,22 @@ Object.assign(window, {
       const s = data.sessions.filter((s) => !s.archived).at(-1)!;
       s.status = status;
       await changed(s);
+    },
+    userMessage: async (text: string) => {
+      const s = data.sessions.filter((s) => !s.archived).at(-1)!;
+      s.status = "working";
+      await changed(s);
+      await event(s, "user_message", { text });
+    },
+    chunk: async (text: string) => {
+      const s = data.sessions.filter((s) => !s.archived).at(-1)!;
+      await event(s, "session/update", {
+        sessionId: "wire-root",
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text },
+        },
+      });
     },
     configuration: async (configOptions: SessionRecord["configOptions"]) => {
       const s = data.sessions.filter((s) => !s.archived).at(-1)!;
@@ -606,10 +645,14 @@ Object.assign(window, {
       s.status = "completed";
       await changed(s);
     },
-    longTranscript: async () => {
+    longTranscript: async ({ image = false } = {}) => {
       const s = data.sessions.filter((s) => !s.archived).at(-1)!;
       for (let i = 0; i < 120; i++) {
-        await event(s, "user_message", { text: "Review case " + i });
+        await event(s, "user_message", {
+          text: (image
+            ? "![No name.png](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=)\n\n"
+            : "") + "Review case " + i,
+        });
         await event(s, "session/update", {
           sessionId: "wire-root",
           update: {
