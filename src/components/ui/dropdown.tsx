@@ -411,6 +411,8 @@ type RadixContentProps = ComponentPropsWithoutRef<
 type LitBy = "open" | "pointer" | "keyboard";
 
 interface DropdownContentProps {
+  /** Keep nested menu focus inside a modal owned by another primitive. */
+  container?: HTMLElement | null;
   children: ReactNode;
   className?: string;
   /** Let windowed lists handle navigation before the mounted-row fallback. */
@@ -433,6 +435,7 @@ const DropdownContent = forwardRef<HTMLDivElement, DropdownContentProps>(
   (
     {
       className,
+      container,
       children,
       checkedIndex,
       checkedIndices,
@@ -636,7 +639,7 @@ const DropdownContent = forwardRef<HTMLDivElement, DropdownContentProps>(
     ) as typeof DropdownMenuPrimitive.Content;
 
     return (
-      <DropdownMenuPrimitive.Portal forceMount>
+      <DropdownMenuPrimitive.Portal forceMount container={container ?? undefined}>
         <Content
           asChild
           forceMount

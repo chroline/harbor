@@ -1,3 +1,4 @@
+import { planRequests } from "../../tests/providers/plan-reviews";
 // @vitest-environment jsdom
 import { beforeAll, afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -6,6 +7,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { MotionConfig } from "framer-motion";
 import { RequestCard } from "./Chat";
@@ -43,6 +45,156 @@ afterEach(() => {
 });
 
 describe("ACP interactions", () => {
+  it.each(["codex", "claude", "grok"])(
+    "uses the same review and safe primary action for %s",
+    async (provider) => {
+      render(<RequestCard sessionId="chat" request={planRequests[provider]} />);
+      fireEvent.click(screen.getByRole("button", { name: "Review plan" }));
+      expect(
+        await screen.findByRole("dialog", { name: "Review plan" }),
+      ).toBeTruthy();
+      expect(
+        screen.getByRole("heading", { name: "Update the greeting" }),
+      ).toBeTruthy();
+      expect(screen.queryByText("Your permission is needed")).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "Implement plan" }));
+      const id = {
+        codex: "implement_plan",
+        claude: "exit-plan-default",
+        grok: "approved",
+      }[provider];
+      await waitFor(() =>
+        expect(call).toHaveBeenCalledWith("answer_request", {
+          sessionId: "chat",
+          requestId: 0,
+          result: { outcome: { outcome: "selected", optionId: id } },
+        }),
+      );
+    },
+  );
+  it.each(["codex", "claude", "grok"])(
+    "approves %s from the preview card using its original safe option",
+    async (provider) => {
+      render(<RequestCard sessionId="chat" request={planRequests[provider]} />);
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(screen.queryByText("To-dos")).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "Implement plan" }));
+      await waitFor(() =>
+        expect(call).toHaveBeenCalledWith("answer_request", {
+          sessionId: "chat",
+          requestId: 0,
+          result: {
+            outcome: {
+              outcome: "selected",
+              optionId: {
+                codex: "implement_plan",
+                claude: "exit-plan-default",
+                grok: "approved",
+              }[provider],
+            },
+          },
+        }),
+      );
+    },
+  );
+  it("shows inline response failures and allows retry without opening the sheet", async () => {
+    call.mockRejectedValueOnce(new Error("Connection lost"));
+    render(<RequestCard sessionId="chat" request={planRequests.codex} />);
+    fireEvent.click(screen.getByRole("button", { name: "Implement plan" }));
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Connection lost",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Implement plan" }));
+    await waitFor(() => expect(call).toHaveBeenCalledTimes(2));
+  });
+  it("closes and reopens without answering a pending plan", async () => {
+    render(<RequestCard sessionId="chat" request={planRequests.claude} />);
+    fireEvent.click(screen.getByRole("button", { name: "Review plan" }));
+    await screen.findByRole("dialog");
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(call).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Review plan" }));
+    await screen.findByRole("dialog");
+    expect(
+      screen.getByRole("heading", { name: "Update the greeting" }),
+    ).toBeTruthy();
+  });
+  it("retains review and controls after a failed answer", async () => {
+    call.mockRejectedValueOnce(new Error("Connection lost"));
+    render(<RequestCard sessionId="chat" request={planRequests.claude} />);
+    fireEvent.click(screen.getByRole("button", { name: "Review plan" }));
+    await screen.findByRole("dialog");
+    fireEvent.click(screen.getByRole("button", { name: "Implement plan" }));
+    await waitFor(() =>
+      expect(setError).toHaveBeenCalledWith("Error: Connection lost"),
+    );
+    expect(screen.getByRole("alert").textContent).toContain("Connection lost");
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Keep planning",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false);
+    expect(
+      screen.getByRole("heading", { name: "Update the greeting" }),
+    ).toBeTruthy();
+  });
+  it("shows the actual plan before sending Grok's original approval choice", async () => {
+    render(
+      <RequestCard
+        sessionId="grok-chat"
+        request={{
+          id: 7,
+          method: "session/request_permission",
+          params: {
+            sessionId: "grok-wire",
+            toolCall: {
+              title: "Approve Grok plan",
+              kind: "switch_mode",
+              content: [
+                {
+                  type: "content",
+                  content: {
+                    type: "text",
+                    text: "Change greeting.txt from hello to ahoy.",
+                  },
+                },
+              ],
+            },
+            options: [
+              {
+                optionId: "approved",
+                kind: "allow_once",
+                name: "Approve and implement",
+              },
+              {
+                optionId: "cancelled",
+                kind: "reject_once",
+                name: "Keep planning",
+              },
+            ],
+          },
+        }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Review plan" }));
+    await screen.findByRole("dialog");
+    expect(
+      within(screen.getByRole("dialog")).getByText(
+        "Change greeting.txt from hello to ahoy.",
+      ),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Keep planning" }));
+    await waitFor(() =>
+      expect(call).toHaveBeenCalledWith("answer_request", {
+        sessionId: "grok-chat",
+        requestId: 7,
+        result: { outcome: { outcome: "selected", optionId: "cancelled" } },
+      }),
+    );
+  });
   it("responds to the exact child permission request using the provider option ID", async () => {
     render(
       <MotionConfig reducedMotion="always">
@@ -198,4 +350,25 @@ describe("ACP interactions", () => {
         .hasAttribute("disabled"),
     ).toBe(true);
   });
+});
+
+it("keeps an answered plan viewable without allowing a second approval", async () => {
+  const { PlanReview } = await import("./PlanReview");
+  const { planReview } = await import("../lib/plan-review");
+  render(
+    <PlanReview
+      review={planReview(planRequests.codex)!}
+      busy={false}
+      status="Approved for implementation"
+    />,
+  );
+  expect(screen.getByText("Approved for implementation")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Implement plan" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Review plan" }));
+  await screen.findByRole("dialog");
+  expect(
+    screen.getByRole("heading", { name: "Update the greeting" }),
+  ).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Keep planning" })).toBeNull();
+  expect(call).not.toHaveBeenCalled();
 });

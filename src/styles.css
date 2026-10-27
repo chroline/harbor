@@ -3643,3 +3643,23 @@ html.transitioning *::after {
     font-size: 1rem;
   }
 }
+
+/* A single review surface for Claude, Codex, and Grok plan approvals. */
+.request-card.request-card-plan { padding: 0; overflow: visible; max-width:none; border:0; background:transparent; box-shadow:none; }
+.chat-transcript .request-card-plan { margin-inline:calc(-1 * var(--transcript-message-inset)); width:calc(100% + 2 * var(--transcript-message-inset)); }
+.request-card-plan > .request-child-label { padding: 1rem 1.25rem 0; }
+.plan-sheet-header { padding:16px 56px 16px 20px; gap:2px; }
+.plan-review-body { flex:1; min-height:0; overflow:auto; overscroll-behavior:contain; padding:20px; color:var(--foreground); overflow-wrap:anywhere; }
+.plan-review-error { margin:0; color:var(--destructive); font-size:.875rem; }
+.plan-review-body .markdown { color: inherit; }
+.plan-review-body .markdown > :first-child { margin-top: 0; }
+.plan-review-body .markdown > :last-child { margin-bottom: 0; }
+.plan-review-body .markdown h1 { font-size: 1.375rem; line-height: 1.35; }
+.plan-review-body .markdown h2 { font-size: 1.0625rem; line-height: 1.5; }
+.plan-review-footer { gap:12px; padding:16px 20px; border-top:1px solid var(--border); }
+.plan-review-footer > button { align-self:flex-start; }
+.plan-review-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.plan-review-menu { max-width: min(28rem, calc(100vw - 2rem)); }
+.plan-review-menu { width: 24rem; }
+.plan-review-menu [role="menuitem"] { height: auto; min-height: 2rem; }
+.plan-review-menu .truncate { white-space: normal; overflow: visible; text-overflow: clip; }

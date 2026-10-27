@@ -1,3 +1,6 @@
+import type { SupportedProviderId } from "../lib/bindings/SupportedProviderId";
+import { PlanReview } from "./PlanReview";
+import { planReview, planReviewEntries, planReviewStatus } from "../lib/plan-review";
 import { readRootDraft, useRootDraft } from "../lib/root-draft";
 import { useWorkerDrafts } from "../lib/worker-drafts";
 import {
@@ -376,7 +379,7 @@ export function Chat({
     child ? sameWorker(m.childId, child) : !m.childId,
   );
   const entries = useMemo(
-    () => timeline(transcript, child),
+    () => planReviewEntries(timeline(transcript, child), transcript.interactions, child),
     [transcript, child],
   );
   const minimapItems = useMemo(() => chatMinimapItems(entries), [entries]);
@@ -672,6 +675,9 @@ export function Chat({
                   )}
                   <ChatTranscript
                     entries={entries}
+        renderPlan={(interaction) => interaction.status === "pending" && connected && transcript.requests.some(request=>request.id === interaction.id)
+          ? <RequestCard request={interaction} sessionId={session.id} childName={transcript.children[str(interaction.params.sessionId)]?.title} />
+          : <div className="request-card request-card-plan"><PlanReview review={planReview(interaction)!} busy={false} status={planReviewStatus(interaction)} /></div>}
                     renderTool={(tool) => (
                       <ToolCard
                         tool={tool}
@@ -698,7 +704,7 @@ export function Chat({
                       </TranscriptRow>
                     )}
                     {connected &&
-                      transcript.requests.map((r) => (
+                      transcript.requests.filter(r=>!entries.some(entry=>entry.type === "message" && entry.message.planReview?.status === "pending" && entry.message.planReview.id === r.id)).map((r) => (
                         <TranscriptRow
                           key={String(r.id)}
                           id={`request:${r.id}`}
@@ -1163,17 +1169,21 @@ export function RequestCard({
   request,
   sessionId,
   childName,
+  providerId,
 }: {
+  providerId?: SupportedProviderId;
   request: Interaction;
   sessionId: string;
   childName?: string;
 }) {
   const { setError } = useStore();
   const [busy, setBusy] = useState(false);
+  const [answerError, setAnswerError] = useState<string>();
   const [questionAttempt, setQuestionAttempt] = useState(0);
   const p = request.params;
   const answer = async (result: unknown) => {
     setBusy(true);
+    setAnswerError(undefined);
     try {
       await call("answer_request", {
         sessionId,
@@ -1184,14 +1194,17 @@ export function RequestCard({
       });
     } catch (e) {
       setError(String(e));
+      setAnswerError(String(e));
       setQuestionAttempt((v) => v + 1);
     } finally {
       setBusy(false);
     }
   };
+  const review = planReview(request, providerId);
   return (
-    <Card className="request-card">
+    <Card className={`request-card${review ? " request-card-plan" : ""}`}>
       {childName && <p className="request-child-label">{childName}</p>}
+      {review ? <PlanReview review={review} busy={busy} error={answerError} onSelect={(choice) => void answer({outcome:{outcome:"selected",optionId:choice.id}})} /> : <>
       <div className="request-heading">
         <ShieldCheck size={rem(16)} />
         <strong>{request.method === "elicitation/create" ? "Your input is needed" : "Your permission is needed"}</strong>
@@ -1233,6 +1246,7 @@ export function RequestCard({
           </div>
         </>
       ) : <p>This interaction is not supported by the connected provider.</p>      }
+      </>}
     </Card>
   );
 }

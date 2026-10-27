@@ -245,6 +245,61 @@ it("retains worker-composer replies when only the parent history is replayed", (
   t = reduceEvent(t, event("child_history_reset", { childId: "child" }));
   expect(timeline(t, "child")).toHaveLength(0);
 });
+it("keeps imported worker history and tool results across parent reconnects", () => {
+  let t = reduceEvent(
+    emptyTranscript(),
+    update({
+      sessionUpdate: "subagent_update",
+      sessionId: "child",
+      title: "Worker",
+    }),
+  );
+  for (const [type, text] of [
+    ["user_message_chunk", "Original task"],
+    ["agent_message_chunk", "Saved worker reply"],
+  ]) {
+    t = reduceEvent(
+      t,
+      update(
+        {
+          sessionUpdate: type,
+          messageId: text,
+          content: { type: "text", text },
+        },
+        "child",
+      ),
+    );
+  }
+  t = reduceEvent(
+    t,
+    update(
+      {
+        sessionUpdate: "tool_call",
+        toolCallId: "read",
+        title: "read",
+        kind: "read",
+        status: "completed",
+      },
+      "child",
+    ),
+  );
+  t = reduceEvent(
+    t,
+    update({
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: "Parent reply" },
+    }),
+  );
+  t = reduceEvent(t, event("history_reset", {}));
+  expect(t.messages.map((m) => m.text)).toEqual([
+    "Original task",
+    "Saved worker reply",
+  ]);
+  expect(t.tools["child:read"].status).toBe("completed");
+  expect(timeline(t)).toHaveLength(0);
+  t = reduceEvent(t, event("child_history_reset", { childId: "child" }));
+  expect(timeline(t, "child")).toHaveLength(0);
+});
 it("shows actual worker communications once and separately from their summary", () => {
   let t = reduceEvent(
     emptyTranscript(),

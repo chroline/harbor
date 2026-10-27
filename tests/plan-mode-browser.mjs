@@ -1,0 +1,28 @@
+// Run after launching a fixture chat in Plan; supply the existing QA TaskSpace ID.
+const assert = (await import('node:assert/strict')).default;
+const task = await taskSpace(globalThis.HARBOR_QA_SPACE);
+const p = task.page('p1');
+await p.waitForSelector('[aria-label="Message your agent"]',{state:'visible'});
+const prompts = () => p.evaluate(()=>window.__harborFixture.snapshot().calls.filter(c=>c.command==='send_prompt').length);
+const before = await prompts();
+await p.evaluate(()=>window.__harborFixture.pauseNext('set_config'));
+await p.click('[aria-label="Message your agent"]');
+await p.keyboard.type('draft must wait for confirmed mode');
+await p.keyboard.press('Shift+Tab');
+await p.waitForFunction(()=>window.__harborFixture.snapshot().calls.some(c=>c.command==='set_config'));
+await p.keyboard.press('Enter');
+assert.equal(await prompts(),before,'pending mode must block prompt');
+assert.equal(await p.evaluate(()=>document.querySelector('[aria-label="Send message"]').disabled),true);
+await p.evaluate(()=>window.__harborFixture.resume('set_config'));
+await p.waitForSelector('button[aria-label="Mode: Default"]',{state:'visible'});
+await p.waitForFunction(()=>!document.querySelector('[aria-label="Send message"]').disabled);
+await p.evaluate(()=>window.__harborFixture.failNext('set_config','Rejected Plan mode for test'));
+await p.click('[aria-label="Message your agent"]');await p.keyboard.press('Shift+Tab');
+await p.waitForSelector('button:has-text("Cancel change")',{state:'visible'});
+assert.equal(await p.evaluate(()=>document.querySelector('[aria-label="Send message"]').disabled),true);
+assert.ok((await p.evaluate(()=>document.querySelector('[aria-label="Message your agent"]').textContent)).includes('draft must wait'));
+await p.click('button:has-text("Cancel change")');
+await p.waitForFunction(()=>!document.querySelector('[aria-label="Send message"]').disabled);
+await p.waitForSelector('button[aria-label="Mode: Default"]',{state:'visible'});
+assert.equal(await prompts(),before);
+console.log('PASS: delayed acknowledgment blocks sending; rejected mode keeps draft; cancel restores confirmed mode and enables sending.');

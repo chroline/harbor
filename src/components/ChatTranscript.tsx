@@ -22,7 +22,7 @@ import {
 } from "./ui/trace";
 import { TraceStep, ToolGlyph, traceStatus } from "./AgentTrace";
 import { TranscriptRow, useTranscriptScroller } from "./ChatScroller";
-import type { TimelineEntry, Tool } from "../lib/protocol";
+import type { TimelineEntry, Tool, RecordedInteraction } from "../lib/protocol";
 import "./chat-transcript.css";
 
 function ImageAttachment({ name, mimeType, previewUrl }: { name: string; mimeType: string; previewUrl: string }) {
@@ -226,11 +226,13 @@ function TranscriptTurn({
 export function ChatTranscript({
   entries,
   renderTool,
+  renderPlan,
   working = false,
   children,
 }: {
   entries: TimelineEntry[];
   renderTool: (tool: Tool) => ReactNode;
+  renderPlan?: (interaction: RecordedInteraction) => ReactNode;
   working?: boolean;
   children?: ReactNode;
 }) {
@@ -271,6 +273,12 @@ export function ChatTranscript({
         </TranscriptRow>
       );
     const message = group.entry.message;
+    if (message.planReview && renderPlan)
+      return (
+        <TranscriptRow key={message.id} id={`message:${message.id}`}>
+          {renderPlan(message.planReview)}
+        </TranscriptRow>
+      );
     const final =
       message.role === "assistant" &&
       (!next ||

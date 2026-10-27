@@ -33,7 +33,16 @@ export type Tool = {
   turn?: number;
   workCompletedAt?: number;
 };
+export type RecordedInteraction = Interaction & {
+  sequence: number;
+  timestamp: number;
+  childId?: string;
+  prompt?: { id: string; text: string; occurrence: number };
+  status: "pending" | "answered" | "interrupted";
+  result?: unknown;
+};
 export type Message = {
+  planReview?: RecordedInteraction;
   attachments?: {
     name: string;
     mimeType: string;
@@ -78,6 +87,7 @@ export type Transcript = {
   }[];
   children: Record<string, SubagentRecord>;
   requests: Interaction[];
+  interactions: RecordedInteraction[];
   plan: unknown[];
   diagnostics: string[];
   lastSequence: number;
@@ -107,6 +117,7 @@ export const emptyTranscript = (): Transcript => ({
   attachmentMetadata: [],
   children: {},
   requests: [],
+  interactions: [],
   plan: [],
   diagnostics: [],
   lastSequence: 0,
@@ -132,6 +143,15 @@ export function reduceEvent(
   let t = { ...previous, lastSequence: event.sequence };
   const p = record(event.payload);
   const targetChild = str(p.childId) || undefined;
+  const interruptInteractions = (
+    matches: (entry: RecordedInteraction) => boolean,
+  ) => {
+    t.interactions = t.interactions.map((entry) =>
+      entry.status === "pending" && matches(entry)
+        ? { ...entry, status: "interrupted" }
+        : entry,
+    );
+  };
   const setTerminalOutput = (
     id: string,
     output: string,
@@ -159,6 +179,7 @@ export function reduceEvent(
     );
   }
   if (event.kind === "child_history_reset" && targetChild) {
+    interruptInteractions((entry) => entry.childId === targetChild);
     t.messages = t.messages.filter((m) => m.childId !== targetChild);
     t.tools = Object.fromEntries(
       Object.entries(t.tools).filter(
@@ -200,6 +221,8 @@ export function reduceEvent(
     if (event.kind === "child_disconnected")
       t.childCommands = { ...t.childCommands, [targetChild!]: [] };
     if (event.kind === "child_disconnected")
+      interruptInteractions((entry) => entry.childId === targetChild);
+    if (event.kind === "child_disconnected")
       t.requests = t.requests.filter(
         (r) => str(r.params.sessionId) !== targetChild,
       );
@@ -209,20 +232,29 @@ export function reduceEvent(
       ...emptyTranscript(),
       lastSequence: event.sequence,
       authMethods: t.authMethods,
+      // Request/answer events remain authoritative when native history is replayed.
+      interactions: t.interactions.map((entry) =>
+        !entry.childId && entry.status === "pending"
+          ? { ...entry, status: "interrupted" }
+          : entry,
+      ),
+      requests: t.requests.filter(
+        (request) => !!str(request.params._harborChildId),
+      ),
       commands: t.commands,
       childCommands: t.childCommands,
       // Terminal snapshots belong to persisted calls, including provider replays.
       terminals: t.terminals,
       attachmentMetadata: t.attachmentMetadata,
-      // A parent replay does not contain Harbor's worker-composer input or
-      // relayed replies. Only an explicit child replay may replace those.
+      // Parent replay cannot replace a child's independently imported history.
+      // Only an explicit child replay resets that conversation.
       children: t.children,
       childTurns: t.childTurns,
-      messages: t.messages.filter(
-        (m) =>
-          m.childId &&
-          (m.role === "system" ||
-            (m.role === "user" && m.streamId.startsWith(`${m.childId}:user:`))),
+      messages: t.messages.filter((m) => !!m.childId),
+      tools: Object.fromEntries(
+        Object.entries(t.tools).filter(
+          ([, tool]) => !!t.children[tool.sessionId],
+        ),
       ),
       // Some providers replay edit receipts without the original input/diff.
       // Keep bounded details off the timeline until that exact call is replayed.
@@ -322,7 +354,17 @@ export function reduceEvent(
           tool.sequence > last.sequence &&
           (childId ? tool.sessionId === childId : !t.children[tool.sessionId]),
       );
-    if (last?.streamId === streamId && last.role === role && !toolBoundary) {
+    const interactionBoundary =
+      last &&
+      t.interactions.some(
+        (entry) => entry.sequence > last.sequence && entry.childId === childId,
+      );
+    if (
+      last?.streamId === streamId &&
+      last.role === role &&
+      !toolBoundary &&
+      !interactionBoundary
+    ) {
       t.messages = t.messages.map((message, index) =>
         index === lastIndex
           ? {
@@ -420,18 +462,61 @@ export function reduceEvent(
     });
   }
   if (event.kind === "request") {
+    const request: Interaction = {
+      id: p.id as string | number,
+      method: str(p.method),
+      params: record(p.params),
+    };
+    const wire = str(request.params.sessionId);
+    const childId =
+      str(request.params._harborChildId) ||
+      (t.children[wire] ? wire : undefined);
+    const prompts = t.messages.filter(
+      (message) => message.role === "user" && message.childId === childId,
+    );
+    const prompt = prompts.at(-1);
     t.requests = [
-      ...t.requests,
-      {
-        id: p.id as string | number,
-        method: str(p.method),
-        params: record(p.params),
-      },
+      ...t.requests.filter((entry) => entry.id !== request.id),
+      request,
     ];
+    // A retransmitted pending ID replaces that request, rather than leaving two
+    // actionable cards. IDs may be reused after an answer or a reconnection.
+    const previousRequest = t.interactions.find(
+      (entry) => entry.status === "pending" && entry.id === request.id,
+    );
+    t.interactions = [
+      ...t.interactions.filter((entry) => entry !== previousRequest),
+      {
+        ...request,
+        sequence: previousRequest?.sequence ?? event.sequence,
+        timestamp: previousRequest?.timestamp ?? event.timestamp,
+        childId,
+        status: "pending" as const,
+        ...(prompt
+          ? {
+              prompt: {
+                id: prompt.id,
+                text: prompt.text,
+                occurrence: prompts.filter(
+                  (message) => message.text === prompt.text,
+                ).length,
+              },
+            }
+          : {}),
+      },
+    ].slice(-200);
   }
-  if (event.kind === "answered")
-    t.requests = t.requests.filter((r) => r.id !== p.id);
+  if (event.kind === "answered") {
+    t.requests = t.requests.filter((request) => request.id !== p.id);
+    // Update only the latest occurrence; native request IDs are not global IDs.
+    let index = t.interactions.length - 1;
+    while (index >= 0 && t.interactions[index].id !== p.id) index--;
+    t.interactions = t.interactions.map((entry, i) =>
+      i === index ? { ...entry, status: "answered", result: p.result } : entry,
+    );
+  }
   if (event.kind === "disconnected") {
+    interruptInteractions(() => true);
     t.commands = [];
     t.childCommands = {};
     t.requests = [];
@@ -457,6 +542,9 @@ export function reduceEvent(
   if (event.kind === "diagnostic")
     t.diagnostics = [...t.diagnostics, str(p.message)].slice(-100);
   if (event.kind === "turn_complete") {
+    interruptInteractions((entry) =>
+      targetChild ? entry.childId === targetChild : !entry.childId,
+    );
     t.messages = t.messages.map((message) =>
       (targetChild ? message.childId === targetChild : !message.childId) &&
       message.workCompletedAt === undefined
