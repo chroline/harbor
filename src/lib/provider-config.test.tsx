@@ -7,6 +7,7 @@ import {
   modelSelections,
   configurationSelections,
   missingModelMessage,
+  invalidateProviderConfig,
 } from "./provider-config";
 import type { ProviderDefinition } from "./bindings/ProviderDefinition";
 
@@ -15,6 +16,32 @@ vi.mock("./api", () => ({ desktop: true, call, json: (v: unknown) => v }));
 afterEach(() => {
   cleanup();
   call.mockReset();
+});
+
+it("rediscovers models after replacing a missing executable for the same provider", async () => {
+  call.mockRejectedValueOnce(
+    new Error("codex-acp is not installed or executable"),
+  );
+  const p = {
+    ...provider("renamed-codex-acp"),
+    command: "codex-acp",
+    args: ["acp"],
+  };
+  const hook = renderHook(({ p }) => useProviderConfig(p), {
+    initialProps: { p },
+  });
+  await waitFor(() =>
+    expect(hook.result.current.error).toContain("not installed"),
+  );
+  call.mockResolvedValueOnce(config("renamed-model"));
+  hook.rerender({
+    p: { ...p, command: "local-codex-acp", nativeCommand: "local-codex-acp" },
+  });
+  await waitFor(() =>
+    expect(hook.result.current.selections.model).toBe("renamed-model"),
+  );
+  expect(hook.result.current.error).toBeUndefined();
+  expect(call).toHaveBeenCalledTimes(2);
 });
 
 it("serializes rapid mode changes and shares the final selection before launch", async () => {
@@ -89,7 +116,7 @@ it("carries legacy modes into launch only when no modern mode control exists", (
   ).toEqual({ mode: "plan" });
 });
 const provider = (id: string): ProviderDefinition => ({
-  id,
+  id: "codex",
   name: id,
   command: id,
   args: [],
@@ -131,7 +158,7 @@ it("discovers with no project and shares selections between Home and launch with
   await waitFor(() => expect(home.result.current.config).toBeDefined());
   expect(call).toHaveBeenCalledTimes(1);
   expect(call).toHaveBeenCalledWith("discover_provider_config", {
-    providerId: "shared",
+    providerId: "codex",
     selections: {},
   });
   act(() => home.result.current.set("model", "deep"));
@@ -146,7 +173,7 @@ it("discovers with no project and shares selections between Home and launch with
 it("keeps a slow response from one provider out of another provider's controls", async () => {
   let complete!: (value: ReturnType<typeof config>) => void;
   call.mockImplementation((_command, args) =>
-    args.providerId === "slow"
+    args.providerId === "codex"
       ? new Promise((resolve) => {
           complete = resolve;
         })
@@ -155,7 +182,7 @@ it("keeps a slow response from one provider out of another provider's controls",
   const hook = renderHook(({ p }) => useProviderConfig(p), {
     initialProps: { p: provider("slow") },
   });
-  hook.rerender({ p: provider("quick") });
+  hook.rerender({ p: { ...provider("quick"), id: "claude" } });
   await waitFor(() =>
     expect(hook.result.current.selections.model).toBe("other"),
   );
@@ -184,19 +211,19 @@ it("reports the connected version without claiming model selection is impossible
     missingModelMessage({
       configOptions: [],
       models: null,
-      agentInfo: { name: "prime-agent", version: "0.9.4" },
+      agentInfo: { name: "claude-agent-acp", version: "0.97.0" },
     }),
-  ).toContain("Use Prime Agent 0.9.8");
+  ).toContain("claude-agent-acp 0.97.0");
   expect(
     missingModelMessage({
       configOptions: [],
       models: null,
-      agentInfo: { name: "prime-agent", version: "0.9.8" },
+      agentInfo: { name: "codex-acp", version: "2.3.0" },
     }),
   ).toContain("provider sign-in");
 });
-it("preserves Prime's opaque JSON model IDs unchanged", () => {
-  const id = JSON.stringify(["prime-inference", "anthropic/claude-fable-5"]);
+it("preserves opaque model IDs unchanged", () => {
+  const id = JSON.stringify(["provider-model", "claude-test"]);
   expect(modelSelections({ ...config(id) }).model).toBe(id);
 });
 
@@ -253,7 +280,7 @@ it("preserves permissions, collaboration, and boolean options through model chan
   act(() => hook.result.current.retry());
   await waitFor(() => expect(hook.result.current.busy).toBe(false));
   expect(call).toHaveBeenLastCalledWith("discover_provider_config", {
-    providerId: "launch-settings",
+    providerId: "codex",
     selections: selected,
   });
 });
@@ -266,4 +293,17 @@ it("includes a legacy model together with pre-launch operating settings", () => 
       models: { currentModelId: "legacy-model" },
     }),
   ).toEqual({ __legacy_model: "legacy-model", mode: "read-only" });
+});
+
+it("ignores invalidated responses even when the same executable is selected again", async () => {
+  let finish!: (value: ReturnType<typeof config>) => void;
+  call.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+  const p = provider("invalidated-executable");
+  const hook = renderHook(() => useProviderConfig(p));
+  await waitFor(() => expect(call).toHaveBeenCalledTimes(1));
+  call.mockResolvedValueOnce(config("current"));
+  act(() => invalidateProviderConfig(p.id));
+  await waitFor(() => expect(hook.result.current.selections.model).toBe("current"));
+  await act(async () => finish(config("stale")));
+  expect(hook.result.current.selections.model).toBe("current");
 });

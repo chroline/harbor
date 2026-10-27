@@ -14,7 +14,7 @@ macOS traffic lights are aligned within the 48px titlebar in both main and detac
 
 ## provider artwork
 
-provider icons are bundled SVG brand marks from the [ACP registry](https://github.com/agentclientprotocol/registry) and [Prime Intellect](https://www.primeintellect.ai/icons/primeintellect-logo.svg). exact source URLs, the pinned registry revision, checksums, and the Prime symbol extraction are recorded in [artwork provenance](../src/assets/providers/sources.json). custom providers retain a generic terminal icon.
+The Claude Code, OpenAI Codex, and Grok Build icons are bundled SVG brand marks from the [ACP registry](https://github.com/agentclientprotocol/registry). Exact source URLs, pinned registry revision, and checksums are recorded in [artwork provenance](../src/assets/providers/sources.json).
 
 ## component integration
 

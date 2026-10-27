@@ -56,8 +56,14 @@ HARBOR_SMOKE_HANDOFF=1 \
 cargo test --manifest-path src-tauri/Cargo.toml live_provider_smoke -- --ignored --nocapture
 ```
 
-use `HARBOR_SMOKE_ARGS='["acp"]'` for Cursor/OpenCode and omit the Codex-only checks. the native handoff test verifies original-fact recall in the actual PTY CLI, presence of the CLI-created message in replayed ACP history, and second-fact recall after returning to ACP. the test only auto-accepts trust for its generated `work/live-repo` fixture; other repositories must already be trusted.
+use `HARBOR_SMOKE_ARGS='["--no-auto-update","agent","stdio"]'` for Grok Build. Set `HARBOR_SMOKE_PROVIDER` to `codex`, `claude`, or `grok`; supply an installed ACP executable through `HARBOR_SMOKE_COMMAND`. the native handoff test verifies original-fact recall in the actual PTY CLI, presence of the CLI-created message in replayed ACP history, and second-fact recall after returning to ACP. the test only auto-accepts trust for its generated `work/live-repo` fixture; other repositories must already be trusted.
 
 ## verification limits
 
-this is a runnable development release, not a completed cross-provider certification. provider-specific child cancellation beyond the shared transport tests, Cursor’s live blocking-question/plan flows, non-Codex native handoffs, macOS notification permission delivery, and full close/quit/crash recovery through the packaged UI still need live acceptance runs. the core paths exist; fixture tests are not a substitute for those live checks. Windows/Linux packaging, remote hosts, an app account, a full editor, Developer ID distribution signing, and notarization are not included. local macOS builds use the development certificate described above.
+this is a runnable development release, not a completed cross-provider certification. provider-specific child cancellation beyond shared transport tests, macOS notification permission delivery, and full close/quit/crash recovery through the packaged UI require separate live acceptance. See the current [three-provider verification record](subagent-verification.md) for tested versions and handoff results. the core paths exist; fixture tests are not a substitute for those live checks. Windows/Linux packaging, remote hosts, an app account, a full editor, Developer ID distribution signing, and notarization are not included. local macOS builds use the development certificate described above.
+
+## provider contracts
+
+`tests/providers/{codex,claude,grok}.mjs` are separate entry points into a deterministic protocol fixture. They model different reasoning controls and worker receipt shapes. Rust contract tests cover no-prompt diagnostics, authentication/protocol failures, dependent configuration, typed questions, permission IDs, persistence/replay, worker identity, and direct Grok continuation. These are protocol tests, not evidence that a live upstream provider implements a capability.
+
+The opt-in live smoke supports `HARBOR_SMOKE_CONNECT_ONLY=1 HARBOR_SMOKE_CONFIG_ROUNDTRIP=1` for model/effort changes with restoration, and `HARBOR_SMOKE_WORKER_ROUNDTRIP=1` for same-worker context retention. `HARBOR_SMOKE_TRACE_PATH` optionally saves the isolated test's follow-up events for diagnosis. Live runs can consume provider usage. Use a disposable workspace, with `/work/live-repo` suffix for the handoff test's bounded trust handling.

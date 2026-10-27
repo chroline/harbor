@@ -42,160 +42,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("Provider interaction routing through Fluid controls", () => {
-  it("validates and navigates mixed question types before submitting all provider IDs", async () => {
-    render(
-      <MotionConfig reducedMotion="always">
-        <RequestCard
-          sessionId="host-chat"
-          request={{
-            id: 76,
-            method: "cursor/ask_question",
-            params: {
-              _harborChildId: "worker-76",
-              _harborRequestId: 0,
-              questions: [
-                {
-                  id: "scope",
-                  prompt: "Which scope?",
-                  options: [{ id: "backend", label: "Backend" }],
-                },
-                {
-                  id: "checks",
-                  prompt: "Which checks?",
-                  allowMultiple: true,
-                  options: [
-                    { id: "unit", label: "Unit tests" },
-                    { id: "type", label: "Type check" },
-                  ],
-                },
-              ],
-            },
-          }}
-        />
-      </MotionConfig>,
-    );
-    expect(
-      screen.getByRole("button", { name: "Next" }).hasAttribute("disabled"),
-    ).toBe(true);
-    fireEvent.click(screen.getByRole("radio", { name: "Backend" }));
-    expect(call).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Next" }));
-    expect(
-      screen
-        .getByRole("button", { name: "Submit answers" })
-        .hasAttribute("disabled"),
-    ).toBe(true);
-    fireEvent.click(screen.getByRole("checkbox", { name: "Unit tests" }));
-    fireEvent.click(screen.getByRole("checkbox", { name: "Type check" }));
-    fireEvent.click(screen.getByRole("button", { name: "Previous" }));
-    expect(
-      screen
-        .getByRole("radio", { name: "Backend" })
-        .getAttribute("aria-checked"),
-    ).toBe("true");
-    fireEvent.click(screen.getByRole("button", { name: "Next" }));
-    fireEvent.click(screen.getByRole("button", { name: "Submit answers" }));
-    await waitFor(() =>
-      expect(call).toHaveBeenCalledWith("answer_request", {
-        sessionId: "host-chat",
-        requestId: { childId: "worker-76", requestId: 0 },
-        result: {
-          outcome: {
-            outcome: "answered",
-            answers: [
-              { questionId: "scope", selectedOptionIds: ["backend"] },
-              { questionId: "checks", selectedOptionIds: ["unit", "type"] },
-            ],
-          },
-        },
-      }),
-    );
-  });
-
-  it("allows retry after an answer fails and preserves the request identifier", async () => {
-    call
-      .mockRejectedValueOnce(new Error("Temporary failure"))
-      .mockResolvedValueOnce(undefined);
-    render(
-      <MotionConfig reducedMotion="always">
-        <RequestCard
-          sessionId="host-chat"
-          request={{
-            id: "request-77",
-            method: "cursor/ask_question",
-            params: {
-              questions: [
-                {
-                  id: "scope",
-                  prompt: "Which scope?",
-                  options: [{ id: "backend", label: "Backend" }],
-                },
-              ],
-            },
-          }}
-        />
-      </MotionConfig>,
-    );
-    fireEvent.click(screen.getByRole("radio", { name: "Backend" }));
-    await waitFor(() =>
-      expect(setError).toHaveBeenCalledWith("Error: Temporary failure"),
-    );
-    await waitFor(() =>
-      expect(
-        screen
-          .getByRole("radio", { name: "Backend" })
-          .getAttribute("aria-checked"),
-      ).toBe("false"),
-    );
-    fireEvent.click(screen.getByRole("radio", { name: "Backend" }));
-    await waitFor(() => expect(call).toHaveBeenCalledTimes(2));
-    expect(call.mock.calls[1][1].requestId).toBe("request-77");
-  });
-  it("renders Pi extension choices as questions and preserves child/request/option IDs", async () => {
-    render(
-      <MotionConfig reducedMotion="always">
-        <RequestCard
-          sessionId="host-chat"
-          childName="Worker"
-          request={{
-            id: 0,
-            method: "session/request_permission",
-            params: {
-              sessionId: "pi-child",
-              toolCall: {
-                toolCallId: "pi-ui-select-123",
-                title: "[Agent] Which worker?",
-                rawInput: { method: "select" },
-              },
-              options: [
-                {
-                  optionId: "choice-0",
-                  kind: "allow_once",
-                  name: "1. Delegate — A bounded task.",
-                },
-                {
-                  optionId: "choice-1",
-                  kind: "allow_once",
-                  name: "2. Type something.",
-                },
-              ],
-            },
-          }}
-        />
-      </MotionConfig>,
-    );
-    expect(screen.queryByText("Your permission is needed")).toBeNull();
-    expect(screen.getByText("Which worker?")).toBeTruthy();
-    fireEvent.click(screen.getByRole("radio", { name: /Delegate/ }));
-    await waitFor(() =>
-      expect(call).toHaveBeenCalledWith("answer_request", {
-        sessionId: "host-chat",
-        requestId: 0,
-        result: { outcome: { outcome: "selected", optionId: "choice-0" } },
-      }),
-    );
-  });
+describe("ACP interactions", () => {
   it("responds to the exact child permission request using the provider option ID", async () => {
     render(
       <MotionConfig reducedMotion="always">
@@ -228,86 +75,127 @@ describe("Provider interaction routing through Fluid controls", () => {
     expect(screen.getByText("Lighthouse")).toBeTruthy();
   });
 
-  it("preserves multiple selected option IDs without changing the reply shape", async () => {
-    render(
-      <MotionConfig reducedMotion="always">
-        <RequestCard
-          sessionId="host-chat"
-          request={{
-            id: 74,
-            method: "cursor/ask_question",
-            params: {
-              questions: [
-                {
-                  id: "checks",
-                  prompt: "Which checks?",
-                  allowMultiple: true,
-                  options: [
-                    { id: "unit", label: "Unit tests" },
-                    { id: "type", label: "Type check" },
-                  ],
-                },
+  const request = {
+    id: "worker:question-7",
+    method: "elicitation/create",
+    params: {
+      _harborChildId: "worker",
+      _harborRequestId: 0,
+      mode: "form",
+      message: "Choose the implementation",
+      requestedSchema: {
+        type: "object",
+        required: ["scope"],
+        properties: {
+          scope: {
+            type: "string",
+            title: "Scope",
+            oneOf: [
+              { const: "backend", title: "Backend" },
+              { const: "frontend", title: "Frontend" },
+            ],
+          },
+          checks: {
+            type: "array",
+            title: "Checks",
+            items: {
+              anyOf: [
+                { const: "unit", title: "Unit" },
+                { const: "browser", title: "Browser" },
               ],
             },
-          }}
-        />
-      </MotionConfig>,
-    );
-    fireEvent.click(screen.getByRole("checkbox", { name: "Unit tests" }));
-    fireEvent.click(screen.getByRole("checkbox", { name: "Type check" }));
+          },
+          custom: { type: "string", title: "Other" },
+          approve: { type: "boolean", title: "Approve" },
+          count: { type: "integer", title: "Count", minimum: 1 },
+        },
+      },
+    },
+  };
+  it("submits typed form answers and exact child/request IDs", async () => {
+    render(<RequestCard sessionId="host" request={request} />);
+    fireEvent.change(screen.getByRole("combobox", { name: "Scope *" }), {
+      target: { value: "backend" },
+    });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Unit" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Browser" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Other" }), {
+      target: { value: "Keep compatibility" },
+    });
+    fireEvent.change(screen.getByRole("combobox", { name: "Approve" }), {
+      target: { value: "false" },
+    });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Count" }), {
+      target: { value: "2" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Submit answers" }));
     await waitFor(() =>
       expect(call).toHaveBeenCalledWith("answer_request", {
-        sessionId: "host-chat",
-        requestId: 74,
+        sessionId: "host",
+        requestId: { childId: "worker", requestId: 0 },
         result: {
-          outcome: {
-            outcome: "answered",
-            answers: [
-              { questionId: "checks", selectedOptionIds: ["unit", "type"] },
-            ],
+          action: "accept",
+          content: {
+            scope: "backend",
+            checks: ["unit", "browser"],
+            custom: "Keep compatibility",
+            approve: false,
+            count: 2,
           },
         },
       }),
     );
   });
-
-  it("maps the single-choice question flow back to provider identifiers", async () => {
-    render(
-      <MotionConfig reducedMotion="always">
-        <RequestCard
-          sessionId="host-chat"
-          request={{
-            id: 75,
-            method: "cursor/ask_question",
-            params: {
-              questions: [
-                {
-                  id: "scope",
-                  prompt: "Which scope?",
-                  options: [
-                    { id: "backend", label: "Backend" },
-                    { id: "frontend", label: "Frontend" },
-                  ],
-                },
-              ],
-            },
-          }}
-        />
-      </MotionConfig>,
-    );
-    fireEvent.click(screen.getByRole("radio", { name: /Backend/ }));
+  it.each(["Decline", "Cancel"])(
+    "supports %s without inventing answers",
+    async (action) => {
+      render(<RequestCard sessionId="host" request={request} />);
+      fireEvent.click(screen.getByRole("button", { name: action }));
+      await waitFor(() =>
+        expect(call).toHaveBeenCalledWith(
+          "answer_request",
+          expect.objectContaining({ result: { action: action.toLowerCase() } }),
+        ),
+      );
+    },
+  );
+  it("allows retry after a failed response", async () => {
+    call.mockRejectedValueOnce(new Error("Transport unavailable"));
+    render(<RequestCard sessionId="host" request={request} />);
+    fireEvent.click(screen.getByRole("button", { name: "Decline" }));
     await waitFor(() =>
-      expect(call).toHaveBeenCalledWith("answer_request", {
-        sessionId: "host-chat",
-        requestId: 75,
-        result: {
-          outcome: {
-            outcome: "answered",
-            answers: [{ questionId: "scope", selectedOptionIds: ["backend"] }],
-          },
-        },
-      }),
+      expect(setError).toHaveBeenCalledWith("Error: Transport unavailable"),
     );
+    call.mockResolvedValueOnce(undefined);
+    fireEvent.click(screen.getByRole("button", { name: "Decline" }));
+    await waitFor(() => expect(call).toHaveBeenCalledTimes(2));
+  });
+  it("does not submit missing required answers or unsupported schemas", () => {
+    const view = render(<RequestCard sessionId="host" request={request} />);
+    fireEvent.submit(
+      screen.getByRole("button", { name: "Submit answers" }).closest("form")!,
+    );
+    expect(screen.getByRole("alert").textContent).toContain("Answer Scope");
+    expect(call).not.toHaveBeenCalled();
+    view.rerender(
+      <RequestCard
+        sessionId="host"
+        request={{
+          ...request,
+          params: {
+            ...request.params,
+            requestedSchema: {
+              type: "object",
+              properties: { nested: { type: "object" } },
+            },
+          },
+        }}
+      />,
+    );
+    expect(
+      screen
+        .getByRole("button", { name: "Submit answers" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
   });
 });

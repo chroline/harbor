@@ -35,23 +35,23 @@ pub enum CommandRequest {
     ListEditors,
     ProbeProvider {
         #[ts(rename = "providerId")]
-        provider_id: String,
+        provider_id: SupportedProviderId,
     },
     DiscoverProviderConfig {
         #[ts(rename = "providerId")]
-        provider_id: String,
+        provider_id: SupportedProviderId,
         selections: Value,
     },
     DiscoverCommands {
         #[ts(rename = "providerId")]
-        provider_id: String,
+        provider_id: SupportedProviderId,
         cwd: Option<String>,
     },
     CreateSession {
         #[ts(rename = "workspaceId")]
         workspace_id: Option<String>,
         #[ts(rename = "providerId")]
-        provider_id: String,
+        provider_id: SupportedProviderId,
         title: String,
         #[ts(rename = "newWorktree")]
         new_worktree: bool,

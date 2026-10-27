@@ -251,11 +251,13 @@ it("shows actual worker communications once and separately from their summary", 
     update({ sessionUpdate: "subagent_update", sessionId: "child" }),
   );
   const sent = {
-    sessionUpdate: "agent_communication",
+    sessionUpdate: "session_message",
+    senderSessionId: "child",
+    recipientSessionId: "root",
     messageId: "send-1",
     direction: "sent",
     label: "Message to parent",
-    content: { type: "text", text: "CHILD_READY_713\nHARBOR_CHILD_ORIGIN_713" },
+    content: [{ type: "text", text: "CHILD_READY_713\nHARBOR_CHILD_ORIGIN_713" }],
   };
   t = reduceEvent(t, update(sent, "child"));
   t = reduceEvent(
@@ -626,8 +628,8 @@ describe("ACP transcript routing", () => {
       t,
       event("request", {
         id: 2,
-        method: "cursor/create_plan",
-        params: { plan: "Plan" },
+        method: "elicitation/create",
+        params: { message: "Choose a plan" },
       }),
     );
     t = reduceEvent(t, event("answered", { id: 1 }));
@@ -921,4 +923,13 @@ it("keeps invocation ranges aligned when a long user message is trimmed for disp
       message.text.slice(range.start, range.end),
     ),
   ).toEqual(["$build"]);
+});
+
+it("renders Claude typed worker-message receipts in their own conversations and deduplicates replay", () => {
+  let t = reduceEvent(emptyTranscript(), update({ sessionUpdate:"subagent_update", sessionId:"child" }));
+  const receipt = { sessionUpdate:"session_message", messageId:"message-1", senderSessionId:"root", recipientSessionId:"child", content:[{type:"text",text:"Continue the existing task"}] };
+  t = reduceEvent(t, update(receipt, "child"));
+  t = reduceEvent(t, update(receipt, "child"));
+  expect(t.messages).toHaveLength(1);
+  expect(t.messages[0]).toMatchObject({ childId:"child", role:"user", label:"Message from parent", text:"Continue the existing task" });
 });

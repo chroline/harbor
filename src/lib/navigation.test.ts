@@ -1,7 +1,33 @@
 import { describe, expect, it } from "vitest";
-import { initialHistory, pruneHistory, travel, visit } from "./navigation";
+import {
+  initialHistory,
+  pruneHistory,
+  readSavedView,
+  travel,
+  visit,
+} from "./navigation";
 import { parseShellPreferences } from "./shell-layout";
 describe("Harbor navigation history", () => {
+  it("restores the saved task and safely rejects invalid saved views", () => {
+    expect(readSavedView('{"session":"last-task"}')).toEqual({
+      session: "last-task",
+    });
+    expect(readSavedView('"settings"')).toBe("settings");
+    for (const value of [
+      null,
+      "broken",
+      "42",
+      '{"session":false}',
+      '"unknown"',
+    ])
+      expect(readSavedView(value)).toBe("home");
+    expect(
+      pruneHistory(
+        visit(initialHistory, readSavedView('{"session":"deleted"}')),
+        new Set(),
+      ),
+    ).toEqual(initialHistory);
+  });
   it("deduplicates selection and discards forward history on new navigation", () => {
     let h = visit(initialHistory, { session: "a" });
     expect(visit(h, { session: "a" })).toBe(h);

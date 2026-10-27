@@ -25,6 +25,7 @@ type TaskComposerProps = Pick<
   context?: ReactNode;
   modelMenu: ReactNode;
   modePicker?: ModePickerProps;
+  configurationAction?: ReactNode;
   onSubmit: () => void;
   actionLabel: string;
   actionDisabled?: boolean;
@@ -38,6 +39,7 @@ export function TaskComposer({
   context,
   modelMenu,
   modePicker,
+  configurationAction,
   onSubmit,
   actionLabel,
   actionDisabled,
@@ -176,10 +178,16 @@ export function TaskComposer({
           {fileError}
         </div>
       )}
-      {modePicker?.error && (
-        <div className="composer-configuration-error" role="alert">
-          <span>{modePicker.error}</span>
-          {modePicker.onRetry && (
+      {/* Keep a configuration dialog mounted when saving clears the error. */}
+      {(modePicker?.error || configurationAction) && (
+        <div
+          className="composer-configuration-error"
+          role={modePicker?.error ? "alert" : undefined}
+          style={modePicker?.error ? undefined : { display: "none" }}
+        >
+          <span>{modePicker?.error}</span>
+          {configurationAction}
+          {modePicker?.onRetry && (
             <Button
               variant="ghost"
               size="sm"
@@ -189,7 +197,7 @@ export function TaskComposer({
               Retry change
             </Button>
           )}
-          {modePicker.onCancel && (
+          {modePicker?.onCancel && (
             <Button
               variant="ghost"
               size="sm"

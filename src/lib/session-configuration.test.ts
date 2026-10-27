@@ -28,7 +28,7 @@ const session = (status = "idle", current = "agent"): SessionRecord => ({
     nativeHandoffReason: "",
     raw: {},
   },
-  providerId: "cursor",
+  providerId: "claude",
   status,
   mode: "gui",
   archived: false,
@@ -141,4 +141,24 @@ it("applies a queued choice after acknowledged cancellation and ignores archived
   queue.observe({ ...session(), archived: true });
   expect(queue.blocked("chat")).toBe(false);
   expect(apply).toHaveBeenCalledOnce();
+});
+
+it("keeps sending blocked when a successful response did not confirm the selected mode", async () => {
+  const { queue, apply } = harness();
+  apply.mockResolvedValueOnce(session("idle", "agent"));
+  queue.select(session(), "mode", "plan");
+  await vi.waitFor(() => expect(queue.get("chat").busy).toBe(false));
+  expect(queue.get("chat").error).toContain("confirm");
+  expect(queue.blocked("chat")).toBe(true);
+  expect(queue.get("chat").pending).toEqual([{ id: "mode", value: "plan" }]);
+});
+
+it("rejects configuration responses belonging to another conversation", async () => {
+  const { queue, apply, update } = harness();
+  apply.mockResolvedValueOnce({ ...session("idle", "plan"), acpSessionId: "other-wire" });
+  queue.select(session(), "mode", "plan");
+  await vi.waitFor(() => expect(queue.get("chat").busy).toBe(false));
+  expect(queue.get("chat").error).toContain("conversation");
+  expect(update).not.toHaveBeenCalled();
+  expect(queue.blocked("chat")).toBe(true);
 });

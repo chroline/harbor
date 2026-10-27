@@ -6,6 +6,13 @@ export const MAX_ATTACHMENTS = 10;
 const drafts = new Map<string, File[]>();
 const listeners = new Set<() => void>();
 const empty: File[] = [];
+export function pruneDraftFiles(sessions: ReadonlySet<string>) {
+  for (const key of drafts.keys()) {
+    if (key !== "home" && ![...sessions].some((id) => key.startsWith(`${id}:`))) drafts.delete(key);
+  }
+  listeners.forEach((listener) => listener());
+}
+
 export function getDraftFiles(key: string) {
   return drafts.get(key) ?? empty;
 }

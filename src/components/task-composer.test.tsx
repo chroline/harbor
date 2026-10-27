@@ -10,6 +10,7 @@ import {
 } from "@testing-library/react";
 import { TaskComposer } from "./TaskComposer";
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import userEvent from "@testing-library/user-event";
 import type { ModePickerProps } from "./ModePicker";
 import { chatMode } from "../lib/chat-mode";
@@ -41,6 +42,39 @@ const defaults = {
   actionLabel: "Send message",
   textareaProps: { "aria-label": "Message" },
 };
+
+it("keeps executable configuration open when saving clears the connection error", async () => {
+  function ConfigurationAction() {
+    const [open, setOpen] = useState(false);
+    return (
+      <>
+        <button onClick={() => setOpen(true)}>Configure executable</button>
+        {open &&
+          createPortal(
+            <div role="dialog">Connection check result</div>,
+            document.body,
+          )}
+      </>
+    );
+  }
+  const props = (error?: string) => ({
+    ...defaults,
+    onSubmit: () => {},
+    configurationAction: <ConfigurationAction />,
+    modePicker: { error, onChange: () => {} },
+  });
+  const { rerender } = render(
+    <TaskComposer {...props("Executable missing")} />,
+  );
+  await userEvent.click(
+    screen.getByRole("button", { name: "Configure executable" }),
+  );
+  rerender(<TaskComposer {...props()} />);
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(screen.getByRole("dialog").textContent).toBe(
+    "Connection check result",
+  );
+});
 
 it("uses the same modifier shortcut and button action without sending on Enter or during composition", () => {
   const submit = vi.fn();
@@ -205,9 +239,9 @@ it("cycles from the focused input while preserving draft, caret, and focus", asy
   }
 });
 
-it("shows OpenCode's current mode and switches it with Shift+Tab or the menu", async () => {
+it("shows the provider's current mode and switches it with Shift+Tab or the menu", async () => {
   const user = userEvent.setup();
-  function OpenCodeComposer() {
+  function ProviderModeComposer() {
     const [currentValue, setMode] = useState("build");
     const mode = chatMode([
       {
@@ -227,7 +261,7 @@ it("shows OpenCode's current mode and switches it with Shift+Tab or the menu", a
       />
     );
   }
-  render(<OpenCodeComposer />);
+  render(<ProviderModeComposer />);
   expect(screen.getByRole("button", { name: "Mode: build" })).toBeTruthy();
   const input = screen.getByRole("textbox");
   input.focus();

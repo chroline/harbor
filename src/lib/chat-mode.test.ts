@@ -14,21 +14,21 @@ export const codexModes = [
     ],
   },
 ];
-export const cursorModes = [
+export const claudeModes = [
   {
     id: "mode",
     category: "mode",
     type: "select",
     name: "Mode",
-    currentValue: "agent",
-    options: ["agent", "plan", "ask"].map((value) => ({
+    currentValue: "default",
+    options: ["default", "plan", "acceptEdits"].map((value) => ({
       value,
       name: value[0].toUpperCase() + value.slice(1),
     })),
   },
 ];
 
-it("recognizes OpenCode session modes and cycles provider-defined agents", () => {
+it("recognizes advertised session modes and cycles provider-defined agents", () => {
   const choices = ["build", "plan", "review"].map((value) => ({
     value,
     name: value,
@@ -49,29 +49,29 @@ it("recognizes OpenCode session modes and cycles provider-defined agents", () =>
   expect(nextMode(mode!, "review")).toBe("build");
 });
 
-it("cycles Codex collaboration and Cursor modes without touching permissions or effort", () => {
-  const codex = chatMode([...cursorModes, ...codexModes])!;
+it("cycles Codex collaboration and Claude modes without touching permissions or effort", () => {
+  const codex = chatMode([...claudeModes, ...codexModes])!;
   expect(codex.configId).toBe("collaboration_mode");
   expect(nextMode(codex)).toBe("plan");
   expect(nextMode(codex, "plan")).toBe("default");
-  const cursor = chatMode(cursorModes)!;
-  expect(nextMode(cursor)).toBe("plan");
-  expect(nextMode(cursor, "plan")).toBe("ask");
-  expect(nextMode(cursor, "ask")).toBe("agent");
-  expect(chatMode(cursorModes)?.configId).toBe("mode");
+  const claude = chatMode(claudeModes)!;
+  expect(nextMode(claude)).toBe("plan");
+  expect(nextMode(claude, "plan")).toBe("acceptEdits");
+  expect(nextMode(claude, "acceptEdits")).toBe("default");
+  expect(chatMode(claudeModes)?.configId).toBe("mode");
 });
 
 it("prefers modern configuration and supports legacy modes regardless of provider", () => {
   const legacy = {
-    currentModeId: "ask",
-    availableModes: cursorModes[0].options.map((v) => ({
+    currentModeId: "acceptEdits",
+    availableModes: claudeModes[0].options.map((v) => ({
       id: v.value,
       name: v.name,
     })),
   };
-  expect(chatMode(cursorModes, legacy)?.current).toBe("agent");
+  expect(chatMode(claudeModes, legacy)?.current).toBe("default");
   expect(chatMode([], legacy)?.configId).toBe("__legacy_mode");
-  expect(chatMode([], legacy)?.current).toBe("ask");
+  expect(chatMode([], legacy)?.current).toBe("acceptEdits");
 
   expect(chatMode(null, null)).toBeUndefined();
 });
@@ -124,4 +124,8 @@ it("does not promote model, reasoning, empty, or unsupported controls to modes",
     chatMode([{ ...effort, category: "mode", type: "boolean" }]),
   ).toBeUndefined();
   expect(chatMode(null, null)).toBeUndefined();
+});
+
+it("omits modes for an unverified Grok version with only a model control", () => {
+  expect(chatMode([{id:"model", category:"model", type:"select", currentValue:"grok", options:[{value:"grok",name:"Grok"}]}], null)).toBeUndefined();
 });

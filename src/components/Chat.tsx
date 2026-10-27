@@ -20,14 +20,13 @@ import { useTaskTabs, orderTaskTabs } from "../hooks/use-task-tabs";
 import { TaskComposer } from "./TaskComposer";
 import * as Tabs from "@radix-ui/react-tabs";
 import { ThinkingIndicator } from "./ui/thinking-indicator";
-import { ClarificationQuestionnaire } from "./ClarificationQuestionnaire";
+import { ElicitationForm } from "./ElicitationForm";
 import { Card } from "./ui/card";
 import { Disclosure } from "./fluid";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   CircleAlert,
-  MessageSquare,
   TerminalSquare,
   ChevronRight,
   Check,
@@ -1178,15 +1177,6 @@ export function RequestCard({
   const [busy, setBusy] = useState(false);
   const [questionAttempt, setQuestionAttempt] = useState(0);
   const p = request.params;
-  const tool = record(p.toolCall);
-  const input = record(tool.rawInput);
-  // pi-acp carries extension select questions as ACP permission requests.
-  // Only recognize its explicit tool-call marker and select payload.
-  const piQuestion =
-    request.method === "session/request_permission" &&
-    str(tool.toolCallId).startsWith("pi-ui-") &&
-    input.method === "select" &&
-    array(p.options).length > 0;
   const answer = async (result: unknown) => {
     setBusy(true);
     try {
@@ -1205,52 +1195,14 @@ export function RequestCard({
     }
   };
   return (
-    <Card
-      className={`request-card ${piQuestion ? "request-card-question" : ""}`}
-    >
+    <Card className="request-card">
       {childName && <p className="request-child-label">{childName}</p>}
       <div className="request-heading">
-        {piQuestion ? (
-          <MessageSquare size={rem(16)} />
-        ) : (
-          <ShieldCheck size={rem(16)} />
-        )}
-        <strong>
-          {piQuestion
-            ? "Agent question"
-            : request.method === "session/request_permission"
-              ? "Your permission is needed"
-              : str(p.title, "Your input is needed")}
-        </strong>
+        <ShieldCheck size={rem(16)} />
+        <strong>{request.method === "elicitation/create" ? "Your input is needed" : "Your permission is needed"}</strong>
       </div>
-      {piQuestion ? (
-        <div inert={busy} aria-busy={busy} className="request-questions">
-          <ClarificationQuestionnaire
-            key={questionAttempt}
-            busy={busy}
-            questions={[
-              {
-                id: "pi-select",
-                title: str(tool.title).replace(/^\[Agent\]\s*/, ""),
-                options: array(p.options).map((raw) => {
-                  const option = record(raw);
-                  const label = str(option.name).replace(/^\d+\.\s+/, "");
-                  const split = label.indexOf(" — ");
-                  return {
-                    id: str(option.optionId),
-                    title: split < 0 ? label : label.slice(0, split),
-                    description: split < 0 ? undefined : label.slice(split + 3),
-                  };
-                }),
-              },
-            ]}
-            onComplete={(responses) => {
-              const optionId = responses[0]?.selectedOptionIds[0];
-              if (optionId)
-                void answer({ outcome: { outcome: "selected", optionId } });
-            }}
-          />
-        </div>
+      {request.method === "elicitation/create" ? (
+        <ElicitationForm key={questionAttempt} params={p} busy={busy} onAnswer={(result) => void answer(result)} />
       ) : request.method === "session/request_permission" ? (
         <>
           <p>
@@ -1259,6 +1211,10 @@ export function RequestCard({
               "The agent would like to run a tool.",
             )}
           </p>
+          {record(p.toolCall).kind === "switch_mode" && array(record(p.toolCall).content).map((raw, index) => {
+            const content = record(record(raw).content);
+            return content.type === "text" ? <RichText key={index} text={str(content.text)} /> : null;
+          })}
           <div className="request-buttons">
             {array(p.options).map((raw) => {
               const o = record(raw);
@@ -1281,57 +1237,7 @@ export function RequestCard({
             })}
           </div>
         </>
-      ) : request.method === "cursor/create_plan" ? (
-        <>
-          <RichText text={str(p.plan)} />
-          <div className="request-buttons">
-            <Button
-              disabled={busy}
-              onClick={() => void answer({ outcome: { outcome: "accepted" } })}
-            >
-              Approve plan
-            </Button>
-            <Button
-              disabled={busy}
-              variant="secondary"
-              onClick={() => void answer({ outcome: { outcome: "rejected" } })}
-            >
-              Reject
-            </Button>
-          </div>
-        </>
-      ) : (
-        <>
-          <div inert={busy} className="request-questions">
-            <ClarificationQuestionnaire
-              key={questionAttempt}
-              busy={busy}
-              questions={array(p.questions).map((raw) => {
-                const q = record(raw);
-                return {
-                  id: str(q.id),
-                  title: str(q.prompt),
-                  multiple: q.allowMultiple === true,
-                  options: array(q.options).map((raw) => {
-                    const option = record(raw);
-                    return { id: str(option.id), title: str(option.label) };
-                  }),
-                };
-              })}
-              onComplete={(answers) =>
-                void answer({ outcome: { outcome: "answered", answers } })
-              }
-            />
-          </div>
-          <Button
-            variant="ghost"
-            disabled={busy}
-            onClick={() => void answer({ outcome: { outcome: "skipped" } })}
-          >
-            Skip
-          </Button>
-        </>
-      )}
+      ) : <p>This interaction is not supported by the connected provider.</p>      }
     </Card>
   );
 }

@@ -121,6 +121,16 @@ export class SessionConfiguration {
     this.put(id, { ...state, busy: true });
     try {
       const updated = await this.deps.apply(id, change.id, change.value);
+      if (updated.id !== session.id || updated.acpSessionId !== session.acpSessionId) {
+        throw new Error("Configuration response belongs to a different conversation. Reconnect before retrying.");
+      }
+      const confirmed = options(updated.configOptions).find((o) => o.id === change.id)?.currentValue
+        ?? (change.id === "__legacy_mode"
+          ? record(updated.modes).currentModeId
+          : change.id === "__legacy_model" ? record(updated.models).currentModelId : undefined);
+      if (confirmed !== change.value) {
+        throw new Error("The provider did not confirm the selected setting. Retry or cancel the change before sending.");
+      }
       this.sessions.set(id, updated);
       this.deps.update(updated);
       const latest = this.get(id);

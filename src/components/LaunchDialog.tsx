@@ -1,3 +1,5 @@
+import { ProviderConnectionButton } from "./ProviderConnectionButton";
+import { supportedProviderId, defaultProvider } from "../lib/providers";
 import { prepareAttachments, restoreDraftFiles } from "../lib/attachments";
 import {
   normalizeCommandAliases,
@@ -55,7 +57,7 @@ export function LaunchDialog({
   const [workspaceId, setWorkspace] = useState(initialWorkspace);
   const workspace = data.workspaces.find((w) => w.id === workspaceId);
   const canWorktree = !!workspace?.isGitRoot;
-  const [provider, setProvider] = useState(initialProvider);
+  const [provider, setProvider] = useState(defaultProvider(initialProvider));
   const modelState = useProviderConfig(
     data.providers.find((p) => p.id === provider),
     open && ready,
@@ -96,7 +98,7 @@ export function LaunchDialog({
     if (open) {
       setPrompt(initialPrompt);
       setFiles([]);
-      setProvider(initialProvider);
+      setProvider(defaultProvider(initialProvider));
       setWorkspace(initialWorkspace);
       setBranch(`harbor/task-${Date.now().toString(36).slice(-5)}`);
       setSessionId(null);
@@ -128,7 +130,7 @@ export function LaunchDialog({
         throw new Error("Enter a branch name.");
       const s = await call<SessionRecord>("create_session", {
         workspaceId: workspaceId || null,
-        providerId: provider,
+        providerId: supportedProviderId(provider),
         title: prompt.trim() || files[0]?.name || "New conversation",
         newWorktree: canWorktree && tree,
         branch,
@@ -286,6 +288,7 @@ export function LaunchDialog({
                 )}
               </>
             }
+            configurationAction={<ProviderConnectionButton providerId={provider} disabled={busy} />}
             modelMenu={
               session ? (
                 <SessionModelMenu session={session} disabled={busy} />
@@ -293,7 +296,7 @@ export function LaunchDialog({
                 <DiscoveryModelMenu
                   state={modelState}
                   provider={provider}
-                  onProviderChange={setProvider}
+                  onProviderChange={(id) => setProvider(defaultProvider(id))}
                   disabled={busy}
                 />
               )

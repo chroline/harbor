@@ -1,3 +1,4 @@
+import { supportedProviderId } from "./providers";
 import { useEffect, useSyncExternalStore } from "react";
 import { call, desktop, json } from "./api";
 import { array, options, record, str } from "./protocol";
@@ -12,6 +13,7 @@ type Entry = {
 };
 const empty: Entry = { busy: false };
 const entries = new Map<string, Entry>();
+const generations = new Map<string, number>();
 const listeners = new Set<() => void>();
 const subscribe = (fn: () => void) => {
   listeners.add(fn);
@@ -21,6 +23,15 @@ const subscribe = (fn: () => void) => {
 };
 function publish(key: string, value: Entry) {
   entries.set(key, value);
+  listeners.forEach((fn) => fn());
+}
+export function invalidateProviderConfig(providerId: string) {
+  for (const key of entries.keys()) {
+    if (JSON.parse(key)[0] === providerId) {
+      generations.set(key, (generations.get(key) ?? 0) + 1);
+      entries.delete(key);
+    }
+  }
   listeners.forEach((fn) => fn());
 }
 export function modelControls(config?: ProviderConfiguration) {
@@ -78,6 +89,7 @@ async function load(
   provider: ProviderDefinition,
   selections: Record<string, string | boolean>,
 ) {
+  const generation = generations.get(key) ?? 0;
   const previous = entries.get(key);
   if (previous?.busy) {
     publish(key, {
@@ -95,8 +107,9 @@ async function load(
   try {
     const config = await call<ProviderConfiguration>(
       "discover_provider_config",
-      { providerId: provider.id, selections: json(selections) },
+      { providerId: supportedProviderId(provider.id), selections: json(selections) },
     );
+    if ((generations.get(key) ?? 0) !== generation) return;
     const pending = entries.get(key)?.pending;
     publish(key, { config, busy: false });
     if (pending && pending !== selections)
@@ -105,6 +118,7 @@ async function load(
         ...pending,
       });
   } catch (error) {
+    if ((generations.get(key) ?? 0) !== generation) return;
     publish(key, {
       ...previous,
       pending: entries.get(key)?.pending,
@@ -135,7 +149,7 @@ export function useProviderConfig(
   useEffect(() => {
     if (desktop && enabled && provider && !entries.has(key))
       void load(key, provider, {});
-  }, [key, enabled]);
+  }, [key, enabled, entry]);
   return {
     ...entry,
     preview: !desktop,
@@ -170,8 +184,5 @@ export function missingModelMessage(config: ProviderConfiguration): string {
   const info = record(config.agentInfo);
   const name = str(info.title, str(info.name, "The connected agent"));
   const version = str(info.version);
-  if (info.name === "prime-agent" && version === "0.9.4") {
-    return "Prime Agent 0.9.4 returned no ACP model controls. Use Prime Agent 0.9.8 or newer in Settings, then retry.";
-  }
   return `${name}${version ? ` ${version}` : ""} returned no model options. Check the executable version and provider sign-in, then retry.`;
 }

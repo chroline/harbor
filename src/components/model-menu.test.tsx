@@ -480,7 +480,7 @@ it("opens reasoning first and only reveals models through the model and agent se
   expect(document.activeElement).toBe(label);
 });
 
-it("restores the Codex GPT prefix without changing model IDs or duplicating full names", async () => {
+it("preserves agent-provided model names, descriptions, and IDs", async () => {
   const change = vi.fn();
   render(
     <ModelMenu
@@ -490,7 +490,11 @@ it("restores the Codex GPT prefix without changing model IDs or duplicating full
           ...controls[0],
           currentValue: "gpt-6.1-sol",
           options: [
-            { value: "gpt-6.1-sol", name: "6.1 Sol" },
+            {
+              value: "gpt-6.1-sol",
+              name: "6.1 Sol",
+              description: "Agent-provided model details",
+            },
             { value: "gpt-6-astra", name: "GPT-6 Astra" },
             { value: "custom-model", name: "Custom" },
           ],
@@ -503,13 +507,18 @@ it("restores the Codex GPT prefix without changing model IDs or duplicating full
     screen.getByRole("button", { name: "Choose model and reasoning" }),
   );
   const summary = await screen.findByRole("button", { name: "Choose model" });
-  expect(summary.textContent).toContain("GPT-6.1 Sol");
+  expect(summary.textContent).toContain("6.1 Sol");
+  expect(summary.textContent).not.toContain("GPT-6.1 Sol");
   fireEvent.click(summary);
+  expect(screen.getByText("Agent-provided model details")).toBeTruthy();
   fireEvent.change(screen.getByRole("textbox", { name: "Search models" }), {
-    target: { value: "gpt-" },
+    target: { value: "Agent-provided model details" },
   });
-  expect(screen.getByRole("button", { name: "GPT-6.1 Sol" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "6.1 Sol" })).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Custom" })).toBeNull();
+  fireEvent.change(screen.getByRole("textbox", { name: "Search models" }), {
+    target: { value: "" },
+  });
   fireEvent.click(screen.getByRole("button", { name: "GPT-6 Astra" }));
   expect(change).toHaveBeenCalledExactlyOnceWith(
     "provider-model",

@@ -1,34 +1,61 @@
-# provider compatibility
+# Provider compatibility
 
 [← Harbor](../README.md)
 
-## tested providers
+Harbor supports exactly **Claude Code**, **OpenAI Codex**, and **Grok Build**. Persisted IDs are `claude`, `codex`, and `grok`. The Rust registry generates the browser defaults and supported command ID type. Executable, arguments, and native CLI paths remain configurable; adding arbitrary providers is not supported.
 
-live smoke tests were run on this Mac on October 8, 2026, with worker continuation checks expanded on October 14, 2026, using existing logins and isolated test repositories. model names come from the provider, never a hardcoded catalog.
+Implementation policies live behind required, typed [provider adapters](adapters.md), with one central registration table and explicit unsupported/unverified capabilities. That document describes how contributors can implement and register another integration.
 
-| provider | tested ACP entry point | live prompt | model / reasoning | worker telemetry | native CLI handoff |
-| --- | --- | --- | --- | --- | --- |
-| Codex | `@agentclientprotocol/codex-acp@2.1.1` | passed | dynamic controls | passed: real child, parent ownership, transcript, completion, existing-worker follow-up through parent relay | passed with `codex-cli 0.154.0` |
-| Claude Code | `@agentclientprotocol/claude-agent-acp@0.88.0` | passed | dynamic model and effort | passed: existing-worker follow-up and delayed completion through parent relay | disabled: unverified |
-| Cursor | `agent acp`, CLI `2026.08.11-e8db854` | passed | model variants include effort; no separate effort control advertised | passed: worker extension requests, existing-worker follow-up through parent relay | disabled: unverified |
-| Pi | `pi-acp@0.0.34`, Pi `0.84.2` | passed | dynamic model and thinking level | passed: pi-subagents workflow identities and existing-worker resume through parent relay | disabled: unverified |
-| OpenCode | `opencode acp`, `1.18.31` | passed | dynamic model, effort, mode | passed: task receipt identity, direct worker history and original-context recall | disabled: unverified |
-| Prime Agent | `prime-agent --mode acp` | 0.9.8: live Grok 4.7 prompt passed | live model/effort round-trip passed; 0.9.4 returns no controls | passed: real Grok 4.7 child, existing history, direct UI follow-up with original-context recall | disabled: unverified |
-| Grok Build | `grok --no-auto-update agent stdio`, CLI `1.0.30` | passed October 14, 2026 | live model switch and restore passed; no separate reasoning control advertised | passed: real child identity, history, direct worker-composer follow-up with original-context recall | disabled: unverified |
-| custom | user-specified ACP command | depends on executable | discovered on connection | depends on advertised protocol/extensions | disabled |
+## Tested installations
 
-install the adapter versions above through your preferred package manager, or point settings at a locally installed copy. for example, a project-local npm installation exposes `node_modules/.bin/codex-acp`; no global install is required.
+Live checks on October 26, 2026 used existing CLI authentication and isolated temporary Git repositories. Model choices are discovered from the installed provider, never a static catalog.
 
-Grok Build is a bundled provider with its own model discovery, configuration, and saved chats. install it with the [official installer](https://docs.x.ai/build/overview), then run `grok login` in your terminal. Harbor reuses the existing CLI authentication. its [ACP entry point](https://docs.x.ai/build/cli/headless-scripting) uses `--no-auto-update` to avoid background updates during managed sessions. models come from Grok's advertised catalog. Grok Build workers load their existing ACP sessions directly; backend and packaged UI follow-ups verified retained child context. native terminal handoff remains unverified.
+| Provider | Tested ACP entry point | Configuration | Worker continuation | Native handoff |
+| --- | --- | --- | --- | --- |
+| OpenAI Codex | `@agentclientprotocol/codex-acp@2.3.0` | Model switch/restore and reasoning switch/restore passed; modes and boolean controls advertised | Passed, labeled parent relay to the original child, independently checked against its native rollout | CLI 0.164.0: disabled; ACP refused reconnect with an ownership lock after native exit. Prior exact pair `codex-acp 2.1.1` / `codex-cli 0.154.0` remains allowed |
+| Claude Code | `@agentclientprotocol/claude-agent-acp@0.97.0` | Model switch/restore and effort switch/restore passed; modes and boolean controls advertised | Passed, labeled parent relay; typed delivery receipt and original child's reply retained both context markers | Disabled: CLI `2.1.284` did not complete the native round trip; first-run trust interaction remains unverified |
+| Grok Build | `grok --no-auto-update agent stdio`, `1.0.30 (04b7ffed98c6) [stable]` | Model switch/restore passed; no separate reasoning control advertised | Passed, direct load and prompt of the existing worker | Passed ACP → native PTY → ACP, including history replay and native-turn context recall |
 
-Codex handoff is enabled only when both executable version checks match the tested pair. it is checked again before switching. the ACP session identifier is also the verified native session identifier for this pair. unsupported versions remain disabled. **finish or cancel the turn before entering terminal. exit the native CLI with `/exit`, then select chat to reload the same history.** returning while the CLI is running is refused. no replacement conversation is silently created.
+Use `npm install -g @agentclientprotocol/codex-acp@2.3.0` or `npm install -g @agentclientprotocol/claude-agent-acp@0.97.0`, or point Settings at a local installation. Grok's [official installer](https://docs.x.ai/build/overview), [ACP documentation](https://docs.x.ai/build/cli/headless-scripting), and [native CLI reference](https://docs.x.ai/build/cli/reference) describe installation, authentication, `agent stdio`, and `--resume`.
 
-## worker verification
+## Connection and discovery
 
-on October 14, 2026, actual worker-composer exchanges were verified in the packaged Harbor UI for six agents: Prime, Codex, Claude, Cursor, Pi, and OpenCode. Prime Agent 0.9.8 with Grok 4.7 spawned `sub-864b927e`; its worker history loaded and a fresh message returned `HARBOR_CHILD_ORIGIN_713 HARBOR_UI_REPLY_9472`. the original marker was omitted from the follow-up, demonstrating retained context. see the [six-provider verification record](subagent-verification.md) for tested routes and remaining provider limitations. Cursor answered a practical follow-up after declining synthetic marker prompts. separate live backend context-retention checks passed for all six providers. frontend regression coverage includes bundled and custom provider entries; arbitrary custom ACP executables remain provider-dependent.
+**Save and check** resolves the executable, negotiates stable ACP v1, and opens a temporary session without sending a prompt. Results distinguish missing executables, incompatible protocol, authentication requirements, timeouts, other connection failures, and success. Advertised authentication methods and agent identity are shown. Harbor reuses native CLI credentials; it does not store API keys.
 
-## Prime compatibility
+Model, reasoning, boolean, mode, and command controls come from provider responses, with the verified Grok mode compatibility exception below. Model changes are applied before dependent selections. Valid preferences survive; unavailable values produce a visible explanation. Saving executable/argument changes stops old discovery transports and invalidates frontend and backend caches. Late results cannot replace newer configuration. Temporary discovery and diagnostic processes close on replacement or shutdown.
 
-version 0.9.8 exposes standard ACP model and reasoning configuration; 0.9.4 does not return those controls. Harbor preserves Prime’s opaque JSON model ids, refreshes dependent reasoning choices, and reports the connected version when controls are absent. configuration discovery reuses a session for subsequent changes and closes it on shutdown or replacement when the agent advertises `session/close`. if an older Prime daemon has busy sessions, a newer executable refuses to replace it. a dedicated `--daemon-socket <path>` can keep Harbor’s Prime service separate while using the existing local authentication. the live configuration test uses `HARBOR_SMOKE_CONNECT_ONLY=1 HARBOR_SMOKE_CONFIG_ROUNDTRIP=1` and restores the original model/effort afterward. it submits no prompt.
+## Plan mode
 
-see [development](development.md#verification-limits) for the remaining live acceptance limits.
+Plan mode has been behaviorally verified on all three installations above: planning made no project-file changes, ACP process restart retained the original conversation and context, and explicit execution changed only the planned file. The selector and Shift+Tab were also checked in the packaged macOS QA app with provider-specific fixtures.
+
+- **Codex:** `collaboration_mode` (`default` / `plan`) is separate from permission modes (`read-only`, `workspace-write`, `agent`). Changing collaboration mode never changes permission policy. Rejecting its plan-review request keeps Plan selected.
+- **Claude:** its advertised `mode` choices include `plan`, routed through `session/set_mode`. Its ExitPlanMode approval and provider-initiated mode update are preserved; execution uses the same conversation rather than a clear-context approval option.
+- **Grok:** build `1.0.30 (04b7ffed98c6) [stable]` supports `session/set_mode` with `default` / `plan`, but omits the ACP mode catalogue. Harbor supplies these two choices only for that verified build, unless `--no-plan` is set. Other versions must advertise modes themselves. Its native `_x.ai/exit_plan_mode` request is translated into the shared plan review with **Implement plan** and **Keep planning**. **Leave Plan without executing** remains available under **More options**. The response preserves the original request and session IDs. Only the connected session's exact native `plan.md` is accessible outside its workspace; other native history files and symlink escapes remain blocked.
+
+Grok's documented [Plan mode](https://docs.x.ai/build/modes-and-commands#plan) and [planning lifecycle](https://docs.x.ai/build/features/plan-mode) describe a real provider feature; missing discovery metadata is not evidence that the feature is absent. The native extension is implemented against xAI's [published protocol types](https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-tools/src/implementations/grok_build/exit_plan_mode/types.rs). Grok's edit gate does not cover arbitrary shell writes or subagent edits; Plan is a workflow, not a filesystem security boundary.
+
+All three providers open the same plan review sheet from a **Plan card** with a fading preview and **View plan** action, with shared typography and primary actions. The sheet uses the recovered [Kobra runtime contract](plan-sheet.md). Its plan body scrolls above a fixed action footer; Escape, outside press, and Close dismiss it without answering the pending request. Provider-specific execution choices remain explicitly labeled in **More options**; the primary Claude action preserves context and manual edit approvals. An exact copy of the pending plan is displayed once rather than repeated above the review trigger.
+
+Sending waits for the requested mode to be acknowledged. Failed or unconfirmed changes retain the draft and show retry/cancel controls. Configuration changes are serialized with session operations, and reconnect retains the confirmed mode; Grok's saved mode is reasserted if its load response omits it. Root drafts are synchronously persisted before the debounced database save, including immediate quit.
+
+## Conversation continuity
+
+ACP session new/load/resume is shared across all three integrations. Reconnection rejects a different returned identity, including after authentication. It never silently creates a replacement conversation. Root drafts, persistent worker drafts (including detached-window edits), transcript events, worker ownership, and configuration remain associated with the original chat.
+
+Streaming text, thinking, plans, tool calls/results, form elicitation, permission choices, advertised commands, and attachments use ACP contracts. Unsupported attachment types or question schemas are explained instead of guessed. Form responses retain request identity and typed answer values. URL elicitation is not advertised. Cancelled or disconnected transports reject pending work and clear waiting requests.
+
+Native handoff is an exact compatibility allowlist, checked on connection and again before transfer. Grok requires the same resolved executable for ACP and native mode, the tested build, and the default managed ACP arguments. Custom argument combinations and untested versions stay disabled with an installation-specific reason. Root and worker turns and approvals must finish before handoff. Harbor stops ACP first and refuses to reconnect while the native terminal is alive. Ordinary shell tabs remain available independently.
+
+## Workers and upstream limits
+
+OpenAI Codex and Claude Code continue existing workers through their parent, explicitly labeled **Parent relay**. Prompts name the provider's native continuation mechanism and original worker identity. Grok Build loads the original child directly; attachment failures do not silently switch to parent relay.
+
+Claude 0.97.0 can suppress native control-tool receipts and instead emit `session_message` communication events. Harbor renders those messages and deduplicates their IDs. Grok 1.0.30 did not deliver its local-log lifecycle extension on the client connection, so Harbor uses explicit forwarded child IDs and structured `SubagentCompleted` / `TaskOutput` receipts. Assistant prose never establishes worker ownership. Individual cancellation is offered only for an advertised route or an attached child transport.
+
+See the [verification record](subagent-verification.md) for evidence and unverified scenarios. Harbor supports its existing workflow paths, not every feature of the three native products.
+
+## Database migration
+
+SQLite migration v3 runs transactionally before bootstrap/reconnection. It removes unsupported provider definitions, chats (including archived chats), events, worker metadata, model preferences, title metadata, shell-tab metadata, and obsolete provider session/history mappings. Orphaned chat metadata is removed even when a provider definition is already missing. Surviving provider executable overrides are retained and display names are canonicalized.
+
+**The migration never deletes working directories or native CLI history.** Project, workspace, worktree, and recovery archive records remain independently of deleted chats. Frontend persistence removes stale chat tabs, navigation, pins, unread markers, and drafts while preserving surviving selections; unavailable provider selections fall back to OpenAI Codex.

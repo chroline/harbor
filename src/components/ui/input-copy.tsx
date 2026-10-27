@@ -1,7 +1,7 @@
 "use client";
 import { rem } from "@/lib/units";
 
-import { forwardRef, useState, useCallback, useRef, useEffect, useId, type HTMLAttributes } from "react";
+import { Fragment, forwardRef, useState, useCallback, useRef, useEffect, useId, type HTMLAttributes } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useIcons } from "@/lib/icon-context";
@@ -28,6 +28,10 @@ interface InputCopyProps extends Omit<HTMLAttributes<HTMLDivElement>, "children"
   value: string;
   /** Optional label displayed above the input. */
   label?: string;
+  /** Keep the label available to assistive technology without repeating it visually. */
+  labelHidden?: boolean;
+  /** Wrap long paths at separators while preserving the exact copied value. */
+  wrap?: boolean;
   /** Callback fired after the value is copied. */
   onCopy?: () => void;
   /** Whether the component is disabled. */
@@ -42,7 +46,7 @@ interface InputCopyProps extends Omit<HTMLAttributes<HTMLDivElement>, "children"
 }
 
 const InputCopy = forwardRef<HTMLDivElement, InputCopyProps>(
-  ({ value, label, onCopy, disabled, variant = "icon", align = "right", size, className, ...props }, ref) => {
+  ({ value, label, labelHidden = false, wrap = false, onCopy, disabled, variant = "icon", align = "right", size, className, ...props }, ref) => {
     const icons = useIcons();
     const CopyIcon = icons.copy;
     const CheckIcon = icons.check;
@@ -271,7 +275,8 @@ const InputCopy = forwardRef<HTMLDivElement, InputCopyProps>(
     const valueElement = (
       <span
         className={cn(
-          "flex-1 min-w-0 text-left text-foreground font-mono select-none truncate",
+          "flex-1 min-w-0 text-left text-foreground font-mono select-none",
+          wrap ? "whitespace-normal [overflow-wrap:anywhere]" : "truncate",
           sizeClasses.text,
           rowPy,
           align === "left" ? "pl-1" : "pl-0"
@@ -279,7 +284,9 @@ const InputCopy = forwardRef<HTMLDivElement, InputCopyProps>(
         style={{ fontVariationSettings: fontWeights.normal }}
       >
         <mark className="bg-transparent text-foreground transition-colors duration-80 group-hover:bg-[#6B97FF]/20 group-hover:text-foreground">
-          {value}
+          {wrap ? value.split(/(?<=[/\\])/).map((part, index) => (
+            <Fragment key={index}>{part}<wbr /></Fragment>
+          )) : value}
         </mark>
       </span>
     );
@@ -334,6 +341,7 @@ const InputCopy = forwardRef<HTMLDivElement, InputCopyProps>(
           <span
             id={labelId}
             className={cn(
+              labelHidden && "sr-only",
               "text-muted-foreground",
               sizeClasses.text,
               align === "left" ? "pl-1" : "pl-0"

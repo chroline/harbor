@@ -1,3 +1,5 @@
+import { findAdapter } from "../adapters";
+import { ProviderConnectionButton } from "./ProviderConnectionButton";
 import { rem } from "@/lib/units";
 import {
   useState,
@@ -47,6 +49,7 @@ type MenuProps = {
   disabled?: boolean;
   error?: string;
   retry?: () => void;
+  connectionAction?: ReactNode;
 };
 export function ModelMenu({
   provider,
@@ -60,6 +63,7 @@ export function ModelMenu({
   disabled,
   error,
   retry,
+  connectionAction,
 }: MenuProps) {
   const { data } = useStore();
   const [open, setOpen] = useState(false);
@@ -94,7 +98,7 @@ export function ModelMenu({
   const model = controls.find(
     (o) => o.category === "model" || o.id === "model",
   );
-  const modelChoices = model
+  const choices = model
     ? values(model)
     : array(record(models).availableModels)
         .map(record)
@@ -103,16 +107,6 @@ export function ModelMenu({
           name: str(m.name, str(m.modelId)),
           description: str(m.description),
         }));
-  // Codex ACP shortens GPT display names; keep the family visible in Harbor.
-  const choices = modelChoices.map((choice) => ({
-    ...choice,
-    name:
-      provider === "codex" &&
-      /^gpt-/i.test(choice.value) &&
-      !/^gpt[-\s]/i.test(choice.name)
-        ? `GPT-${choice.name}`
-        : choice.name,
-  }));
   const selected = str(
     pendingSelections?.[model?.id ?? "__legacy_model"],
     str(model?.currentValue, str(record(models).currentModelId)),
@@ -273,9 +267,7 @@ export function ModelMenu({
                           {remaining.map((o) => (
                             <div className="model-menu-setting" key={o.id}>
                               <span>
-                                {provider === "codex" && o.id === "mode"
-                                  ? "Permissions"
-                                  : o.name}
+                                {findAdapter(provider)?.controlLabel(o) ?? o.name}
                               </span>
                               {o.type === "boolean" ? (
                                 <Switch
@@ -292,9 +284,7 @@ export function ModelMenu({
                                 ) ? (
                                 <PermissionChoices
                                   label={
-                                    provider === "codex" && o.id === "mode"
-                                      ? "Permissions"
-                                      : o.name
+                                    findAdapter(provider)?.controlLabel(o) ?? o.name
                                   }
                                   choices={values(o)}
                                   value={String(o.currentValue)}
@@ -347,6 +337,7 @@ export function ModelMenu({
                           )}
                         </div>
                       )}
+                      {connectionAction}
                     </>
                   }
                   agents={
@@ -601,6 +592,11 @@ export function DiscoveryModelMenu({
       pendingSelections={state.pending}
       disabled={disabled}
       retry={state.retry}
+      connectionAction={
+        !state.preview && (
+          <ProviderConnectionButton providerId={provider} disabled={disabled} />
+        )
+      }
       error={
         state.preview
           ? "Open the desktop app to load models."

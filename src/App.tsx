@@ -1,3 +1,5 @@
+import { ProviderConnectionButton } from "./components/ProviderConnectionButton";
+import { supportedProviderId, defaultProvider } from "./lib/providers";
 import {
   prepareAttachments,
   restoreDraftFiles,
@@ -134,7 +136,7 @@ export default function App() {
   const taskComposer = useRef<HTMLElement>(null);
   const [prompt, setPrompt] = useState("");
   const [files, setFiles] = useDraftFiles("home");
-  const [provider, setProvider] = useState("codex");
+  const [provider, setProvider] = useState(defaultProvider());
   const modelState = useProviderConfig(
     data.providers.find((p) => p.id === provider),
     ready,
@@ -227,7 +229,7 @@ export default function App() {
         : [];
       const session = await call<SessionRecord>("create_session", {
         workspaceId: workspace || null,
-        providerId: provider,
+        providerId: supportedProviderId(provider),
         title:
           text.trim() || pendingFiles[0]?.name || "New conversation",
         newWorktree: canWorktree && tree,
@@ -851,11 +853,12 @@ export default function App() {
                         )}
                       </>
                     }
+                    configurationAction={<ProviderConnectionButton providerId={provider} disabled={creating} />}
                     modelMenu={
                       <DiscoveryModelMenu
                         state={modelState}
                         provider={provider}
-                        onProviderChange={setProvider}
+                        onProviderChange={(id) => setProvider(defaultProvider(id))}
                         disabled={creating}
                       />
                     }

@@ -1,23 +1,19 @@
 import { rem } from "@/lib/units";
-import { Card } from "./ui/card";
 import { RadioGroup, RadioItem } from "./ui/radio-group";
-import { InputGroup } from "./ui/input-group";
-import { InputCopy } from "./ui/input-copy";
-import { Banner, BannerDescription } from "./ui/banner";
 import { useEffect, useState } from "react";
 import {
   isPermissionGranted,
   requestPermission,
 } from "@tauri-apps/plugin-notification";
-import { Plus, RefreshCw, PlugZap } from "@/lib/icons";
+import { PlugZap } from "@/lib/icons";
 import { Button } from "./ui/button";
-import { Field, Picker } from "./fluid";
+import { Picker } from "./fluid";
 import { Switch } from "./ui/switch";
 import { providerGlyph } from "./shared";
+import { ProviderEditor } from "./ProviderEditor";
 import { useStore } from "../lib/store";
 import { call, desktop, json } from "../lib/api";
 import { record, str } from "../lib/protocol";
-import type { ProviderDefinition } from "../lib/bindings/ProviderDefinition";
 import type { EditorChoice } from "../lib/bindings/EditorChoice";
 
 export function Settings() {
@@ -33,7 +29,6 @@ export function Settings() {
         choice.label.toLowerCase() === editor.toLowerCase(),
     )?.value ?? "";
   const [selected, setSelected] = useState<string | null>(null);
-  const [custom, setCustom] = useState(false);
   const [saving, setSaving] = useState(false);
   useEffect(() => {
     if (!desktop) return;
@@ -85,20 +80,10 @@ export function Settings() {
       <section className="settings-section">
         <div className="section-title">
           <h2>Agent connections</h2>
-          <Button
-            variant="secondary"
-            size="compact"
-            leadingIcon={Plus}
-            onClick={() => {
-              setCustom(true);
-              setSelected(null);
-            }}
-          >
-            Custom agent
-          </Button>
+
         </div>
         <p className="section-description">
-          Connect installed agents through ACP. Your existing logins stay with
+          Connect Claude Code, OpenAI Codex, and Grok Build. Your existing logins stay with
           each provider.
         </p>
         <Picker
@@ -115,28 +100,16 @@ export function Settings() {
           }))}
           onValueChange={(id) => {
             setSelected(id);
-            setCustom(false);
           }}
         />
-        {(selected || custom) && (
+        {selected && (
           <ProviderEditor
-            key={selected ?? "custom"}
-            provider={
-              data.providers.find((p) => p.id === selected) ?? {
-                id: "custom-" + Date.now().toString(36),
-                name: "Custom agent",
-                command: "",
-                args: [],
-                nativeCommand: "",
-                installHint: "Provide the path to an installed ACP executable.",
-                color: "blue",
-              }
-            }
+            key={selected}
+            provider={data.providers.find((p) => p.id === selected)!}
+            onSaved={refresh}
             onDone={() => {
               setSelected(null);
-              setCustom(false);
-              void refresh();
-            }}
+              }}
           />
         )}
       </section>
@@ -148,6 +121,7 @@ export function Settings() {
           </div>
           <RadioGroup
             className="theme-choices"
+            aria-orientation="horizontal"
             value={str(settings.theme, "dark")}
             onValueChange={(value) => void save("theme", value)}
             aria-label="Theme"
@@ -162,9 +136,6 @@ export function Settings() {
             ))}
           </RadioGroup>
         </div>
-      </section>
-      <section className="settings-section">
-        <h2>Workspace</h2>
         <div className="setting-row">
           <div>
             <strong>Desktop notifications</strong>
@@ -234,138 +205,5 @@ export function Settings() {
         {!desktop && <span>Browser preview</span>}
       </div>
     </div>
-  );
-}
-function ProviderEditor({
-  provider,
-  onDone,
-}: {
-  provider: ProviderDefinition;
-  onDone: () => void;
-}) {
-  const { setError } = useStore();
-  const [value, setValue] = useState(provider);
-  const [args, setArgs] = useState(provider.args.join("\n"));
-  const [probe, setProbe] = useState<Record<string, unknown> | null>(null);
-  const [busy, setBusy] = useState(false);
-  const save = async () => {
-    const p = {
-      ...value,
-      args: args
-        .split("\n")
-        .map((s) => s.trim())
-        .filter(Boolean),
-    };
-    await call("save_provider", { provider: p });
-  };
-  const detect = async () => {
-    setBusy(true);
-    try {
-      await save();
-      setProbe(await call("probe_provider", { providerId: value.id }));
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <Card className="provider-editor">
-      <div className="form-grid">
-        <div className="field-label">
-          Display name
-          <Field
-            aria-label="Display name"
-            value={value.name}
-            onValueChange={(value) => setValue((v) => ({ ...v, name: value }))}
-          />
-        </div>
-        <div className="field-label">
-          ACP executable
-          <Field
-            aria-label="ACP executable"
-            value={value.command}
-            placeholder="my-agent-acp"
-            onValueChange={(value) =>
-              setValue((v) => ({ ...v, command: value }))
-            }
-          />
-        </div>
-      </div>
-      <div className="form-grid">
-        <div className="field-label">
-          Arguments <small>One per line; passed without a shell</small>
-          <InputGroup>
-            <textarea
-              aria-label="Arguments"
-              className="fluid-textarea"
-              value={args}
-              rows={3}
-              onChange={(e) => setArgs(e.target.value)}
-            />
-          </InputGroup>
-        </div>
-        <div className="field-label">
-          Native CLI executable
-          <Field
-            aria-label="Native CLI executable"
-            value={value.nativeCommand}
-            onValueChange={(value) =>
-              setValue((v) => ({ ...v, nativeCommand: value }))
-            }
-          />
-        </div>
-      </div>
-      <p className="muted text-xs">{value.installHint}</p>
-      {probe && (
-        <Banner
-          className="probe-result"
-          status={probe.installed ? "success" : "warning"}
-        >
-          <BannerDescription>
-            <span className={probe.installed ? "success-text" : "warning-text"}>
-              {probe.installed
-                ? "ACP executable found"
-                : "ACP executable not found"}
-            </span>
-            {str(probe.path) && (
-              <InputCopy value={str(probe.path)} label="ACP executable" />
-            )}
-            <span>Native version: {str(probe.version)}</span>
-            <span>
-              Worktrunk: {probe.worktrunk ? "Installed" : "Not installed"}
-            </span>
-            <p>
-              Terminal handoff is enabled only after a verified same-session
-              round trip for your installed version.
-            </p>
-          </BannerDescription>
-        </Banner>
-      )}
-      <div className="dialog-footer">
-        <Button
-          variant="secondary"
-          disabled={busy}
-          loading={busy}
-          leadingIcon={RefreshCw}
-          onClick={() => void detect()}
-        >
-          Check connection setup
-        </Button>
-        <Button
-          className="primary-button"
-          disabled={busy}
-          onClick={() => {
-            setBusy(true);
-            void save()
-              .then(onDone)
-              .catch((e) => setError(String(e)))
-              .finally(() => setBusy(false));
-          }}
-        >
-          Save changes
-        </Button>
-      </div>
-    </Card>
   );
 }

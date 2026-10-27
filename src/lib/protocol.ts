@@ -497,24 +497,6 @@ export function reduceEvent(
         t.childCommands = { ...t.childCommands, [childId]: commands };
       else t.commands = commands;
     }
-    if (type === "agent_communication") {
-      const messageId = str(u.messageId);
-      const content = record(u.content);
-      if (
-        messageId &&
-        content.type === "text" &&
-        !t.messages.some(
-          (m) => m.streamId === messageId && m.childId === childId,
-        )
-      )
-        append(
-          u.direction === "received" ? "user" : "assistant",
-          str(content.text),
-          childId,
-          messageId,
-          str(u.label),
-        );
-    }
     if (
       [
         "agent_message_chunk",
@@ -665,53 +647,41 @@ export function reduceEvent(
           },
         };
     }
-    if (type === "session_info_update") {
-      const prime = record(record(u._meta)["ai.primeintellect.prime-agent"]);
-      for (const raw of array(prime.subagents)) {
-        const child = record(raw);
-        const id = str(child.id);
-        if (id)
-          t.children = {
-            ...t.children,
-            [id]: {
-              sessionId: id,
-              parentId: t.children[id]?.parentId ?? wireId,
-              title: str(child.sessionName, "Prime worker"),
-              description: null,
-              state: { type: str(child.status, "unknown") },
-              capabilities: t.children[id]?.capabilities ?? {},
-            },
-          };
-      }
-    }
     if (["session_message", "session_message_chunk"].includes(type)) {
-      const c = record(u.content);
-      if (c.type === "text")
+      const messageId = str(u.messageId);
+      const blocks = Array.isArray(u.content) ? u.content : [u.content];
+      const text = blocks
+        .map(record)
+        .filter((block) => block.type === "text")
+        .map((block) => str(block.text))
+        .join("");
+      const incoming = str(u.recipientSessionId) === wireId;
+      const label = incoming
+        ? childId
+          ? "Message from parent"
+          : "Message from worker"
+        : childId
+          ? "Message to parent"
+          : "Message to worker";
+      if (
+        text &&
+        !(
+          type === "session_message" &&
+          messageId &&
+          t.messages.some(
+            (message) =>
+              message.streamId === messageId && message.childId === childId,
+          )
+        )
+      )
         append(
-          "assistant",
-          str(c.text),
+          incoming ? "user" : "assistant",
+          text,
           childId,
-          str(u.messageId) || undefined,
+          messageId || undefined,
+          label,
         );
     }
-  }
-  if (event.kind === "cursor/task") {
-    const id = str(p.agentId, str(p.toolCallId));
-    if (id)
-      t.children = {
-        ...t.children,
-        [id]: {
-          sessionId: id,
-          parentId: str(p.sessionId),
-          title: str(p.description, "Cursor task"),
-          description: str(p.prompt),
-          state: { type: p.durationMs ? "idle" : "unknown" },
-          capabilities: t.children[id]?.capabilities ?? {},
-        },
-      };
-  }
-  if (event.kind === "cursor/update_todos") {
-    t.plan = array(p.todos);
   }
   // The complete event log remains in SQLite; this is a bounded rendering window.
   if (t.messages.length > 200) {

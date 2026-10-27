@@ -4,6 +4,23 @@ export const initialHistory: NavigationHistory = {
   entries: ["home"],
   index: 0,
 };
+export function readSavedView(raw: string | null): View {
+  try {
+    const view = JSON.parse(raw ?? "null");
+    if (["home", "worktrees", "settings"].includes(view)) return view;
+    if (view && typeof view.session === "string" && view.session)
+      return { session: view.session };
+  } catch {}
+  return "home";
+}
+export function restoreHistory(): NavigationHistory {
+  try {
+    const view = readSavedView(localStorage.getItem("harbor.last-view"));
+    return visit(initialHistory, view);
+  } catch {
+    return initialHistory;
+  }
+}
 export const viewKey = (view: View) =>
   typeof view === "string" ? view : `chat:${view.session}`;
 export function visit(

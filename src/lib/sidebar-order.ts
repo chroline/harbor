@@ -72,7 +72,7 @@ export function moveSidebarItem(
 }
 
 /** Pointer sorting works in the desktop webview without native HTML drag interception. */
-export function useSidebarOrder() {
+export function useSidebarOrder(sessionIds?: ReadonlySet<string>) {
   const [orders, setOrders] = useState<Orders>(() => {
     try {
       return parseSidebarOrder(localStorage.getItem(SIDEBAR_ORDER_KEY));
@@ -80,6 +80,18 @@ export function useSidebarOrder() {
       return {};
     }
   });
+  useEffect(() => {
+    if (!sessionIds) return;
+    setOrders((current) => {
+      let changed = false;
+      const next = Object.fromEntries(Object.entries(current).map(([group, ids]) => {
+        const valid = group === "pinned" || group.startsWith("chats:") ? ids.filter((id) => sessionIds.has(id)) : ids;
+        if (valid.length !== ids.length) changed = true;
+        return [group, valid];
+      }));
+      return changed ? next : current;
+    });
+  }, [sessionIds]);
   const [announcement, setAnnouncement] = useState("");
   const [dragging, setDragging] = useState<{
     group: string;

@@ -1,3 +1,4 @@
+import { supportedProviderId } from "./providers";
 import { useEffect, useState } from "react";
 import { call, desktop } from "./api";
 import { commandList, type AvailableCommand } from "./commands";
@@ -13,7 +14,7 @@ function discover(key: string, providerId: string, cwd: string | null) {
   let promise = pending.get(key);
   if (!promise) {
     promise = call<AvailableCommand[]>("discover_commands", {
-      providerId,
+      providerId: supportedProviderId(providerId),
       cwd,
     }).then(commandList);
     pending.set(key, promise);

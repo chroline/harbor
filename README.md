@@ -33,7 +33,7 @@ Harbor is built in that spirit: a place to work with coding agents, follow an id
 ## a place for your work
 
 - **start where you are.** open a local folder, work in a Git worktree, or begin a freeform conversation without choosing a workspace.
-- **bring your agents.** use Codex, Claude Code, Cursor, Pi, OpenCode, Prime Agent, Grok Build, or a custom agent through the Agent Client Protocol.
+- **bring your agents.** use OpenAI Codex, Claude Code, and Grok Build through the Agent Client Protocol.
 - **follow the thread.** move between the main conversation and its workers, review changes, and keep a terminal beside the work. pull a tab into its own window when you want more room.
 - **come back to it.** conversations and archives stay on your machine. reconnect a session or restore an archived worktree when you need it again.
 

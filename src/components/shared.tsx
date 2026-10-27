@@ -24,23 +24,8 @@ import {
 } from "../lib/protocol";
 import { useStore } from "../lib/store";
 import type { SessionRecord } from "../lib/bindings/SessionRecord";
-import codexIcon from "../assets/providers/codex.svg";
-import claudeIcon from "../assets/providers/claude.svg";
-import cursorIcon from "../assets/providers/cursor.svg";
-import piIcon from "../assets/providers/pi.svg";
-import primeIcon from "../assets/providers/prime.svg";
-import opencodeIcon from "../assets/providers/opencode.svg";
-import grokIcon from "../assets/providers/grok.svg";
+import { findAdapter } from "../adapters";
 
-const providerIcons: Record<string, string> = {
-  codex: codexIcon,
-  claude: claudeIcon,
-  cursor: cursorIcon,
-  pi: piIcon,
-  prime: primeIcon,
-  opencode: opencodeIcon,
-  grok: grokIcon,
-};
 export function Mark({ size = 25 }: { size?: number | string }) {
   return (
     <svg
@@ -69,7 +54,7 @@ export function ProviderIcon({
   id: string;
   size?: number | string;
 }) {
-  const icon = providerIcons[id];
+  const icon = findAdapter(id)?.icon;
   return (
     <span className={`provider-icon ${id}`} aria-hidden="true">
       {icon ? (

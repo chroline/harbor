@@ -15,8 +15,15 @@ function readPinnedChats(): string[] {
   }
 }
 
-export function usePinnedChats() {
+export function usePinnedChats(sessionIds?: ReadonlySet<string>) {
   const [pinnedChatIds, setPinnedChatIds] = useState(readPinnedChats);
+  useEffect(() => {
+    if (!sessionIds) return;
+    setPinnedChatIds((ids) => {
+      const valid = ids.filter((id) => sessionIds.has(id));
+      return valid.length === ids.length ? ids : valid;
+    });
+  }, [sessionIds]);
   useEffect(() => {
     try {
       localStorage.setItem(PINNED_CHATS_KEY, JSON.stringify(pinnedChatIds));

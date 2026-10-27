@@ -1,43 +1,79 @@
-# Worker conversation acceptance, October 14, 2026
+# Three-provider acceptance — October 26, 2026
 
-Harbor was tested against the installed agents using their existing authentication and isolated temporary repositories. Each parent created one worker with a unique marker. A second message omitted that original marker and supplied a fresh nonce. Success required both retained context and receipt of the follow-up.
+This record separates deterministic contract coverage, live backend checks, browser fixture checks, and packaged-app verification. Fixture results do not certify upstream behavior.
 
-| Agent | Installed adapter | Continuation route | Live result |
-| --- | --- | --- | --- |
-| Prime Agent / Grok 4.7 | Prime 0.9.8 | Exact child JSONL and resident session, separate ACP wrapper | Passed backend and packaged UI |
-| Codex | codex-acp 2.1.1 | Parent's native worker messaging | Passed backend and packaged UI; the same child rollout independently recorded the reply |
-| Claude Code | claude-agent-acp 0.88.0 | SendMessage through parent, including delayed child completion | Passed backend and rebuilt packaged UI; deferred reply remained in the selected worker transcript |
-| Cursor | CLI 2026.08.11-e8db854 | Task continuation through parent | Passed backend and packaged UI; cursor/task carried the original worker's reported agent ID and new prompt |
-| Pi | pi-acp 0.0.34 / Pi 0.84.2 / pi-subagents | Resume existing child run through parent | Passed backend and packaged UI; resume receipt and original-marker recall |
-| OpenCode | 1.18.31 | Load existing child session and prompt directly | Passed backend and packaged UI |
-| Grok Build / Grok 4.7 | Grok 1.0.30 | Typed tool receipt / forwarded child session identity, load existing child session directly | Passed backend and packaged UI |
+## Live backend checks
 
-The parent created `sub-864b927e` using `xai/grok-4.7`. Selecting that child loaded its saved history. A new message sent through the child composer returned `HARBOR_CHILD_ORIGIN_713 HARBOR_UI_REPLY_9472`; the original marker was absent from the follow-up.
+Existing local authentication was used in isolated repositories under `/tmp/harbor-provider-acceptance`. Current adapters were installed locally for acceptance; no global adapter installation was changed.
 
-The worker's initial reply used Prime's native `agent_message.send` tool. Its exact body, `CHILD_READY_713\nHARBOR_CHILD_ORIGIN_713`, was stored under the tool result's structured `sentAgentMessages` receipt. The old importer skipped that receipt, leaving only an assistant summary. The rebuilt app now displays the actual body under **Message to parent**, separately from that summary, and imports the incoming parent task under **Message from parent**. Replay follows the selected branch, deduplicates communication IDs, and does not infer sends from Python source or assistant prose.
+| Provider | Version | Model configuration | Initial chat and worker | Existing-worker context |
+| --- | --- | --- | --- | --- |
+| OpenAI Codex | codex-acp 2.3.0 | Model and reasoning switch/restore passed without prompts | Passed | Parent relay passed; the original child rollout independently contained both markers |
+| Claude Code | claude-agent-acp 0.97.0 | Model and effort switch/restore passed without prompts | Passed | Parent relay passed; `session_message` addressed the original child, whose own reply retained both markers |
+| Grok Build | 1.0.30, build 04b7ffed98c6 | Model switch/restore passed without prompts; no separate effort selector advertised | Passed | Direct child `session/load` and follow-up passed with retained context |
 
-The labeled relay was also verified through the packaged Codex UI. Selecting its existing worker and sending a fresh follow-up returned `RELAY_ORIGIN_631 RELAY_UI_REPLY_917`, visible under **Parent relay**.
+Each worker received an original random marker. Its follow-up supplied a fresh nonce but omitted the original marker. Passing required the same child's answer to include both. The Claude verifier was updated to use its observed typed communication receipts instead of requiring native control-tool telemetry that the current adapter suppresses.
 
-Pi's worker composer returned `PI_ORIGIN_364 PI_UI_REPLY_928` through the labeled parent relay. OpenCode loaded the real child's history and returned `OPENCODE_ORIGIN_623 OPENCODE_UI_REPLY_275` directly.
+Grok passed native continuity in both directions: ACP remembered the first marker, the native CLI resumed that identity and recalled it, then ACP replayed the native turn and recalled a second marker introduced only in the CLI. Native resume used `--no-auto-update --resume <id>`.
 
-Claude's first UI run found a delayed reply appearing only in the parent view. Harbor now retains the relay destination beyond the prompt response until a new user turn takes over. After restarting the rebuilt app, a fresh follow-up through the existing worker composer returned `CLAUDE_ORIGIN_483 CLAUDE_UI_FIXED_851` in that worker view, including its deferred completion. Generation aliases share one frontend worker identity and retain tool/message isolation. On reconnect Claude can advertise a synthetic replay ID separately from its live native ID; these remain separate entries when the provider supplies no authoritative identity link, and parent continuation resolves the original native worker.
+Claude CLI 2.1.284's native round trip remains unverified: the test could not complete the first-run trust interaction. Codex ACP 2.3.0 / native CLI 0.164.0 recalled the original ACP marker in its exact native rollout and exited, but ACP then refused to reopen it with “session is in use by another Codex client.” That pair remains disabled. Neither a successful version check nor an ACP prompt alone qualifies a new version for handoff.
 
-Cursor's worker declined the synthetic marker checks, then answered a practical follow-up about handling asynchronous worker replies. This proves an actual UI exchange; the separate backend test supplies the original-marker recall evidence. Cursor reported a different telemetry ID on its first continuation, so its selector currently retains both provider-reported identities rather than guessing that they are equivalent.
+## Automated coverage
 
-Parent-only history replay also used to clear locally routed worker input and parent relay messages. These now survive parent reconnection, while an explicit child replay can still replace its own history. Pi's original worker input and `PI_ORIGIN_364 PI_UI_REPLY_928` reply were recovered from the persisted event log and verified in the rebuilt packaged UI after reconnecting.
+The normal suites exercise:
 
-The normal suites passed: 52 Rust tests (four additional tests opt in to live provider access), 132 frontend tests, TypeScript checking, production frontend compilation, and the macOS app build. Frontend worker-routing coverage includes every bundled provider and the custom-provider entry. Arbitrary custom executables depend on the worker identity and continuation facilities they expose.
+- Transactional v3 migration with mixed providers, archived chats, missing definitions, orphaned events/metadata, repeat startup, rollback, and preservation of working files and workspace/worktree/archive records.
+- A closed provider registry, generated supported IDs/defaults, shared new/load/resume identity checks, and exact native compatibility checks.
+- Separate Claude, Codex, and Grok fixture entry points: authentication/protocol diagnostics without prompts, model dependencies, boolean/mode controls, streaming text/thinking, plans, tools, attachments, permissions/forms, worker receipts, history replay, cancellation, malformed frames, and crashes.
+- Request ownership, nested workers, parent versus direct routing, delayed completion, duplicate streams, draft/history preservation, and unsupported cancellation.
+- Provider selection and settings, discovery cache invalidation and stale responses, dependent controls, connection errors, removal of custom-agent creation, and frontend persistence reconciliation.
 
-During packaged UI testing, a stalled Git probe on an unrelated existing project froze Harbor's main thread. Bootstrap inspection now runs on a blocking worker, and root probes have a two-second timeout. A regression test verifies that a stalled probe returns and its subprocess is reaped. The fixed packaged app was restarted successfully before the final Claude exchange.
+The TypeScript suite passed 347 tests. The Rust suite passed 92 tests with six opt-in live tests ignored. The production build passed with its existing bundle-size advisory.
 
-To repeat a provider continuation check, configure `HARBOR_SMOKE_COMMAND`, `HARBOR_SMOKE_ARGS` (JSON array), `HARBOR_SMOKE_PROVIDER`, and an isolated `HARBOR_SMOKE_WORKDIR`, then set `HARBOR_SMOKE_WORKER_ROUNDTRIP=1` and run the ignored `live_provider_smoke` test. Tests use real model usage. The Prime existing-child check is `live_prime_worker_roundtrip`, configured through the `HARBOR_LIVE_*` variables documented by that test's required inputs.
+## Browser and packaged checks
 
-## Grok Build acceptance
+Browser fixture checks confirmed exactly three providers, successful setup diagnostics, launch, and an ACP form answer with the original request ID and typed values. This is simulated IPC, distinct from the live provider tests above.
 
-Grok Build 1.0.30 with Grok 4.7 passed the same backend worker continuation test. Worker `01a13e1d-ff36-72f0-b7f5-9c159e33ef26` loaded directly through `session/load`; the follow-up omitted its original marker and returned `CHILD-MEMORY-66226f08-d3ca-46a4-9e66-40204e9c5a1f WORKER-FOLLOWUP-c1ae994a-2fc4-4fcf-b517-4883c23abddc`.
+A signed debug macOS bundle was built with an isolated QA application ID (`dev.harbor.provider-qa`), fixture ACP executables, and a separate v2 database. The normal Harbor application database was not opened or migrated during acceptance. Packaged checks passed:
 
-ChatGPT computer use verified the actual packaged Harbor UI. Worker `01a13e1f-a2bf-7242-b53d-3b9822312562` appeared as **Grok UI Worker**. Opening it replayed the original task and `GROK_CHILD_READY_5831`. Its own composer sent a fresh request containing only `GROK_UI_REPLY_9476` and an instruction to recall the original token. The child answered `GROK_CHILD_ORIGIN_5831 GROK_UI_REPLY_9476`, proving retained context and direct delivery to the existing worker.
+- Real startup migrated v2 to v3, retained exactly the three providers and workspace/project records, removed the obsolete provider/chat/events, and preserved the repository's working file.
+- Codex freeform launch, Claude plain-folder launch, and Grok owned-worktree launch.
+- Root permission approval and typed form response, with the returned protocol payload visible in the transcript.
+- Codex and Claude worker tabs with labeled provider-specific parent relays; Grok direct child history and context recall.
+- A shell tab with visible command/output and tab close.
+- Root draft, history, selected worker tab, and worker draft across quit/restart. The first pass found worker drafts were memory-only; persistent storage and regression tests were added, and the rebuilt app retained `persistent-worker-draft-verified` after restart.
+- Window close kept agents running in the background; explicit Quit stopped the QA process and its fixture children.
+- Archival removed the disposable owned worktree after creating bundle/snapshot/index recovery artifacts; the main checkout and its file remained intact.
 
-Grok writes rich `_x.ai/session/update` lifecycle events to its local log, but those did not arrive on the tested ACP client connection. Harbor instead uses structured `SubagentCompleted` and `TaskOutput.Result` / `MultiResult` receipts. It also registers an explicitly identified child session when Grok forwards that child's messages, before its completion receipt arrives, so early child messages stay out of the parent transcript. A background start acknowledgment alone does not mark a worker complete. Shell tasks and worker IDs mentioned in assistant prose do not create workers. Three new Rust regressions cover these cases; all 55 regular Rust tests pass.
+All three live providers separately passed process restart, original-identity ACP reconnect, and original-context recall. Packaged routing checks use deterministic fixtures; they are not a claim of a new packaged live-provider matrix. Live cancellation, image understanding, every authentication method, and every native product feature are not certified by the configuration/worker smoke tests.
 
-After the final rebuild and restart, the same parent created a fresh **Grok Isolation Worker**, `01a13e22-92a4-7693-9f6a-4c9b91c2025f`. Its announcement was persisted as event 15489 before its first message (15490). The packaged parent view showed the parent's request and summary, while the child's task and ready reply appeared only in the child view. A new direct worker-composer request omitted `GROK_ISOLATION_ORIGIN_2469` and supplied `GROK_ISOLATION_UI_REPLY_5917`; the child answered `GROK_ISOLATION_ORIGIN_2469 GROK_ISOLATION_UI_REPLY_5917` in its own transcript.
+## Plan-mode acceptance — October 26, 2026
+
+Live `live_plan_tests::live_plan_mode` passed separately for Codex ACP 2.3.0 (native CLI 0.164.0), Claude ACP 0.97.0 (native CLI 2.1.284), and Grok `1.0.30 (04b7ffed98c6) [stable]`. Each test created a fresh temporary Git repository containing `greeting.txt` with `hello`, captured all project files except `.git`, requested a concrete plan to change it to `ahoy`, and asserted the snapshot remained identical. It then stopped and restarted the ACP process, loaded the original identity, checked confirmed Plan mode and recall of a random marker, and explicitly approved execution. The final snapshot allowed only `greeting.txt` to change.
+
+| Provider | Observed controls and approval | Outcome |
+| --- | --- | --- |
+| Codex | Modern `collaboration_mode`; independent permission `mode`; native plan review options include `implement_plan` and `revise_plan` | Rejected review kept Plan; explicit `default` selection enabled execution; restart/context/filesystem checks passed |
+| Claude | Modern `mode` plus matching ACP legacy modes; `session/set_mode` required; ExitPlanMode offers manual edit approval | Same-conversation manual approval and subsequent edit approval passed; provider published its exit mode; restart/context/filesystem checks passed |
+| Grok | Model-only config, no mode catalogue; real `session/set_mode: plan` succeeded; current-mode notifications; native `_x.ai/exit_plan_mode` | Exact-version compatibility added and verified; native plan-file access and typed approval worked; restart/context/filesystem checks passed |
+
+The first Grok investigation incorrectly treated its omitted catalogue as lack of support. Direct probing and official documentation disproved that conclusion. Initial execution failed because Harbor rejected the native plan-exit request and blocked the session's plan file. The final passing test exercises both fixes; a successful `set_mode` call alone was not accepted as proof.
+
+Evidence logs for this run: `/tmp/harbor-plan-{codex,claude,grok}.log`, optional corresponding `-trace.json` files, `/tmp/harbor-plan-ts-suite.log`, `/tmp/harbor-plan-rust-suite.log`, and `/tmp/harbor-plan-qa-build.log`. These are local run artifacts, not committed credentials or permanent CI evidence.
+
+Deterministic regression coverage includes provider-specific configuration/approval payloads, failed and delayed acknowledgments, rapid switching, queued changes during cancellation, unconfirmed success, wrong conversation identity, rejection/cancellation retaining Plan, replay, unverified Grok versions, and exact native plan-path restrictions. Frontend tests verify visible plan review text and original approval IDs. Browser checks in `tests/plan-mode-browser.mjs` passed for modern Codex and legacy Grok controls: no prompt during pending configuration, preserved draft after failure, and cancellation restoring the confirmed selection.
+
+The rebuilt signed macOS QA app passed Codex and Claude Plan selector/Shift+Tab and review flows. Grok additionally passed menu and Shift+Tab selection, rejection retaining Plan, immediate quit/restart with `grok-plan-restart-draft`, original wire identity, displayed plan review, and approval returning to Default and writing `ahoy`. The root draft initially failed immediate quit because its database write was debounced; synchronous local persistence fixed it, and the rebuilt app passed. Native UI checks used fixtures and the isolated `dev.harbor.provider-qa` database. Live provider checks ran through Harbor's real Rust ACP transport, not the packaged UI. Live rapid switching/cancellation and every upstream plan-exit option are not separately certified; their deterministic contract coverage is not a claim of live verification.
+
+To repeat Plan acceptance, set `HARBOR_SMOKE_PROVIDER`, `HARBOR_SMOKE_COMMAND`, and JSON `HARBOR_SMOKE_ARGS`, then run `cargo test --manifest-path src-tauri/Cargo.toml live_plan_tests::live_plan_mode -- --ignored --nocapture`. It uses existing CLI authentication and consumes model usage. Grok arguments are `["--no-auto-update","agent","stdio"]`. `HARBOR_PLAN_TRACE` optionally captures protocol evidence. Production frontend and signed QA bundle builds passed; bundle-size advisory and local notarization skip remain unchanged.
+
+## Repeating live checks
+
+Set `HARBOR_SMOKE_PROVIDER` to one of `claude`, `codex`, or `grok`, `HARBOR_SMOKE_COMMAND` to its ACP executable, `HARBOR_SMOKE_ARGS` to a JSON argument array, and `HARBOR_SMOKE_WORKDIR` to an isolated repository. Run the ignored `live_tests::live_provider_smoke` test with:
+
+- `HARBOR_SMOKE_CONNECT_ONLY=1 HARBOR_SMOKE_CONFIG_ROUNDTRIP=1` for no-prompt configuration discovery/change/restore.
+- `HARBOR_SMOKE_WORKER_ROUNDTRIP=1` for real worker continuation and original-context recall.
+- `HARBOR_SMOKE_RECONNECT=1` for original-identity/context recovery after the ACP process exits.
+- `HARBOR_SMOKE_HANDOFF=1 HARBOR_SMOKE_NATIVE=/absolute/path/to/cli` for a native PTY round trip. The generated test directory must end in `/work/live-repo` before the test may accept its first-run folder trust screen. Optional native hooks are skipped.
+
+The latter two consume real model usage. Run the normal Rust and TypeScript suites independently; never substitute fixture success for missing live prerequisites.
