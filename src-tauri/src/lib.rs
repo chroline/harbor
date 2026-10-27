@@ -9,6 +9,8 @@ mod live_tests;
 #[cfg(test)]
 mod live_plan_tests;
 #[cfg(test)]
+mod live_question_tests;
+#[cfg(test)]
 mod provider_contract_tests;
 mod model_config;
 pub mod adapters;

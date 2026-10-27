@@ -117,7 +117,7 @@ async fn all_three_roundtrip_configuration_questions_permissions_and_history() {
             ),
             (
                 "question",
-                json!({"action":"accept","content":{"scope":"backend"}}),
+                if id == "grok" { json!({"action":"accept","content":{"question_0":"backend"}}) } else { json!({"action":"accept","content":{"scope":"backend"}}) },
             ),
         ] {
             let prompt = rpc.request(

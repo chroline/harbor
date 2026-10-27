@@ -2,6 +2,7 @@
 use crate::types::ProviderDefinition;
 use crate::adapters::{self, Capability};
 use crate::adapters::contract::{PlanProtocol,PermissionResponse};
+use crate::adapters::{grok_build::questions as grok_questions, SupportedProviderId};
 use serde_json::{json, Value};
 use std::{
     collections::{HashMap, HashSet},
@@ -56,6 +57,7 @@ pub struct Rpc {
     cwd: PathBuf,
     sink: Sink,
     discovery: bool,
+    provider_id: SupportedProviderId,
     pub plan_protocol: Capability<&'static dyn PlanProtocol>,
     session_ids: Mutex<HashSet<String>>,
     current_modes: Mutex<HashMap<String,String>>,
@@ -176,6 +178,7 @@ impl Rpc {
         };
         let rpc = Arc::new(Self {
             discovery,
+            provider_id: adapter.descriptor().id,
             plan_protocol,
             session_ids: Mutex::new(HashSet::new()),
             current_modes: Mutex::new(HashMap::new()),
@@ -301,7 +304,7 @@ impl Rpc {
             .await
             .remove(&id.to_string())
             .ok_or("This request has already been answered or cancelled")?;
-        if request["method"] == "elicitation/create" && (!matches!(result["action"].as_str(), Some("accept" | "decline" | "cancel")) || (result["action"] == "accept" && !result["content"].is_object())) {
+        if (request["method"] == "elicitation/create" || self.is_native_question(&request)) && (!matches!(result["action"].as_str(), Some("accept" | "decline" | "cancel")) || (result["action"] == "accept" && !result["content"].is_object())) {
             self.inbound.lock().await.insert(id.to_string(), request);
             return Err("Invalid elicitation response".into());
         }
@@ -367,6 +370,16 @@ impl Rpc {
                 }
                 return;
             }
+            if self.is_native_question(&msg) {
+                match grok_questions::elicitation(&msg) {
+                    Ok(ui) => {
+                        self.inbound.lock().await.insert(id.to_string(), msg.clone());
+                        (self.sink)("request", ui);
+                    },
+                    Err(message) => { let _ = self.send(json!({"jsonrpc":"2.0","id":id,"error":{"code":-32602,"message":message}})).await; }
+                }
+                return;
+            }
             if method == "session/request_permission" || (method == "elicitation/create" && params["mode"] != "url")
             {
                 let mut request = msg.clone();
@@ -396,10 +409,14 @@ impl Rpc {
         }
     }
     fn encode_response(&self,request:&Value,result:&Value)->Reply {
+        if self.is_native_question(request) { return grok_questions::response(request, result); }
         if let Some(protocol)=self.plan_protocol.supported().filter(|protocol|Some(protocol.method())==request["method"].as_str()) {
             let decision:PermissionResponse=serde_json::from_value(result.clone()).map_err(err)?;
             serde_json::to_value(protocol.response(&decision)?).map_err(err)
         } else {Ok(result.clone())}
+    }
+    fn is_native_question(&self, request: &Value) -> bool {
+        self.provider_id == SupportedProviderId::Grok && request["method"] == grok_questions::METHOD
     }
     async fn session_plan_path(&self, p: &Value, write: bool) -> Option<PathBuf> {
         let protocol=self.plan_protocol.supported()?;
@@ -564,7 +581,7 @@ impl Rpc {
     pub async fn cancel_requests(&self) {
         let pending = std::mem::take(&mut *self.inbound.lock().await);
         for (_, req) in pending {
-            let recorded_result = if req["method"] == "elicitation/create" { json!({"action":"cancel"}) } else { json!({"outcome":{"outcome":"cancelled"}}) };
+            let recorded_result = if req["method"] == "elicitation/create" || self.is_native_question(&req) { json!({"action":"cancel"}) } else { json!({"outcome":{"outcome":"cancelled"}}) };
             let reply=match self.encode_response(&req,&recorded_result) {
                 Ok(result)=>json!({"jsonrpc":"2.0","id":req["id"],"result":result}),
                 Err(message)=>json!({"jsonrpc":"2.0","id":req["id"],"error":{"code":-32603,"message":message}}),

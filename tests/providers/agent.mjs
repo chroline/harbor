@@ -101,7 +101,10 @@ export function run(provider) {
             update(p.sessionId,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:JSON.stringify(result)}});
           }
           if (text==='question') {
-            const result=await request('elicitation/create',{mode:'form',sessionId:p.sessionId,message:'Choose scope',requestedSchema:{type:'object',required:['scope'],properties:{scope:{type:'string',oneOf:[{const:'backend',title:'Backend'}]}}}});
+            const result=provider==='grok'
+              ? await request('_x.ai/ask_user_question',{sessionId:p.sessionId,toolCallId:'question-tool',mode:'default',questions:[{question:'Choose scope',multiSelect:null,options:[{label:'backend',description:'Backend'}]}]})
+              : await request('elicitation/create',{mode:'form',sessionId:p.sessionId,message:'Choose scope',requestedSchema:{type:'object',required:['scope'],properties:{scope:{type:'string',oneOf:[{const:'backend',title:'Backend'}]}}}});
+            if (provider==='grok' && result.outcome!=='cancelled' && (result.outcome!=='accepted' || result.answers?.['Choose scope']?.[0]!=='backend')) { fail('Invalid native question response'); break; }
             update(p.sessionId,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:JSON.stringify(result)}});
           }
           if (text==='worker') {

@@ -2,6 +2,7 @@ use super::contract::*;
 use crate::types::SupportedProviderId;
 use serde_json::Value;
 pub(crate) mod plan;
+pub(crate) mod questions;
 mod workers;
 pub struct GrokBuild;
 impl Adapter for GrokBuild {
