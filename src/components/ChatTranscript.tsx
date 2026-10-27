@@ -1,16 +1,10 @@
-import {
-  Fragment,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { Fragment, useMemo, useRef, useState, type ReactNode } from "react";
 import { Brain, Check, Paperclip } from "@/lib/icons";
-import { Message, MessageContent, MessageFooter } from "./ui/message";
+import { Message, MessageContent } from "./ui/message";
 import { Bubble, BubbleContent } from "./ui/bubble";
 import { FilePreviewTile } from "./ui/input-message";
 import { ThinkingIndicatorGlyph } from "./ui/thinking-indicator";
-import { CopyButton, RichText } from "./shared";
+import { RichText } from "./shared";
 import {
   Trace,
   TraceCollapsible,
@@ -25,9 +19,20 @@ import { TranscriptRow, useTranscriptScroller } from "./ChatScroller";
 import type { TimelineEntry, Tool, RecordedInteraction } from "../lib/protocol";
 import "./chat-transcript.css";
 
-function ImageAttachment({ name, mimeType, previewUrl }: { name: string; mimeType: string; previewUrl: string }) {
+function ImageAttachment({
+  name,
+  mimeType,
+  previewUrl,
+}: {
+  name: string;
+  mimeType: string;
+  previewUrl: string;
+}) {
   const file = useMemo(() => {
-    const bytes = Uint8Array.from(atob(previewUrl.slice(previewUrl.indexOf(",") + 1)), (c) => c.charCodeAt(0));
+    const bytes = Uint8Array.from(
+      atob(previewUrl.slice(previewUrl.indexOf(",") + 1)),
+      (c) => c.charCodeAt(0),
+    );
     return new File([bytes], name, { type: mimeType, lastModified: 0 });
   }, [name, mimeType, previewUrl]);
   return <FilePreviewTile file={file} size={80} />;
@@ -256,6 +261,17 @@ export function ChatTranscript({
   children?: ReactNode;
 }) {
   const groups = groupActivity(entries);
+  const [expandedMessages, setExpandedMessages] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const toggleMessage = (id: string) => {
+    setExpandedMessages((previous) => {
+      const next = new Set(previous);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
   // The scroller considers an unhandled anchor a newly submitted turn, even
   // when an old row merely survives eviction from our bounded transcript.
   // Keep automatic anchoring on the latest live user turn; saved history opens
@@ -300,15 +316,12 @@ export function ChatTranscript({
           {renderPlan(message.planReview)}
         </TranscriptRow>
       );
-    const final =
-      message.role === "assistant" &&
-      (!next ||
-        (next.type === "message" && next.entry.message.role === "user"));
+    const expanded = expandedMessages.has(message.id);
     const content = (
       <Message
         key={message.id}
         align={message.role === "user" ? "end" : "start"}
-        className={`transcript-message transcript-${message.role}${final ? " transcript-final" : ""}`}
+        className={`transcript-message transcript-${message.role}`}
         aria-label={
           message.label ??
           (message.role === "user"
@@ -325,6 +338,38 @@ export function ChatTranscript({
           >
             <BubbleContent
               title={message.role === "user" ? message.text : undefined}
+              {...(message.role === "user"
+                ? {
+                    role: "button",
+                    tabIndex: 0,
+                    "aria-label": expanded
+                      ? "Collapse message"
+                      : "Expand message",
+                    "aria-expanded": expanded,
+                    "data-expanded": expanded,
+                    onClick: (event) => {
+                      // Links, attachments, code controls, and text selection
+                      // keep their own interactions instead of toggling.
+                      if (
+                        (event.target as Element).closest(
+                          "a, button, input, [role='button']",
+                        ) !== event.currentTarget ||
+                        window.getSelection()?.toString()
+                      )
+                        return;
+                      toggleMessage(message.id);
+                    },
+                    onKeyDown: (event) => {
+                      if (
+                        event.target !== event.currentTarget ||
+                        (event.key !== "Enter" && event.key !== " ")
+                      )
+                        return;
+                      event.preventDefault();
+                      toggleMessage(message.id);
+                    },
+                  }
+                : {})}
             >
               {(message.label || message.role === "system") && (
                 <small className="transcript-message-label">
@@ -332,8 +377,11 @@ export function ChatTranscript({
                 </small>
               )}
               {!!message.attachments?.length && (
-                <div className="flex flex-wrap gap-2 mb-2" aria-label="Attachments">
-                  {message.attachments.map((file, index) => (
+                <div
+                  className="flex flex-wrap gap-2 mb-2"
+                  aria-label="Attachments"
+                >
+                  {message.attachments.map((file, index) =>
                     file.previewUrl && file.mimeType.startsWith("image/") ? (
                       <ImageAttachment
                         key={index}
@@ -341,19 +389,28 @@ export function ChatTranscript({
                         mimeType={file.mimeType}
                         previewUrl={file.previewUrl}
                       />
-                    ) : <span key={index} className="inline-flex max-w-full items-center gap-1 rounded-md bg-accent px-2 py-1 text-xs" title={`${file.name} (${Math.ceil(file.size / 1024)} KB)`}>
-                      <Paperclip className="size-3 shrink-0" />
-                      <span className="truncate">{file.name}</span>
-                    </span>
-                  ))}
+                    ) : (
+                      <span
+                        key={index}
+                        className="inline-flex max-w-full items-center gap-1 rounded-md bg-accent px-2 py-1 text-xs"
+                        title={`${file.name} (${Math.ceil(file.size / 1024)} KB)`}
+                      >
+                        <Paperclip className="size-3 shrink-0" />
+                        <span className="truncate">{file.name}</span>
+                      </span>
+                    ),
+                  )}
                 </div>
               )}
-              <RichText text={message.text} commandRanges={message.role === "user" ? message.commandRanges : undefined} streaming={streamingId === message.id} />
+              <RichText
+                text={message.text}
+                commandRanges={
+                  message.role === "user" ? message.commandRanges : undefined
+                }
+                streaming={streamingId === message.id}
+              />
             </BubbleContent>
           </Bubble>
-          <MessageFooter data-slot="message-actions">
-            <CopyButton text={message.text} />
-          </MessageFooter>
         </MessageContent>
       </Message>
     );

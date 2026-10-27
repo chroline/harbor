@@ -8,8 +8,14 @@ import { emptyTranscript, reduceEvent, timeline } from "../lib/protocol";
 vi.mock("../lib/store", () => ({ useStore: () => ({ setError: vi.fn() }) }));
 
 beforeAll(() => {
-  Object.defineProperty(URL, "createObjectURL", { configurable: true, value: vi.fn(() => "blob:attachment-preview") });
-  Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: vi.fn() });
+  Object.defineProperty(URL, "createObjectURL", {
+    configurable: true,
+    value: vi.fn(() => "blob:attachment-preview"),
+  });
+  Object.defineProperty(URL, "revokeObjectURL", {
+    configurable: true,
+    value: vi.fn(),
+  });
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -57,18 +63,31 @@ const tool = (sequence: number, status = "completed"): TimelineEntry => ({
 });
 const renderTool = (tool: Tool) => <span>{tool.title}</span>;
 it("renders a replayed image as an image without exposing its data as message text", () => {
-  const src = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aS9sAAAAASUVORK5CYII=";
+  const src =
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aS9sAAAAASUVORK5CYII=";
   const transcript = reduceEvent(emptyTranscript(), {
-    sequence: 1, sessionId: "chat", timestamp: 1, kind: "session/update",
-    payload: { sessionId: "root", update: {
-      sessionUpdate: "user_message_chunk",
-      content: { type: "text", text: `Review this\n[screen.png](${src})` },
-    } },
+    sequence: 1,
+    sessionId: "chat",
+    timestamp: 1,
+    kind: "session/update",
+    payload: {
+      sessionId: "root",
+      update: {
+        sessionUpdate: "user_message_chunk",
+        content: { type: "text", text: `Review this\n[screen.png](${src})` },
+      },
+    },
   });
-  render(<ChatTranscript entries={timeline(transcript)} renderTool={renderTool} />);
-  expect(screen.getByRole("img", { name: "screen.png" }).getAttribute("src")).toBe("blob:attachment-preview");
-  expect(screen.getByText("screen.png")).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "Remove screen.png" })).toBeNull();
+  render(
+    <ChatTranscript entries={timeline(transcript)} renderTool={renderTool} />,
+  );
+  expect(
+    screen.getByRole("img", { name: "screen.png" }).getAttribute("src"),
+  ).toBe("blob:attachment-preview");
+  expect(screen.getByTitle("screen.png")).toBeTruthy();
+  expect(
+    screen.queryByRole("button", { name: "Remove screen.png" }),
+  ).toBeNull();
   const prompt = screen.getByLabelText("Your message");
   expect(prompt.textContent).toContain("Review this");
   expect(prompt.textContent).not.toContain("base64");
@@ -87,6 +106,58 @@ it("aligns user turns to the end and assistant turns to the start", () => {
   expect(
     screen.getByLabelText("Assistant message").getAttribute("data-align"),
   ).toBe("start");
+});
+
+it("toggles each user message independently and preserves expansion during updates", () => {
+  const entries = [
+    message(1, "user"),
+    message(2, "assistant"),
+    message(3, "user"),
+  ];
+  const view = render(
+    <ChatTranscript entries={entries} renderTool={renderTool} />,
+  );
+  const [first, second] = screen.getAllByRole("button", {
+    name: "Expand message",
+  });
+  expect(first.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(first);
+  expect(first.getAttribute("aria-expanded")).toBe("true");
+  expect(second.getAttribute("aria-expanded")).toBe("false");
+  view.rerender(
+    <ChatTranscript
+      entries={[...entries, message(4, "assistant")]}
+      renderTool={renderTool}
+    />,
+  );
+  expect(first.getAttribute("aria-expanded")).toBe("true");
+  fireEvent.click(first);
+  expect(first.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.keyDown(first, { key: "Enter" });
+  expect(first.getAttribute("aria-expanded")).toBe("true");
+  fireEvent.keyDown(first, { key: " " });
+  expect(first.getAttribute("aria-expanded")).toBe("false");
+});
+
+it("keeps links and text selection from toggling a user message", () => {
+  const entry = message(1, "user");
+  if (entry.type !== "message") throw new Error("Expected a message");
+  entry.message.text = "Read the [details](https://example.com).";
+  render(<ChatTranscript entries={[entry]} renderTool={renderTool} />);
+  const toggle = screen.getByRole("button", { name: "Expand message" });
+  const link = screen.getByRole("link", { name: "details" });
+  link.addEventListener("click", (event) => event.preventDefault());
+  fireEvent.click(link);
+  fireEvent.keyDown(link, { key: "Enter" });
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  const selection = vi.spyOn(window, "getSelection").mockReturnValue({
+    toString: () => "selected text",
+  } as Selection);
+  fireEvent.click(toggle);
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  selection.mockRestore();
+  fireEvent.click(toggle);
+  expect(toggle.getAttribute("aria-expanded")).toBe("true");
 });
 
 it("shows the actual message to the parent with a visible destination label", () => {
@@ -248,7 +319,9 @@ it("uses Trace before the first tool and while reasoning streams", () => {
   expect(screen.queryByText("Done")).toBeNull();
   const details = screen.getByRole("button", { name: "View reasoning" });
   expect(details.getAttribute("aria-expanded")).toBe("true");
-  expect(document.querySelector("[data-slot='streaming-text']")?.textContent).toBe("thought 1");
+  expect(
+    document.querySelector("[data-slot='streaming-text']")?.textContent,
+  ).toBe("thought 1");
   fireEvent.click(details);
   view.rerender(
     <ChatTranscript
@@ -296,7 +369,9 @@ it("replaces the live header and thinking glyph with the recorded duration", () 
     <ChatTranscript entries={[entry]} renderTool={renderTool} working />,
   );
   const header = screen.getByRole("button", { name: "Working..." });
-  expect(header.querySelector('[data-slot="thinking-indicator-glyph"]')).toBeTruthy();
+  expect(
+    header.querySelector('[data-slot="thinking-indicator-glyph"]'),
+  ).toBeTruthy();
   view.rerender(
     <ChatTranscript
       entries={[
@@ -314,7 +389,9 @@ it("replaces the live header and thinking glyph with the recorded duration", () 
     />,
   );
   const completed = screen.getByRole("button", { name: "Worked for 1m 5s" });
-  expect(completed.querySelector('[data-slot="thinking-indicator-glyph"]')).toBeNull();
+  expect(
+    completed.querySelector('[data-slot="thinking-indicator-glyph"]'),
+  ).toBeNull();
   expect(screen.queryByRole("button", { name: "Working..." })).toBeNull();
   view.unmount();
   render(

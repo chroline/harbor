@@ -699,12 +699,15 @@ const InputMessage = forwardRef<HTMLDivElement, InputMessageProps>(
 
     // Edge = the box-shadow's 0.0625rem ring, recoloured in place per state so the
     // stroke gains contrast without ever appearing to thicken (no second
-    // border band layered beside it). The drop (`0 0.0625rem 0.0625rem`) is kept so the
+    // border band layered beside it). The soft drop shadow is kept so the
     // composer holds its lift across states. Applied inline (not via a Tailwind
     // `shadow-*` utility, which mangles multi-layer arbitrary values) with the
     // precedence drag > focus > hover; when none are active, the className's
-    // `shadow-surface-2` supplies the resting edge.
-    const EDGE_DROP = "0 0.0625rem 0.0625rem -0.03125rem var(--shadow-color)";
+    // `shadow-surface-3` supplies the resting edge and elevation.
+    const EDGE_DROP = [
+      "0 0.0625rem 0.0625rem -0.03125rem",
+      "0 0.1875rem 0.1875rem -0.09375rem",
+    ].map((layer) => `${layer} light-dark(var(--shadow-color), var(--dm-drop))`).join(", ");
     const edgeShadow = dragOver
       ? `0 0 0 0.0625rem #6B97FF, ${EDGE_DROP}`
       : focusVisible
@@ -1142,7 +1145,7 @@ const InputMessage = forwardRef<HTMLDivElement, InputMessageProps>(
           // than layering a second colored border beside it — so hover / focus
           // bump *contrast* without ever appearing to thicken the stroke.
           "relative flex flex-col gap-1 p-2 transition-[box-shadow,color] duration-80",
-          surfaceClasses(2, 2),
+          surfaceClasses(2, 3),
           shape.container,
           clickToFocus && !disabled && "cursor-text",
           disabled && "opacity-50 pointer-events-none",

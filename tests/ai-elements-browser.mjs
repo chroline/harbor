@@ -6,20 +6,21 @@ const task = await taskSpace(
 );
 const page = task.page("p1");
 await page.goto("http://127.0.0.1:1420/tests/ui.html");
-await page.waitForSelector(
-  'loc=css:textarea[aria-label="Describe a new task"]',
-);
+await page.waitForSelector('loc=css:[aria-label="Describe a new task"]');
 await page.fill(
-  'loc=css:textarea[aria-label="Describe a new task"]',
+  'loc=css:[aria-label="Describe a new task"]',
   "AI Elements browser regression",
 );
 await page.click('loc=role:button[name="Start task"]');
-await page.waitForSelector('loc=css:textarea[aria-label="Message your agent"]');
+await page.waitForSelector('loc=css:[aria-label="Message your agent"]');
 await page.evaluate(async () => {
   await window.__harborFixture.longTranscript();
 });
 await page.waitForFunction(
-  () => document.querySelectorAll('[data-slot="message"]').length === 200,
+  () =>
+    document.querySelectorAll(
+      '[data-slot="message-scroller-viewport"] [data-slot="message"]',
+    ).length === 200,
 );
 const settled = () => {
   const v = document.querySelector('[data-slot="message-scroller-viewport"]');
@@ -201,7 +202,7 @@ await page.waitForFunction(() =>
     .dataset.scrollable?.includes("end"),
 );
 await page.click('loc=role:tab[name="Lighthouse"]');
-await page.waitForSelector('loc=css:textarea[aria-label="Message Lighthouse"]');
+await page.waitForSelector('loc=css:[aria-label="Message Lighthouse"]');
 await page.waitForFunction(
   () =>
     !document
@@ -227,7 +228,7 @@ await page.evaluate(() => {
 });
 // Switch immediately, before the browser is guaranteed to emit a scroll event.
 await page.click('loc=css:[role="tab"][title="Parent conversation"]');
-await page.waitForSelector('loc=css:textarea[aria-label="Message your agent"]');
+await page.waitForSelector('loc=css:[aria-label="Message your agent"]');
 await page.waitForFunction(
   () =>
     Math.abs(
@@ -236,7 +237,7 @@ await page.waitForFunction(
     ) < 2,
 );
 await page.click('loc=role:tab[name="Lighthouse"]');
-await page.waitForSelector('loc=css:textarea[aria-label="Message Lighthouse"]');
+await page.waitForSelector('loc=css:[aria-label="Message Lighthouse"]');
 await page.waitForFunction(
   () =>
     Math.abs(
@@ -245,7 +246,7 @@ await page.waitForFunction(
     ) < 2,
 );
 await page.click('loc=css:[role="tab"][title="Parent conversation"]');
-await page.waitForSelector('loc=css:textarea[aria-label="Message your agent"]');
+await page.waitForSelector('loc=css:[aria-label="Message your agent"]');
 // Saved-position restoration has its own frame after the primitive opens.
 await page.waitForFunction(
   () =>
@@ -257,9 +258,9 @@ await page.evaluate(() => {
     0;
 });
 await page.click('loc=role:tab[name="Lighthouse"]');
-await page.waitForSelector('loc=css:textarea[aria-label="Message Lighthouse"]');
+await page.waitForSelector('loc=css:[aria-label="Message Lighthouse"]');
 await page.click('loc=css:[role="tab"][title="Parent conversation"]');
-await page.waitForSelector('loc=css:textarea[aria-label="Message your agent"]');
+await page.waitForSelector('loc=css:[aria-label="Message your agent"]');
 await page.waitForFunction(
   () =>
     document.querySelector('[data-slot="message-scroller-viewport"]')
