@@ -4,6 +4,12 @@ const assert = (await import("node:assert/strict")).default;
 const task = await taskSpace(globalThis.HARBOR_QA_SPACE ?? "Harbor minimap QA");
 const page = task.page("p1");
 await page.goto("http://127.0.0.1:1420/tests/ui.html");
+await page.cdp("Emulation.setDeviceMetricsOverride", {
+  width: 1380,
+  height: 900,
+  deviceScaleFactor: 1,
+  mobile: false,
+});
 await page.waitForSelector('textarea[aria-label="Describe a new task"]');
 await page.fill(
   'textarea[aria-label="Describe a new task"]',
@@ -18,6 +24,22 @@ assert.equal(
   false,
   "A single turn needs no rail",
 );
+const columnBox = () =>
+  page.evaluate(() => {
+    const content = document.querySelector(".conversation-content");
+    const composer = document.querySelector(".chat-composer-wrap");
+    const contentStyle = getComputedStyle(content);
+    const composerStyle = getComputedStyle(composer);
+    return {
+      paddingStart: contentStyle.paddingInlineStart,
+      paddingEnd: contentStyle.paddingInlineEnd,
+      composerPaddingStart: composerStyle.paddingInlineStart,
+      contentWidth: Math.round(content.getBoundingClientRect().width),
+      composerWidth: Math.round(composer.getBoundingClientRect().width),
+    };
+  });
+await page.waitForSelector(".conversation-content");
+const beforeRail = await columnBox();
 await page.evaluate(async () => {
   await window.__harborFixture.longTranscript();
 });
@@ -26,6 +48,17 @@ await page.waitForFunction(
     document.querySelectorAll('[data-slot="chat-minimap-item"]').length ===
       100 &&
     !!document.querySelector('[data-slot="chat-minimap-item"][data-current]'),
+);
+assert.deepEqual(await columnBox(), beforeRail, "The rail must not resize the column");
+assert.equal(
+  await page.evaluate(
+    () =>
+      document
+        .querySelector(".conversation-scroll-frame")
+        .hasAttribute("data-minimap-overlaps"),
+  ),
+  false,
+  "A wide pane leaves the floating rail in the gutter",
 );
 assert.equal(
   await page.evaluate(
@@ -112,12 +145,6 @@ assert.equal(
   before,
   "Streaming must leave the reader at the selected turn",
 );
-await page.cdp("Emulation.setDeviceMetricsOverride", {
-  width: 900,
-  height: 620,
-  deviceScaleFactor: 1,
-  mobile: false,
-});
 await page.cdp("Emulation.setEmulatedMedia", {
   features: [{ name: "prefers-reduced-motion", value: "reduce" }],
 });
@@ -125,6 +152,58 @@ await page.evaluate(() => {
   document.documentElement.classList.remove("dark");
   document.documentElement.classList.add("light");
 });
+await page.cdp("Emulation.setDeviceMetricsOverride", {
+  width: 720,
+  height: 620,
+  deviceScaleFactor: 1,
+  mobile: false,
+});
+await page.mouse.move(8, 8);
+await page.waitForFunction(() => {
+  const frame = document.querySelector(".conversation-scroll-frame");
+  const rail = document.querySelector(".chat-minimap");
+  const style = getComputedStyle(rail);
+  return (
+    frame.hasAttribute("data-minimap-overlaps") &&
+    !frame.hasAttribute("data-minimap-gutter") &&
+    Number(style.opacity) === 0 &&
+    style.pointerEvents === "none"
+  );
+});
+assert.equal(
+  (await columnBox()).paddingStart,
+  (await columnBox()).paddingEnd,
+  "Overlap still must not pad the column",
+);
+const gutterPoint = () =>
+  page.evaluate(() => {
+    const box = document
+      .querySelector(".conversation-scroll-frame")
+      .getBoundingClientRect();
+    return { x: box.left + 12, y: box.top + box.height / 2 };
+  });
+const enterGutter = async () => {
+  const point = await gutterPoint();
+  await page.mouse.move(point.x, point.y);
+  await page.waitForFunction(() => {
+    const style = getComputedStyle(document.querySelector(".chat-minimap"));
+    return style.opacity === "1" && style.pointerEvents !== "none";
+  });
+};
+await enterGutter();
+await page.mouse.move(8, 8);
+await page.waitForFunction(
+  () =>
+    Number(getComputedStyle(document.querySelector(".chat-minimap")).opacity) ===
+    0,
+);
+await page.cdp("Emulation.setDeviceMetricsOverride", {
+  width: 900,
+  height: 620,
+  deviceScaleFactor: 1,
+  mobile: false,
+});
+await enterGutter();
 await page.click('button[aria-label="Jump to: Review case 40"]');
 await page.waitForFunction(
   () =>
@@ -149,6 +228,6 @@ assert.deepEqual(
   { overflow: false, previewFits: true, transition: "0s" },
 );
 console.log(
-  "Passed: bounded turn index, smooth jumps, reading position, hover lens and preview, keyboard navigation, paused streaming, narrow light layout, and reduced motion.",
+  "Passed: bounded turn index, smooth jumps, reading position, hover lens and preview, keyboard navigation, paused streaming, floating rail, gutter reveal, narrow light layout, and reduced motion.",
 );
 if (!globalThis.HARBOR_QA_SPACE) await task.finish({ keep: [] });

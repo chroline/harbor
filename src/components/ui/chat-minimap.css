@@ -8,9 +8,6 @@
 .chat-main-empty .conversation-scroll-frame {
   flex: 0 1 auto;
 }
-.chat-main:has(.chat-minimap) {
-  --chat-column-padding-start: 3.75rem;
-}
 .chat-minimap {
   position: absolute;
   z-index: 10;
@@ -27,6 +24,22 @@
   overflow-x: hidden;
   overscroll-behavior: contain;
   scrollbar-width: none;
+  transition: opacity 200ms ease-out;
+}
+/* Floats in the left gutter. Never reserves column width. When the centered
+   column would run underneath the rail, keep it out of the way until the
+   pointer enters that gutter, a marker is focused, or a preview is open. */
+.conversation-scroll-frame[data-minimap-overlaps] > .chat-minimap {
+  opacity: 0;
+  pointer-events: none;
+}
+.conversation-scroll-frame[data-minimap-overlaps][data-minimap-gutter]
+  > .chat-minimap,
+.conversation-scroll-frame[data-minimap-overlaps] > .chat-minimap:focus-within,
+.conversation-scroll-frame[data-minimap-overlaps]
+  > .chat-minimap[data-preview] {
+  opacity: 1;
+  pointer-events: auto;
 }
 .chat-minimap::-webkit-scrollbar {
   display: none;
@@ -102,11 +115,9 @@
   .chat-minimap {
     left: 0.375rem;
   }
-  .chat-main:has(.chat-minimap) {
-    --chat-column-padding-start: 3.25rem;
-  }
 }
 @media (prefers-reduced-motion: reduce) {
+  .chat-minimap,
   .chat-minimap [data-slot="chat-minimap-marker"] {
     transition: none;
   }

@@ -55,6 +55,7 @@ export function ChatMinimap({
     <nav
       ref={nav}
       data-slot="chat-minimap"
+      data-preview={previewId ? "" : undefined}
       aria-label="Chat minimap"
       className={cn("chat-minimap", className)}
       {...props}

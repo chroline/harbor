@@ -23,6 +23,32 @@ import {
 
 import { ChatMinimap, type ChatMinimapItem } from "./ui/chat-minimap";
 
+const OVERLAP_CLEARANCE = 8;
+const GUTTER_CLEARANCE = 12;
+
+function minimapOverlapsContent(root: HTMLElement) {
+  const content = root.querySelector<HTMLElement>(".conversation-content");
+  const minimap = root.querySelector<HTMLElement>(".chat-minimap");
+  if (!content || !minimap) return false;
+  const padding =
+    Number.parseFloat(getComputedStyle(content).paddingInlineStart) || 0;
+  // Compare against the text and bubbles, not the column's empty padding.
+  return (
+    content.getBoundingClientRect().left + padding <
+    minimap.getBoundingClientRect().right + OVERLAP_CLEARANCE
+  );
+}
+
+function pointerInMinimapGutter(root: HTMLElement, clientX: number) {
+  const minimap = root.querySelector<HTMLElement>(".chat-minimap");
+  if (!minimap) return false;
+  const rootLeft = root.getBoundingClientRect().left;
+  return (
+    clientX - rootLeft <=
+    minimap.getBoundingClientRect().right - rootLeft + GUTTER_CLEARANCE
+  );
+}
+
 const TranscriptScrollerContext = createContext(false);
 export const useTranscriptScroller = () =>
   useContext(TranscriptScrollerContext);
@@ -75,7 +101,43 @@ function ScrollContent({
   minimapItems: readonly ChatMinimapItem[];
 }) {
   const viewport = useRef<HTMLDivElement>(null);
+  const scrollFrame = useRef<HTMLDivElement>(null);
+  const pointerX = useRef<number | null>(null);
   const [currentItemId, setCurrentItemId] = useState<string | null>(null);
+  const [overlaps, setOverlaps] = useState(false);
+  const [gutter, setGutter] = useState(false);
+  const showMinimap = minimapItems.length > 1;
+
+  useLayoutEffect(() => {
+    const root = scrollFrame.current;
+    if (!root || !showMinimap) {
+      setOverlaps(false);
+      return;
+    }
+    const measure = () => {
+      setOverlaps((current) => {
+        const next = minimapOverlapsContent(root);
+        return current === next ? current : next;
+      });
+      if (pointerX.current === null) return;
+      const inGutter = pointerInMinimapGutter(root, pointerX.current);
+      setGutter((current) => (current === inGutter ? current : inGutter));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(root);
+    const content = root.querySelector(".conversation-content");
+    if (content) observer.observe(content);
+    return () => observer.disconnect();
+  }, [showMinimap]);
+
+  const trackPointer = (event: { clientX: number }) => {
+    const root = scrollFrame.current;
+    if (!root) return;
+    pointerX.current = event.clientX;
+    const inGutter = pointerInMinimapGutter(root, event.clientX);
+    setGutter((current) => (current === inGutter ? current : inGutter));
+  };
 
   useLayoutEffect(() => {
     const element = viewport.current;
@@ -155,8 +217,19 @@ function ScrollContent({
   }, [requestId, scrollToMessage]);
 
   return (
-    <div className="conversation-scroll-frame">
-      {minimapItems.length > 1 && (
+    <div
+      className="conversation-scroll-frame"
+      ref={scrollFrame}
+      data-minimap-overlaps={overlaps || undefined}
+      data-minimap-gutter={(overlaps && gutter) || undefined}
+      onPointerMove={showMinimap ? trackPointer : undefined}
+      onPointerDown={showMinimap ? trackPointer : undefined}
+      onPointerLeave={() => {
+        pointerX.current = null;
+        setGutter(false);
+      }}
+    >
+      {showMinimap && (
         <ChatMinimap items={minimapItems} currentItemId={currentItemId} />
       )}
       <MessageScroller className="conversation-scroll">

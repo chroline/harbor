@@ -1213,7 +1213,6 @@ a {
 .chat-main {
   --chat-column-max-width: 51.25rem;
   --chat-column-padding: 2.125rem;
-  --chat-column-padding-start: var(--chat-column-padding);
   flex: 1;
   min-width: 0;
   display: flex;
@@ -1408,7 +1407,6 @@ html.standalone #root {
   max-width: var(--chat-column-max-width);
   margin: 0 auto;
   padding: 1.25rem var(--chat-column-padding);
-  padding-inline-start: var(--chat-column-padding-start);
 }
 .conversation-waiting {
   color: var(--muted-foreground);
@@ -1673,7 +1671,6 @@ html.standalone #root {
   width: 100%;
   margin: 0 auto;
   padding: 0.625rem var(--chat-column-padding) 0.875rem;
-  padding-inline-start: var(--chat-column-padding-start);
   flex-shrink: 0;
 }
 .chat-config {
