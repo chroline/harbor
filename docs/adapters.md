@@ -41,3 +41,9 @@ Verified on 2026-10-26:
 - Browser fixture: `plan-review-browser.mjs` passed for all three contracts, including exact action IDs, dismissal/focus, menus, long-plan scrolling, errors/retry, and reduced motion. `plan-lifecycle-browser.mjs` passed approval, continued execution text, read-only history sheets, and fresh-store replay without raw-plan fallback. Captured sheet/card screenshots were inspected.
 - Packaged macOS: debug app bundle built and `desktop:verify-signing` passed. This refactor did not rerun real-provider or packaged-app interaction acceptance; existing compatibility limitations remain in force.
 - `git diff --check` passed.
+
+## Codex native async question receipt bridge
+
+`adapters/codex/questions.rs` isolates the fallback required by ACP 2.1.1 and 2.3.0 for native `request_user_input_async` calls. Those adapters omit the native question data. The bridge validates the exact local native receipt’s thread/workspace and accepted tool result, then emits the same ACP form consumed by the shared question UI. Reads are bounded; native receipt content is data. Only the inspected adapter versions enable this fallback. A newer adapter must be checked for native support before extending the gate.
+
+Async answers are normal user input to the original conversation, with the advertised steering extension during an active turn. They are not fabricated JSON-RPC replies to a server request. Pending async forms survive turn completion and reconnect; stored answered/dismissed IDs prevent resurrection. Ordinary ACP requests retain their existing lifecycle. See `UI-QUESTIONS.md` for exact live acceptance and storage limitations.

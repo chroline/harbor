@@ -102,6 +102,9 @@ export const record = (v: unknown): Record<string, unknown> =>
 export const str = (v: unknown, fallback = ""): string =>
   typeof v === "string" ? v : fallback;
 export const array = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
+const persistentQuestion = (request: Interaction) =>
+  request.method === "elicitation/create" &&
+  record(request.params._meta).harborCodexAsyncQuestion === true;
 export const sameWorker = (candidate: string | undefined, worker: string) =>
   candidate === worker ||
   (candidate?.startsWith(`${worker}:generation:`) === true &&
@@ -234,12 +237,15 @@ export function reduceEvent(
       authMethods: t.authMethods,
       // Request/answer events remain authoritative when native history is replayed.
       interactions: t.interactions.map((entry) =>
-        !entry.childId && entry.status === "pending"
+        !entry.childId &&
+        entry.status === "pending" &&
+        !persistentQuestion(entry)
           ? { ...entry, status: "interrupted" }
           : entry,
       ),
       requests: t.requests.filter(
-        (request) => !!str(request.params._harborChildId),
+        (request) =>
+          persistentQuestion(request) || !!str(request.params._harborChildId),
       ),
       commands: t.commands,
       childCommands: t.childCommands,
@@ -542,8 +548,10 @@ export function reduceEvent(
   if (event.kind === "diagnostic")
     t.diagnostics = [...t.diagnostics, str(p.message)].slice(-100);
   if (event.kind === "turn_complete") {
-    interruptInteractions((entry) =>
-      targetChild ? entry.childId === targetChild : !entry.childId,
+    interruptInteractions(
+      (entry) =>
+        !persistentQuestion(entry) &&
+        (targetChild ? entry.childId === targetChild : !entry.childId),
     );
     t.messages = t.messages.map((message) =>
       (targetChild ? message.childId === targetChild : !message.childId) &&
@@ -568,8 +576,13 @@ export function reduceEvent(
       };
     else t.turn++;
     t.requests = targetChild
-      ? t.requests.filter((r) => str(r.params.sessionId) !== targetChild)
-      : t.requests.filter((r) => !!t.children[str(r.params.sessionId)]);
+      ? t.requests.filter(
+          (r) =>
+            persistentQuestion(r) || str(r.params.sessionId) !== targetChild,
+        )
+      : t.requests.filter(
+          (r) => persistentQuestion(r) || !!t.children[str(r.params.sessionId)],
+        );
   }
   if (event.kind === "session/update") {
     const u = record(p.update);

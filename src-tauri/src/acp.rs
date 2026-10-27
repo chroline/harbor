@@ -2,7 +2,7 @@
 use crate::types::ProviderDefinition;
 use crate::adapters::{self, Capability};
 use crate::adapters::contract::{PlanProtocol,PermissionResponse};
-use crate::adapters::{grok_build::questions as grok_questions, SupportedProviderId};
+use crate::adapters::{codex::questions as codex_questions, grok_build::questions as grok_questions, SupportedProviderId};
 use serde_json::{json, Value};
 use std::{
     collections::{HashMap, HashSet},
@@ -58,6 +58,8 @@ pub struct Rpc {
     sink: Sink,
     discovery: bool,
     provider_id: SupportedProviderId,
+    async_question_bridge: AtomicBool,
+    answered_async_questions: Mutex<HashSet<String>>,
     pub plan_protocol: Capability<&'static dyn PlanProtocol>,
     session_ids: Mutex<HashSet<String>>,
     current_modes: Mutex<HashMap<String,String>>,
@@ -179,6 +181,8 @@ impl Rpc {
         let rpc = Arc::new(Self {
             discovery,
             provider_id: adapter.descriptor().id,
+            async_question_bridge: AtomicBool::new(false),
+            answered_async_questions: Mutex::new(HashSet::new()),
             plan_protocol,
             session_ids: Mutex::new(HashSet::new()),
             current_modes: Mutex::new(HashMap::new()),
@@ -274,18 +278,34 @@ impl Rpc {
             self.pending.lock().await.remove(&key);
             return Err(e);
         }
-        let result = if let Some(d) = timeout {
-            match tokio::time::timeout(d, rx).await {
-                Ok(r) => r.map_err(err)?,
+        let wait = async {
+            tokio::pin!(rx);
+            loop {
+                tokio::select! {
+                    reply = &mut rx => return reply.map_err(err)?,
+                    _ = tokio::time::sleep(Duration::from_secs(1)), if method == "session/prompt" && self.async_question_bridge.load(Ordering::SeqCst) => {
+                        if let Some(thread) = params["sessionId"].as_str() { self.restore_async_questions(thread, &[]).await?; }
+                    }
+                }
+            }
+        };
+        let mut result = if let Some(duration) = timeout {
+            match tokio::time::timeout(duration, wait).await {
+                Ok(reply) => reply?,
                 Err(_) => {
                     self.pending.lock().await.remove(&key);
                     return Err(format!("{method} timed out"));
                 }
             }
-        } else {
-            rx.await.map_err(err)?
-        };
-        let mut result = result?;
+        } else { wait.await? };
+        if method == "initialize" {
+            self.async_question_bridge.store(self.provider_id == SupportedProviderId::Codex
+                && result["agentInfo"]["name"] == "@agentclientprotocol/codex-acp"
+                && matches!(result["agentInfo"]["version"].as_str(), Some("2.1.1" | "2.3.0")), Ordering::SeqCst);
+        }
+        if method == "session/prompt" && result["stopReason"] != "cancelled" {
+            if let Some(thread) = params["sessionId"].as_str() { self.restore_async_questions(thread, &[]).await?; }
+        }
         if matches!(method, "session/new" | "session/load" | "session/resume") {
             let saved = params["sessionId"].as_str();
             let sid = crate::sessions::identity(&result, saved, method != "session/new")?;
@@ -297,7 +317,50 @@ impl Rpc {
         }
         Ok(result)
     }
+    pub async fn restore_async_questions(&self, thread: &str, answered: &[String]) -> Result<(), String> {
+        if self.discovery || !self.async_question_bridge.load(Ordering::SeqCst) { return Ok(()); }
+        let mut seen = self.answered_async_questions.lock().await;
+        seen.extend(answered.iter().cloned());
+        let ignored = seen.clone();
+        drop(seen);
+        let cwd = self.cwd.clone();
+        let thread = thread.to_owned();
+        let requests = tokio::task::spawn_blocking(move || codex_questions::load(&thread, &cwd, &ignored)).await.map_err(err)??;
+        let mut inbound = self.inbound.lock().await;
+        // An answer can arrive while the native receipt is being read.
+        let answered = self.answered_async_questions.lock().await;
+        for request in requests {
+            if request["id"].as_str().is_some_and(|id| answered.contains(id)) { continue; }
+            if let std::collections::hash_map::Entry::Vacant(entry) = inbound.entry(request["id"].to_string()) {
+                entry.insert(request.clone());
+                (self.sink)("request", request);
+            }
+        }
+        Ok(())
+    }
+    pub async fn async_question_answer(&self, id: &Value, result: &Value) -> Result<Option<String>, String> {
+        let inbound = self.inbound.lock().await;
+        let Some(request) = inbound.get(&id.to_string()).filter(|r| codex_questions::is_async(r)) else { return Ok(None); };
+        if result["action"] != "accept" { return Ok(None); }
+        codex_questions::answer_text(request, result).map(Some)
+    }
+    pub async fn record_async_answer(&self, id: Value, result: Value) -> Result<(), String> {
+        let mut inbound = self.inbound.lock().await;
+        let request = inbound.get(&id.to_string()).filter(|r| codex_questions::is_async(r))
+            .ok_or("This question has already been answered or cancelled")?;
+        if result["action"] == "accept" { codex_questions::answer_text(request, &result)?; }
+        else if !matches!(result["action"].as_str(), Some("decline" | "cancel")) { return Err("Invalid question response".into()); }
+        inbound.remove(&id.to_string());
+        if let Some(id) = id.as_str() { self.answered_async_questions.lock().await.insert(id.to_owned()); }
+        (self.sink)("answered", json!({"id":id,"result":result}));
+        Ok(())
+    }
     pub async fn answer(&self, id: Value, result: Value) -> Result<(), String> {
+        let is_async = self.inbound.lock().await.get(&id.to_string()).is_some_and(codex_questions::is_async);
+        if is_async {
+            if result["action"] == "accept" { return Err("Async question answers must be submitted as user input".into()); }
+            return self.record_async_answer(id, result).await;
+        }
         let request = self
             .inbound
             .lock()
@@ -578,9 +641,19 @@ impl Rpc {
             _ => Err(format!("Unsupported client method: {method}")),
         }
     }
-    pub async fn cancel_requests(&self) {
-        let pending = std::mem::take(&mut *self.inbound.lock().await);
-        for (_, req) in pending {
+    pub async fn cancel_requests(&self) { self.cancel_pending_requests(true).await; }
+    pub async fn cancel_blocking_requests(&self) { self.cancel_pending_requests(false).await; }
+    async fn cancel_pending_requests(&self, include_async: bool) {
+        let mut inbound = self.inbound.lock().await;
+        let keys = inbound.iter().filter(|(_, request)| include_async || !codex_questions::is_async(request)).map(|(id, _)| id.clone()).collect::<Vec<_>>();
+        let pending = keys.into_iter().filter_map(|id| inbound.remove(&id)).collect::<Vec<_>>();
+        drop(inbound);
+        for req in pending {
+            if codex_questions::is_async(&req) {
+                if let Some(id) = req["id"].as_str() { self.answered_async_questions.lock().await.insert(id.to_owned()); }
+                (self.sink)("answered", json!({"id":req["id"],"result":{"action":"cancel"}}));
+                continue;
+            }
             let recorded_result = if req["method"] == "elicitation/create" || self.is_native_question(&req) { json!({"action":"cancel"}) } else { json!({"outcome":{"outcome":"cancelled"}}) };
             let reply=match self.encode_response(&req,&recorded_result) {
                 Ok(result)=>json!({"jsonrpc":"2.0","id":req["id"],"result":result}),
@@ -600,7 +673,7 @@ impl Rpc {
         }
     }
     pub async fn stop(&self) {
-        self.cancel_requests().await;
+        self.cancel_blocking_requests().await;
         let terminals = std::mem::take(&mut *self.tools.lock().await);
         for (_, t) in terminals {
             stop_child(&mut *t.child.lock().await).await;
@@ -684,6 +757,27 @@ mod tests {
             Some(Duration::from_secs(10)),
         )
         .await
+    }
+    #[tokio::test]
+    async fn async_questions_survive_completion_validate_answers_and_remain_recoverable_on_stop() {
+        let (rpc, _temp, events, id) = fixture().await;
+        let question = json!({"id":"harbor:codex-question:thread:call","method":"elicitation/create","params":{
+            "sessionId":id,"_meta":{"harborCodexAsyncQuestion":true},
+            "requestedSchema":{"type":"object","required":["color"],"properties":{"color":{"type":"string","title":"Which color?","oneOf":[{"const":"Blue"}]}}}
+        }});
+        rpc.inbound.lock().await.insert(question["id"].to_string(), question.clone());
+        rpc.cancel_blocking_requests().await;
+        assert!(rpc.inbound.lock().await.contains_key(&question["id"].to_string()));
+        assert!(rpc.async_question_answer(&question["id"], &json!({"action":"accept","content":{"color":"Fake"}})).await.is_err());
+        let accepted = json!({"action":"accept","content":{"color":"Blue"}});
+        assert!(rpc.async_question_answer(&question["id"], &accepted).await.unwrap().unwrap().contains("Blue"));
+        rpc.record_async_answer(question["id"].clone(), accepted.clone()).await.unwrap();
+        assert!(rpc.inbound.lock().await.is_empty());
+        assert!(rpc.record_async_answer(question["id"].clone(), accepted).await.is_err());
+        let mut next = question.clone(); next["id"] = json!("harbor:codex-question:thread:next");
+        rpc.inbound.lock().await.insert(next["id"].to_string(), next.clone());
+        rpc.stop().await;
+        assert!(!events.lock().unwrap().iter().any(|(kind, value)| kind == "answered" && value["id"] == next["id"]));
     }
     #[tokio::test]
     async fn attached_files_are_readable_outside_workspace_but_never_writable() {

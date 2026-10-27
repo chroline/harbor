@@ -480,6 +480,7 @@ async fn connect(
    response["configOptions"]=config.config_options;response["models"]=config.models;response["modes"]=config.modes.unwrap_or(Value::Null);
   }}
   if load&&method=="session/load"{state.emit(&session.id,"history_reset",json!({}));}
+  rpc.restore_async_questions(&acp_id, &state.db.answered_request_ids(&session.id)?).await?;
   let has_requests = !rpc.inbound.lock().await.is_empty();
   state.update(&session.id,|s|{s.acp_session_id=Some(acp_id.clone());s.native_session_id=if caps.native_handoff{Some(acp_id.clone())}else{None};s.status=if has_requests {"needs_input"} else {"idle"}.into();s.mode="gui".into();s.error=None;s.capabilities=caps;s.config_options=response.get("configOptions").cloned().unwrap_or(json!([]));s.models=response["models"].clone();s.modes=response["modes"].clone();})?;
   {let mut pending=buffer.lock().unwrap();for(k,v)in pending.drain(..){state.emit(&session.id,&k,v);}replay.store(false,Ordering::SeqCst);}
@@ -1018,6 +1019,15 @@ async fn send_prompt(
     text: String,
     attachments: Option<Vec<PromptAttachment>>,
 ) -> Result<(), String> {
+    send_prompt_impl(state.inner(), session_id, text, attachments, None).await
+}
+async fn send_prompt_impl(
+    state: &Arc<AppState>,
+    session_id: String,
+    text: String,
+    attachments: Option<Vec<PromptAttachment>>,
+    question_answer: Option<(Value, Value)>,
+) -> Result<(), String> {
     let guard = state.operations.session(&session_id).await;
     let files = attachments.unwrap_or_default();
     let rpc = state.connection(&session_id).await?;
@@ -1033,8 +1043,14 @@ async fn send_prompt(
     if rpc.busy.swap(true, Ordering::SeqCst) {
         return Err("This agent is already working".into());
     }
+    if let Some((id, result)) = question_answer {
+        if let Err(error) = rpc.record_async_answer(id, result).await {
+            rpc.busy.store(false, Ordering::SeqCst);
+            return Err(error);
+        }
+    }
     rpc.grant_attachment_reads(&paths).await;
-    rpc.turn_generation.fetch_add(1, Ordering::SeqCst);
+    let turn_generation = rpc.turn_generation.fetch_add(1, Ordering::SeqCst) + 1;
     state.relay_targets.lock().unwrap().remove(&session_id);
     if let Err(e) = state.update(&session_id, |s| {
         s.status = "working".into();
@@ -1048,7 +1064,7 @@ async fn send_prompt(
     drop(guard);
     state.emit(&session_id, "user_message", json!({"text":text,"attachments":file_metadata}));
     if first_prompt && !text.trim().is_empty() {
-        let state = state.inner().clone();
+        let state = state.clone();
         let original = s.title.clone();
         let provider_id = s.provider_id.clone();
         let session_id = session_id.clone();
@@ -1076,8 +1092,9 @@ async fn send_prompt(
             None,
         )
         .await;
+    if rpc.turn_generation.load(Ordering::SeqCst) != turn_generation { return Ok(()); }
     rpc.busy.store(false, Ordering::SeqCst);
-    rpc.cancel_requests().await;
+    rpc.cancel_blocking_requests().await;
     if !state
         .connections
         .lock()
@@ -1090,15 +1107,18 @@ async fn send_prompt(
     match result {
         Ok(response) => {
             state.emit(&session_id, "turn_complete", response.clone());
+            let has_questions = !rpc.inbound.lock().await.is_empty();
             state.update(&session_id, |s| {
-                s.status = if response["stopReason"] == "cancelled" {
+                s.status = if has_questions {
+                    "needs_input"
+                } else if response["stopReason"] == "cancelled" {
                     "idle"
                 } else {
                     "completed"
                 }
                 .into()
             })?;
-            state.notify("Agent finished", &s.title);
+            if !has_questions { state.notify("Agent finished", &s.title); }
             Ok(())
         }
         Err(e) => {
@@ -1172,6 +1192,30 @@ async fn cancel_turn(
     });
     Ok(())
 }
+// ACP steering can race a completed turn and start a native background turn.
+// Observe its real completion instead of leaving Harbor permanently busy.
+async fn monitor_question_continuation(state: Arc<AppState>, session_id: String, rpc: Arc<Rpc>, thread: String, previous_turn: String, generation: u64) {
+    loop {
+        if !rpc.alive.load(Ordering::SeqCst) || rpc.turn_generation.load(Ordering::SeqCst) != generation { return; }
+        let Some(session) = state.db.get::<SessionRecord>("session", &session_id).ok() else { return; };
+        let native_thread = thread.clone(); let cwd = std::path::PathBuf::from(&session.cwd);
+        let observed = tokio::task::spawn_blocking(move || adapters::codex::questions::latest_turn(&native_thread, &cwd)).await;
+        if let Ok(Ok(Some((turn, Some(reason))))) = observed {
+            if turn != previous_turn {
+                let _ = rpc.restore_async_questions(&thread, &[]).await;
+                if rpc.turn_generation.load(Ordering::SeqCst) != generation { return; }
+                rpc.busy.store(false, Ordering::SeqCst);
+                rpc.cancel_blocking_requests().await;
+                let pending = !rpc.inbound.lock().await.is_empty();
+                state.emit(&session_id, "turn_complete", json!({"stopReason":reason}));
+                let _ = state.update(&session_id, |s| s.status = if pending {"needs_input"} else if reason == "cancelled" {"idle"} else {"completed"}.into());
+                return;
+            }
+        }
+        let _ = rpc.restore_async_questions(&thread, &[]).await;
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+}
 #[tauri::command]
 async fn answer_request(
     state: tauri::State<'_, Arc<AppState>>,
@@ -1184,6 +1228,34 @@ async fn answer_request(
         return rpc.answer(id.clone(),result).await;
     }
     let rpc = state.connection(&session_id).await?;
+    if let Some(text) = rpc.async_question_answer(&request_id, &result).await? {
+        if rpc.busy.load(Ordering::SeqCst) {
+            let _guard = state.operations.session(&session_id).await;
+            let session: SessionRecord = state.db.get("session", &session_id)?;
+            if session.capabilities.raw["_meta"]["steering"]["supported"] != true {
+                return Err("Wait for this agent's current turn to finish before answering".into());
+            }
+            let thread = session.acp_session_id.clone().ok_or("Missing conversation ID")?;
+            let native_thread = thread.clone(); let cwd = std::path::PathBuf::from(&session.cwd);
+            let previous_turn = tokio::task::spawn_blocking(move || adapters::codex::questions::latest_turn(&native_thread, &cwd)).await.map_err(|e|e.to_string())??
+                .map(|(id,_)| id).ok_or("Could not identify the agent's current turn")?;
+            state.emit(&session_id, "user_message", json!({"text":text}));
+            let steered = rpc.request("_session/steering", json!({"sessionId":thread,"prompt":[{"type":"text","text":text}]}), Some(Duration::from_secs(30))).await?;
+            rpc.record_async_answer(request_id, result).await?;
+            if steered["outcome"] == "startedNewTurn" {
+                let generation = rpc.turn_generation.fetch_add(1, Ordering::SeqCst) + 1;
+                rpc.busy.store(true, Ordering::SeqCst);
+                state.update(&session_id, |s| s.status = "working".into())?;
+                let state = state.inner().clone();
+                tauri::async_runtime::spawn(async move { monitor_question_continuation(state, session_id, rpc, thread, previous_turn, generation).await; });
+            } else if rpc.busy.load(Ordering::SeqCst) {
+                let pending = !rpc.inbound.lock().await.is_empty();
+                state.update(&session_id, |s| s.status = if pending {"needs_input"} else {"working"}.into())?;
+            }
+            return Ok(());
+        }
+        return send_prompt_impl(state.inner(), session_id, text, None, Some((request_id, result))).await;
+    }
     rpc.answer(request_id, result).await?;
     if rpc.inbound.lock().await.is_empty() {
         state.update(&session_id, |s| {

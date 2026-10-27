@@ -30,6 +30,17 @@ impl Database {
         file.flush().map_err(|e| e.to_string())?;
         file.get_ref().sync_all().map_err(|e| e.to_string())
     }
+    pub fn answered_request_ids(&self, session: &str) -> Result<Vec<String>, String> {
+        let connection = self.0.lock().map_err(|e| e.to_string())?;
+        let mut query = connection.prepare("SELECT payload FROM events WHERE session_id=?1 AND kind='answered'").map_err(|e| e.to_string())?;
+        let rows = query.query_map([session], |r| r.get::<_, String>(0)).map_err(|e| e.to_string())?;
+        let mut ids = Vec::new();
+        for row in rows {
+            let payload: Value = serde_json::from_str(&row.map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+            if let Some(id) = payload["id"].as_str() { ids.push(id.to_owned()); }
+        }
+        Ok(ids)
+    }
     pub fn open(path: &Path) -> Result<Self, String> {
         let mut c = Connection::open(path).map_err(|e| e.to_string())?;
         let version: u32 = c
@@ -609,5 +620,20 @@ mod provider_migration_tests {
         assert_eq!(read_values(&c,"provider").unwrap().len(),1);
         assert_eq!(read_values(&c,"session").unwrap().len(),1);
         assert_eq!(c.query_row("PRAGMA user_version",[],|r|r.get::<_,u32>(0)).unwrap(),2);
+    }
+}
+
+#[cfg(test)]
+mod async_question_tests {
+    use super::*;
+    #[test]
+    fn answered_question_ids_survive_reopen_and_stay_scoped_to_the_chat() {
+        let dir=tempfile::tempdir().unwrap(); let path=dir.path().join("questions.sqlite");
+        let db=Database::open(&path).unwrap();
+        db.event("chat","answered",serde_json::json!({"id":"harbor:codex-question:thread:call","result":{"action":"decline"}})).unwrap();
+        db.event("other","answered",serde_json::json!({"id":"unrelated"})).unwrap();
+        db.event("chat","answered",serde_json::json!({"id":0})).unwrap();
+        drop(db);
+        assert_eq!(Database::open(&path).unwrap().answered_request_ids("chat").unwrap(),vec!["harbor:codex-question:thread:call"]);
     }
 }

@@ -1042,3 +1042,44 @@ it("renders Claude typed worker-message receipts in their own conversations and 
     text: "Continue the existing task",
   });
 });
+
+it("keeps native async questions answerable after final output and history replay", () => {
+  const question = {
+    id: "harbor:codex-question:thread:call",
+    method: "elicitation/create",
+    params: {
+      sessionId: "root",
+      _meta: { harborCodexAsyncQuestion: true },
+      requestedSchema: {
+        type: "object",
+        properties: { color: { type: "string" } },
+      },
+    },
+  };
+  let t = reduceEvent(
+    emptyTranscript(),
+    event("user_message", { text: "Ask a dummy question" }),
+  );
+  t = reduceEvent(t, event("request", question));
+  t = reduceEvent(
+    t,
+    update({
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: "I've sent a question." },
+    }),
+  );
+  t = reduceEvent(t, event("turn_complete", {}));
+  expect(t.requests).toHaveLength(1);
+  expect(t.interactions.at(-1)?.status).toBe("pending");
+  t = reduceEvent(t, event("history_reset", {}));
+  expect(t.requests).toHaveLength(1);
+  t = reduceEvent(
+    t,
+    event("answered", {
+      id: question.id,
+      result: { action: "accept", content: { color: "Blue" } },
+    }),
+  );
+  expect(t.requests).toHaveLength(0);
+  expect(t.interactions.at(-1)?.status).toBe("answered");
+});
