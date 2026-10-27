@@ -20,6 +20,14 @@ The new-task image has a fine pixel layer with one soft light point following th
 
 Artwork and generation prompts are bundled in [San Francisco](../src/assets/artwork/sf/README.md), [Los Angeles](../src/assets/artwork/la/README.md), and [New York City](../src/assets/artwork/nyc/README.md).
 
+## conversations and controls
+
+The sidebar shows working, waiting-for-input, and unseen-completion states, including a summary on collapsed workspaces. Opening a chat clears its unseen marker. Long user prompts expand in place, image attachments use thumbnails, and streaming prose fades in without remounting completed text or code controls. Sticky prompts retain a background aligned with the chat scene.
+
+Enter sends a prompt; Shift+Enter adds a line. Model, effort, mode, workspace, and worktree menus share compact surfaces above the composer. Connection failures retain the draft and offer executable configuration. Provider checks distinguish missing executables, sign-in requirements, incompatible protocols, timeouts, and other failures.
+
+Plan approvals use a saved review card and a full plan sheet. Implement plan and Keep planning preserve the provider's original option IDs; additional provider options remain available separately. Answered or interrupted cards stay readable in history. See [plan review behavior](plan-sheet.md).
+
 ## provider artwork
 
 The Claude Code, OpenAI Codex, and Grok Build icons are bundled SVG brand marks from the [ACP registry](https://github.com/agentclientprotocol/registry). Exact source URLs, pinned registry revision, and checksums are recorded in [artwork provenance](../src/assets/providers/sources.json).
