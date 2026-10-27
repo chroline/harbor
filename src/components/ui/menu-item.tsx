@@ -130,6 +130,8 @@ export interface MenuItemProps extends HTMLAttributes<HTMLDivElement> {
   /** Optional navigation glyph after the label and selection check. */
   trailingIcon?: IconComponent;
   label: string;
+  /** Optional explanatory line below the option name. */
+  description?: string;
   index: number;
   /** When a boolean, the item is a radio-style option (role="menuitemradio"
    *  with aria-checked). When undefined, it is a plain action item
@@ -148,6 +150,7 @@ const MenuItem = forwardRef<HTMLDivElement, MenuItemProps>(
       icon: Icon,
       trailingIcon: TrailingIcon,
       label,
+      description,
       index,
       checked,
       onSelect,
@@ -195,6 +198,7 @@ const MenuItem = forwardRef<HTMLDivElement, MenuItemProps>(
       // compresses rows to fit instead of scrolling.
       `relative z-10 flex ${sizeClasses.control} shrink-0 items-center ${sizeClasses.gap} ${shape.item} ${sizeClasses.itemPx} cursor-pointer outline-none`,
       disabled && "opacity-50 pointer-events-none",
+      description && "h-auto min-h-11 py-1.5",
       className
     );
 
@@ -242,6 +246,14 @@ const MenuItem = forwardRef<HTMLDivElement, MenuItemProps>(
           >
             {label}
           </span>
+          {description && (
+            <span className={cn(
+              "col-start-1 row-start-2 mt-1 whitespace-normal text-[length:var(--fs-caption-compact,0.6875rem)] leading-4",
+              isActive || checked ? "text-foreground" : "text-muted-foreground",
+            )}>
+              {description}
+            </span>
+          )}
         </span>
         {/* Initial selections appear immediately. */}
         <AnimatePresence initial={false}>

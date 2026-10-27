@@ -1,3 +1,4 @@
+import { ComposerPickerContent } from "./composer-picker";
 import { useState } from "react";
 import { ChevronDown, Folder, FolderOpen, SquarePen } from "@/lib/icons";
 import type { Workspace } from "../lib/bindings/Workspace";
@@ -5,7 +6,6 @@ import { Button } from "./ui/button";
 import {
   DropdownMenu,
   DropdownTrigger,
-  DropdownContent,
   DropdownSearch,
   DropdownLabel,
   DropdownSeparator,
@@ -64,9 +64,8 @@ export function WorkspacePicker({
           </Button>
         }
       />
-      <DropdownContent
+      <ComposerPickerContent
         className="workspace-picker-menu"
-        align="start"
         checkedIndex={checkedIndex >= 0 ? checkedIndex : undefined}
       >
         <DropdownSearch
@@ -107,7 +106,7 @@ export function WorkspacePicker({
           label="Use Existing…"
           onSelect={onAddWorkspace}
         />
-      </DropdownContent>
+      </ComposerPickerContent>
     </DropdownMenu>
   );
 }

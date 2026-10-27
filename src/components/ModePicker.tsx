@@ -1,8 +1,8 @@
+import { ComposerPickerContent } from "./composer-picker";
 import { ChevronDown } from "@/lib/icons";
 import {
   DropdownMenu,
   DropdownTrigger,
-  DropdownContent,
   DropdownLabel,
 } from "./ui/dropdown";
 import { MenuItem } from "./ui/menu-item";
@@ -43,7 +43,7 @@ export function ModePicker({
   const current =
     mode.choices.find((c) => c.value === mode.current)?.name ?? mode.current;
   return (
-    <DropdownMenu disabled={disabled}>
+    <DropdownMenu size="compact" disabled={disabled}>
       <Tooltip
         content={`Switch mode · Shift+Tab${nextTurn ? ` · Current mode: ${current}` : ""}`}
       >
@@ -66,9 +66,8 @@ export function ModePicker({
           }
         />
       </Tooltip>
-      <DropdownContent
+      <ComposerPickerContent
         className="mode-picker-menu"
-        align="end"
         checkedIndex={mode.choices.findIndex(
           (choice) => choice.value === value,
         )}
@@ -106,7 +105,7 @@ export function ModePicker({
             onSelect={onCancel}
           />
         )}
-      </DropdownContent>
+      </ComposerPickerContent>
     </DropdownMenu>
   );
 }

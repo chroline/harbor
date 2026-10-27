@@ -955,6 +955,9 @@ const InputMessage = forwardRef<HTMLDivElement, InputMessageProps>(
     const handleContainerMouseDown = useCallback(
       (e: React.MouseEvent<HTMLDivElement>) => {
         if (!clickToFocus || disabled) return;
+        // Portalled picker events still bubble through the composer in React.
+        // Refocusing here dismisses their menu before the click can select a row.
+        if (!e.currentTarget.contains(e.target as Node)) return;
         const target = e.target as HTMLElement;
         if (target === textareaRef.current) return;
         if (

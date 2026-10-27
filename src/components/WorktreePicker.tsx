@@ -11,7 +11,7 @@ import { Dropdown } from "./ui/dropdown";
 import { MenuItem } from "./ui/menu-item";
 import { PickerViews } from "./ui/picker-views";
 import { BaseBranchPicker } from "./BaseBranchPicker";
-import { Elevated } from "@/lib/elevated";
+import { ComposerPickerSurface } from "./composer-picker";
 
 export function WorktreePicker({
   workspaceId,
@@ -57,6 +57,7 @@ export function WorktreePicker({
           <Button
             type="button"
             variant="ghost"
+            className="worktree-picker-trigger"
             leadingIcon={GitBranch}
             trailingIcon={ChevronDown}
             disabled={disabled}
@@ -70,6 +71,7 @@ export function WorktreePicker({
             <Popover.Content
               forceMount
               asChild
+              side="top"
               align="start"
               sideOffset={6}
               collisionPadding={12}
@@ -113,10 +115,8 @@ export function WorktreePicker({
                   if (!open) setMounted(false);
                 }}
               >
-                <Elevated
-                  offset={2}
-                  shadowLevel={3}
-                  className="worktree-picker-menu z-50 w-[min(18rem,calc(100vw-1.5rem))] rounded-xl p-1 outline-none"
+                <ComposerPickerSurface
+                  className="worktree-picker-menu z-50 p-1"
                 >
                   <PickerViews
                     focusGutter
@@ -219,7 +219,7 @@ export function WorktreePicker({
                       },
                     ]}
                   />
-                </Elevated>
+                </ComposerPickerSurface>
               </motion.div>
             </Popover.Content>
           </Popover.Portal>

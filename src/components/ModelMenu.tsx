@@ -1,19 +1,14 @@
 import { findAdapter } from "../adapters";
+import { ComposerPickerSurface } from "./composer-picker";
 import { ProviderConnectionButton } from "./ProviderConnectionButton";
 import { rem } from "@/lib/units";
-import {
-  useState,
-  useRef,
-  useEffect,
-  type KeyboardEvent,
-  type ReactNode,
-} from "react";
+import { useState, useEffect, type KeyboardEvent, type ReactNode } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { motion } from "framer-motion";
 import { Check, ChevronDown, ChevronRight, ArrowLeft } from "@/lib/icons";
 import { Button } from "./ui/button";
 import { PickerViews } from "./ui/picker-views";
-import { Slider } from "./ui/slider";
+import { EffortChooser } from "./kokonutui/effort-chooser";
 import { Switch } from "./ui/switch";
 import { Tabs, TabsList, TabItem } from "./ui/tabs";
 import { Field, Picker, ActionList } from "./fluid";
@@ -32,10 +27,6 @@ import { missingModelMessage, useProviderConfig } from "../lib/provider-config";
 import { exitFallbackMs, spring } from "../lib/springs";
 import { popupMotionClass } from "../lib/popup";
 import type { SessionRecord } from "../lib/bindings/SessionRecord";
-
-function effortLabel(name: string) {
-  return name.replace(/^thinking:\s*/i, "").trim();
-}
 
 type MenuProps = {
   provider: string;
@@ -142,7 +133,8 @@ export function ModelMenu({
     data.providers.find((p) => p.id === provider)?.name ?? provider;
   const change = (id: string, value: string | boolean) => {
     if (
-      view !== "agents" &&
+      // Effort lives beside the model popup and is independent of its pane.
+      (id === effort?.id || view !== "agents") &&
       !disabled &&
       (!busy || id === (model?.id ?? "__legacy_model"))
     )
@@ -178,14 +170,6 @@ export function ModelMenu({
             <span className="model-trigger-name">
               {current?.name ?? providerName}
             </span>
-            {effort && (
-              <span className="model-trigger-effort">
-                {effortLabel(
-                  levels.find((l) => l.value === effort.currentValue)?.name ??
-                    "",
-                )}
-              </span>
-            )}
           </span>
         </Button>
       </Popover.Trigger>
@@ -194,9 +178,9 @@ export function ModelMenu({
           <Popover.Content
             forceMount
             asChild
-            side="bottom"
+            side="top"
             align="start"
-            sideOffset={8}
+            sideOffset={6}
             collisionPadding={14}
             aria-label="Model and agent settings"
             onEscapeKeyDown={(event) => {
@@ -211,7 +195,11 @@ export function ModelMenu({
           >
             <motion.div
               className={`model-menu-motion z-50 outline-none ${popupMotionClass}`}
-              initial={{ opacity: 0, y: "var(--popup-enter-y)", scaleY: 0.96 }}
+              initial={{
+                opacity: 0,
+                y: "var(--popup-enter-y)",
+                scaleY: 0.96,
+              }}
               animate={
                 open
                   ? { opacity: 1, y: 0, scaleY: 1 }
@@ -225,7 +213,7 @@ export function ModelMenu({
                 if (!open) setMounted(false);
               }}
             >
-              <div className="model-menu" data-view={view}>
+              <ComposerPickerSurface className="model-menu" data-view={view}>
                 <ModelMenuViews
                   view={view}
                   returnFocus={returnFocus}
@@ -254,14 +242,6 @@ export function ModelMenu({
                           </span>
                         </Button>
                       </div>
-                      {effort && levels.length > 0 && (
-                        <EffortControl
-                          key={`${provider}:${selected}:${effort.id}`}
-                          option={effort}
-                          disabled={busy || disabled}
-                          onChange={(v) => change(effort.id, v)}
-                        />
-                      )}
                       {(remaining.length > 0 || legacyModes.length > 0) && (
                         <div className="model-menu-settings">
                           {remaining.map((o) => (
@@ -346,7 +326,7 @@ export function ModelMenu({
                         <div className="model-menu-agent-header">
                           <Button
                             variant="ghost"
-                            size="icon"
+                            size="icon-compact"
                             aria-label="Back to models"
                             onClick={back}
                           >
@@ -396,7 +376,7 @@ export function ModelMenu({
                   <div className="model-menu-search">
                     <Button
                       variant="ghost"
-                      size="icon"
+                      size="icon-compact"
                       aria-label="Back to reasoning"
                       onClick={() => setView("settings")}
                     >
@@ -496,10 +476,20 @@ export function ModelMenu({
                     </div>
                   )}
                 </ModelMenuViews>
-              </div>
+              </ComposerPickerSurface>
             </motion.div>
           </Popover.Content>
         </Popover.Portal>
+      )}
+      {effort && levels.length > 0 && (
+        <EffortControl
+          option={{
+            ...effort,
+            currentValue: pendingSelections?.[effort.id] ?? effort.currentValue,
+          }}
+          disabled={busy || disabled}
+          onChange={(value) => change(effort.id, value)}
+        />
       )}
     </Popover.Root>
   );
@@ -641,74 +631,17 @@ export function EffortControl({
   disabled?: boolean;
   onChange: (value: string) => void;
 }) {
-  const levels = values(option);
-  const current = Math.max(
-    0,
-    levels.findIndex((l) => l.value === option.currentValue),
-  );
-  const [preview, setPreview] = useState(current);
-  const previewRef = useRef(current);
-  const dragging = useRef(false);
-  const signature = levels.map((l) => l.value).join("\0");
-  useEffect(() => {
-    dragging.current = false;
-    previewRef.current = current;
-    setPreview(current);
-  }, [current, signature]);
-  const select = (index: number) => {
-    const value = levels[index]?.value;
-    if (!disabled && value && value !== option.currentValue) onChange(value);
-  };
-  const update = (value: number | [number, number]) => {
-    const index = Math.round(Array.isArray(value) ? value[0] : value);
-    previewRef.current = index;
-    setPreview(index);
-    if (!dragging.current) select(index);
-  };
-  const cancel = () => {
-    dragging.current = false;
-    previewRef.current = current;
-    setPreview(current);
-  };
   return (
-    <div className="model-menu-effort">
-      <div className="effort-heading">
-        <strong>{effortLabel(levels[preview]?.name ?? option.name)}</strong>
-      </div>
-      <div
-        className="effort-slider"
-        onPointerDownCapture={(e) => {
-          if (!disabled && e.button === 0) dragging.current = true;
-        }}
-        onPointerUpCapture={() => {
-          if (dragging.current) {
-            dragging.current = false;
-            select(previewRef.current);
-          }
-        }}
-        onPointerCancelCapture={cancel}
-        onLostPointerCapture={() => {
-          if (dragging.current) cancel();
-        }}
-      >
-        <Slider
-          size="compact"
-          className="effort-control"
-          label={option.name}
-          value={preview}
-          min={0}
-          max={Math.max(1, levels.length - 1)}
-          step={1}
-          steps={levels.map((_, i) => i)}
-          showSteps
-          showValue={false}
-          disabled={disabled || levels.length < 2}
-          formatValue={(i) => effortLabel(levels[Math.round(i)]?.name ?? "")}
-          onChange={update}
-          fillStyle={{ backgroundColor: "var(--effort-blue)" }}
-        />
-      </div>
-    </div>
+    <EffortChooser
+      options={values(option).map((level) => ({
+        value: level.value,
+        label: level.name,
+        description: level.description,
+      }))}
+      value={str(option.currentValue)}
+      onChange={onChange}
+      disabled={disabled}
+    />
   );
 }
 function PermissionChoices({

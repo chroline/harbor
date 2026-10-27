@@ -9,6 +9,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { TaskComposer } from "./TaskComposer";
+import { EffortChooser } from "./kokonutui/effort-chooser";
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import userEvent from "@testing-library/user-event";
@@ -42,6 +43,36 @@ const defaults = {
   actionLabel: "Send message",
   textareaProps: { "aria-label": "Message" },
 };
+
+it("lets mouse clicks select effort in a portalled composer menu", async () => {
+  const user = userEvent.setup();
+  const change = vi.fn();
+  render(
+    <TaskComposer
+      {...defaults}
+      onSubmit={() => {}}
+      modelMenu={
+        <EffortChooser
+          value="low"
+          options={[
+            { value: "low", label: "Low" },
+            { value: "high", label: "High" },
+          ]}
+          onChange={change}
+        />
+      }
+    />,
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Effort: Low. Change" }),
+  );
+  const high = screen.getByRole("menuitemradio", { name: "High" });
+  // Cancelling mousedown to refocus the editor dismisses the native menu
+  // before mouseup can deliver the selection's click in WebKit.
+  expect(fireEvent.mouseDown(high, { button: 0 })).toBe(true);
+  await user.click(high);
+  expect(change).toHaveBeenCalledExactlyOnceWith("high");
+});
 
 it("keeps executable configuration open when saving clears the connection error", async () => {
   function ConfigurationAction() {

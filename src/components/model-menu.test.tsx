@@ -89,9 +89,10 @@ it("searches real model names and sends exact provider config IDs", async () => 
   expect(screen.queryByRole("button", { name: "Fast" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Deep" }));
   expect(change).toHaveBeenCalledWith("provider-model", "deep-id");
-  fireEvent.keyDown(screen.getByRole("slider", { name: "Reasoning effort" }), {
-    key: "End",
-  });
+  await userEvent.click(
+    screen.getByRole("button", { name: "Effort: Low. Change" }),
+  );
+  await userEvent.click(screen.getByRole("menuitemradio", { name: /^High/ }));
   expect(change).toHaveBeenCalledWith("thinking", "high-id");
 });
 it("refreshes dependent efforts and prevents changes while loading", async () => {
@@ -120,57 +121,86 @@ it("refreshes dependent efforts and prevents changes while loading", async () =>
     },
   ];
   rerender(ui(next, true));
-  await waitFor(() =>
-    expect(
-      screen
-        .getByRole("slider", { name: "Reasoning effort" })
-        .getAttribute("aria-valuetext"),
-    ).toBe("High"),
-  );
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Effort: High. Change",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Choose model" }));
   expect(change).not.toHaveBeenCalled();
   expect(screen.queryByText("Full access")).toBeNull();
 });
 
-it("previews pointer changes, commits once on release, and discards cancellation", () => {
+it("selects advertised efforts and does not emit when choosing the current level", async () => {
+  const user = userEvent.setup();
   const change = vi.fn();
-  const { container } = render(
-    <MotionConfig reducedMotion="always">
-      <EffortControl option={controls[1]} onChange={change} />
-    </MotionConfig>,
-  );
-  const track = container.querySelector<HTMLDivElement>(".effort-control .cursor-ew-resize")!;
-  Object.defineProperty(track, "offsetWidth", { value: 400 });
-  track.getBoundingClientRect = () => ({
-    x: 0,
-    y: 0,
-    left: 0,
-    top: 0,
-    right: 400,
-    bottom: 42,
-    width: 400,
-    height: 42,
-    toJSON() {},
-  });
-  Element.prototype.setPointerCapture = vi.fn();
-  Element.prototype.releasePointerCapture = vi.fn();
-  // jsdom's mouse event supplies coordinates for React pointer event handlers.
-  const pointer = (type: string, x: number) => {
-    const e = new MouseEvent(type, { bubbles: true, clientX: x, button: 0 });
-    Object.defineProperty(e, "pointerType", { value: "mouse" });
-    Object.defineProperty(e, "pointerId", { value: 1 });
-    fireEvent(track, e);
-  };
-  pointer("pointerdown", 13);
-  pointer("pointermove", 387);
+  render(<EffortControl option={controls[1]} onChange={change} />);
+  await user.click(screen.getByRole("button", { name: "Effort: Low. Change" }));
+  expect(
+    screen
+      .getByRole("menuitemradio", { name: /^Low/ })
+      .getAttribute("aria-checked"),
+  ).toBe("true");
+  await user.click(screen.getByRole("menuitemradio", { name: /^Low/ }));
   expect(change).not.toHaveBeenCalled();
-  pointer("pointerup", 387);
+  await user.click(screen.getByRole("button", { name: "Effort: Low. Change" }));
+  await user.click(screen.getByRole("menuitemradio", { name: /^High/ }));
   expect(change).toHaveBeenCalledExactlyOnceWith("high-id");
-  change.mockClear();
-  pointer("pointerdown", 387);
-  pointer("pointercancel", 387);
-  pointer("pointerup", 387);
-  expect(change).not.toHaveBeenCalled();
+});
+
+it("uses effort names and descriptions exactly as advertised without supplying missing descriptions", async () => {
+  const user = userEvent.setup();
+  render(
+    <EffortControl
+      option={{
+        ...controls[1],
+        currentValue: "custom",
+        options: [
+          {
+            value: "custom",
+            name: "Thinking: Custom",
+            description: "Agent-provided effort details",
+          },
+          { value: "high", name: "High" },
+        ],
+      }}
+      onChange={vi.fn()}
+    />,
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Effort: Thinking: Custom. Change" }),
+  );
+  expect(
+    screen.getByRole("menuitemradio", { name: "Thinking: Custom" }),
+  ).toBeTruthy();
+  expect(screen.getByText("Agent-provided effort details")).toBeTruthy();
+  expect(screen.queryByText("Thinks longer on hard problems")).toBeNull();
+});
+
+it("selects effort after dismissing the agent picker without choosing an agent", async () => {
+  const user = userEvent.setup();
+  const change = vi.fn();
+  render(
+    <>
+      <button>Outside</button>
+      <ModelMenu
+        provider="codex"
+        controls={controls}
+        onChange={change}
+        onProviderChange={vi.fn()}
+      />
+    </>,
+  );
+  await user.click(screen.getByRole("button", { name: "Choose model and reasoning" }));
+  await user.click(screen.getByRole("button", { name: "Choose model" }));
+  await user.click(screen.getByRole("button", { name: "Choose agent" }));
+  await user.click(screen.getByRole("button", { name: "Outside" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await user.click(screen.getByRole("button", { name: "Effort: Low. Change" }));
+  await user.click(screen.getByRole("menuitemradio", { name: "High" }));
+  expect(change).toHaveBeenCalledExactlyOnceWith("thinking", "high-id");
 });
 it("renders only provider permission choices and preserves their values", async () => {
   const change = vi.fn();
@@ -410,9 +440,10 @@ it("shows one reasoning control when legacy modes duplicate the same setting", a
   );
   await screen.findByRole("dialog");
   expect(screen.queryByRole("radiogroup", { name: "Mode" })).toBeNull();
-  fireEvent.keyDown(screen.getByRole("slider", { name: "Reasoning effort" }), {
-    key: "End",
-  });
+  await userEvent.click(
+    screen.getByRole("button", { name: "Effort: Low. Change" }),
+  );
+  await userEvent.click(screen.getByRole("menuitemradio", { name: /^High/ }));
   expect(change).toHaveBeenCalledWith("thinking", "high-id");
 });
 
@@ -448,18 +479,22 @@ it("promotes legacy modes to the composer for an unknown provider without duplic
     screen.getByRole("button", { name: "Choose model and reasoning" }),
   );
   expect(screen.queryByRole("tab", { name: "Act" })).toBeNull();
-  expect(screen.getByRole("slider", { name: "Reasoning effort" })).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: "Effort: Low. Change" }),
+  ).toBeTruthy();
   await user.keyboard("{Escape}");
 });
 
-it("opens reasoning first and only reveals models through the model and agent section", async () => {
+it("keeps model navigation while offering the effort chooser beside it", async () => {
   const change = vi.fn();
   render(<ModelMenu provider="codex" controls={controls} onChange={change} />);
   fireEvent.click(
     screen.getByRole("button", { name: "Choose model and reasoning" }),
   );
   const dialog = await screen.findByRole("dialog");
-  expect(screen.getByRole("slider", { name: "Reasoning effort" })).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: "Effort: Low. Change" }),
+  ).toBeTruthy();
   expect(screen.queryByRole("textbox", { name: "Search models" })).toBeNull();
   const label = screen.getByRole("button", { name: "Choose model" });
   expect(label.textContent).not.toContain("Low");
