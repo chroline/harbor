@@ -3408,11 +3408,27 @@ html.transitioning *::after {
   object-position: center top;
   filter: blur(var(--skyline-blur));
 }
-.home-landscape > img {
-  transform: scale(1.1);
+.home-landscape > img,
+.skyline-pixels {
+  transform: perspective(var(--skyline-perspective, 2500px))
+    rotateX(var(--skyline-tilt-x, 0deg))
+    rotateY(var(--skyline-tilt-y, 0deg)) scale(1.1);
+}
+.skyline-pixels {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+  opacity: 0;
+  transition: opacity 350ms ease;
+}
+.skyline-pixels[data-active="true"][data-ready="true"] {
+  opacity: 1;
 }
 @media (prefers-reduced-motion: reduce) {
-  [data-skyline-background="true"] {
+  [data-skyline-background="true"],
+  .skyline-pixels {
     transition: none;
   }
 }

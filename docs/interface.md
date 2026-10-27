@@ -16,6 +16,8 @@ macOS traffic lights are aligned within the 48px titlebar in both main and detac
 
 Settings → Appearance selects San Francisco, Los Angeles, or New York City and either automatic lighting or a fixed dawn, day, sunset, or night image. Automatic lighting follows the local clock and refreshes each minute and on focus. The decorative image persists across new-task and chat views; chat uses a blurred, subdued version. The composer and its menus follow the artwork's light or dark palette without changing the saved application theme.
 
+The new-task image has a fine pixel layer with one soft light point following the cursor. Pixel positions stay fixed while intensity falls off around that point. The image and pixel layer tilt together with subtle perspective, inspired by the [Apple TV card interaction](https://github.com/marcreichel/apple-tv-card); controls and window chrome stay fixed. Leaving the canvas resets the tilt. Reduced motion keeps the image static and disables the animated highlight.
+
 Artwork and generation prompts are bundled in [San Francisco](../src/assets/artwork/sf/README.md), [Los Angeles](../src/assets/artwork/la/README.md), and [New York City](../src/assets/artwork/nyc/README.md).
 
 ## provider artwork

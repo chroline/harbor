@@ -16,6 +16,7 @@ import {
 } from "@/lib/skyline-period";
 import type { SkylineCity } from "@/lib/skyline-city";
 import { ComposerThemeContext } from "@/lib/composer-theme";
+import { SkylinePixels } from "./SkylinePixels";
 import dawn from "@/assets/artwork/sf/dawn.webp";
 import day from "@/assets/artwork/sf/day.webp";
 import sunset from "@/assets/artwork/sf/sunset.webp";
@@ -149,6 +150,7 @@ export const SkylineScene = forwardRef<HTMLDivElement, SceneProps>(
                 <SkylineBackground
                   city={city}
                   period={period}
+                  pixelated={active && variant === "home"}
                 />
               )}
               {children}
@@ -163,14 +165,18 @@ export const SkylineScene = forwardRef<HTMLDivElement, SceneProps>(
 function SkylineBackground({
   city,
   period,
+  pixelated,
 }: {
   city: SkylineCity;
   period: SkylinePeriod;
+  pixelated: boolean;
 }) {
+  const image = useRef<HTMLImageElement>(null);
   const source = artwork[city][period];
   return (
     <div className="home-landscape" aria-hidden="true">
       <img
+        ref={image}
         data-skyline-city={city}
         data-skyline-period={period}
         src={source}
@@ -178,6 +184,7 @@ function SkylineBackground({
         draggable={false}
         fetchPriority="high"
       />
+      <SkylinePixels image={image} source={source} active={pixelated} />
     </div>
   );
 }
