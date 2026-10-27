@@ -66,11 +66,13 @@ function Activity({
   renderTool,
   active = false,
   endedBefore,
+  streamingId,
 }: {
   entries: ActivityEntry[];
   renderTool: (tool: Tool) => ReactNode;
   active?: boolean;
   endedBefore?: number;
+  streamingId?: string;
 }) {
   const [expanded, setExpanded] = useState<boolean | null>(null);
   const tools = entries.flatMap((entry) =>
@@ -151,7 +153,10 @@ function Activity({
                 detailLabel="View reasoning"
                 defaultOpen={active && entry === entries.at(-1)}
               >
-                <RichText text={entry.message.text} />
+                <RichText
+                  text={entry.message.text}
+                  streaming={streamingId === entry.message.id}
+                />
               </TraceStep>
             ),
           )}
@@ -204,6 +209,20 @@ function formatWorkDuration(milliseconds: number) {
   return `${hours}h${minutes % 60 ? ` ${minutes % 60}m` : ""}`;
 }
 
+// Only the reply still arriving gets the word reveal. Settled history stays
+// plain markdown so reopening a chat does not replay it.
+function activeStreamId(entries: TimelineEntry[], working: boolean) {
+  if (!working) return undefined;
+  const last = entries.at(-1);
+  if (
+    last?.type !== "message" ||
+    last.message.role === "user" ||
+    last.message.planReview
+  )
+    return undefined;
+  return last.message.id;
+}
+
 function TranscriptTurn({
   id,
   anchor,
@@ -253,6 +272,7 @@ export function ChatTranscript({
   const latestUser = [...entries]
     .reverse()
     .find((entry) => entry.type === "message" && entry.message.role === "user");
+  const streamingId = activeStreamId(entries, working);
   const inScroller = useTranscriptScroller();
   const Container = inScroller ? Fragment : "div";
   const rows = groups.map((group, index) => {
@@ -264,6 +284,7 @@ export function ChatTranscript({
             entries={group.entries}
             renderTool={renderTool}
             active={working && index === groups.length - 1}
+            streamingId={streamingId}
             endedBefore={
               next?.type === "message"
                 ? next.entry.message.timestamp
@@ -327,7 +348,7 @@ export function ChatTranscript({
                   ))}
                 </div>
               )}
-              <RichText text={message.text} commandRanges={message.role === "user" ? message.commandRanges : undefined} />
+              <RichText text={message.text} commandRanges={message.role === "user" ? message.commandRanges : undefined} streaming={streamingId === message.id} />
             </BubbleContent>
           </Bubble>
           <MessageFooter data-slot="message-actions">

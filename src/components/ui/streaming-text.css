@@ -1,0 +1,22 @@
+/* Word reveal from https://kobra.systems/components/streaming-text */
+.streaming-text {
+  --stream-reveal-duration: 0.18s;
+  --stream-reveal-fade-ease: cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+@keyframes streaming-word-fade {
+  0% {
+    opacity: 0;
+  }
+}
+
+.streaming-word {
+  animation: streaming-word-fade var(--stream-reveal-duration, 0.18s)
+    var(--stream-reveal-fade-ease, cubic-bezier(0.25, 0.1, 0.25, 1)) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .streaming-word {
+    animation: none;
+  }
+}

@@ -248,7 +248,7 @@ it("uses Trace before the first tool and while reasoning streams", () => {
   expect(screen.queryByText("Done")).toBeNull();
   const details = screen.getByRole("button", { name: "View reasoning" });
   expect(details.getAttribute("aria-expanded")).toBe("true");
-  expect(screen.getByText("thought 1")).toBeTruthy();
+  expect(document.querySelector("[data-slot='streaming-text']")?.textContent).toBe("thought 1");
   fireEvent.click(details);
   view.rerender(
     <ChatTranscript
@@ -353,4 +353,42 @@ it("does not keep animating an unfinished tool after its turn ended", () => {
   expect(
     document.querySelector('[data-slot="trace-line"][data-status="running"]'),
   ).toBeNull();
+});
+
+it("uses streaming text for the reply still arriving, not for settled or user text", () => {
+  const view = render(
+    <ChatTranscript
+      entries={[message(1, "user"), message(2, "assistant")]}
+      renderTool={renderTool}
+      working
+    />,
+  );
+  expect(
+    screen
+      .getByLabelText("Assistant message")
+      .querySelector("[data-slot='streaming-text']"),
+  ).toBeTruthy();
+  expect(
+    screen
+      .getByLabelText("Your message")
+      .querySelector("[data-slot='streaming-text']"),
+  ).toBeNull();
+  view.rerender(
+    <ChatTranscript
+      entries={[message(1, "user"), message(2, "assistant")]}
+      renderTool={renderTool}
+    />,
+  );
+  expect(document.querySelector("[data-slot='streaming-text']")).toBeNull();
+});
+
+it("does not stream an earlier reply once a tool is the active step", () => {
+  render(
+    <ChatTranscript
+      entries={[message(1, "assistant"), tool(2, "in_progress")]}
+      renderTool={renderTool}
+      working
+    />,
+  );
+  expect(document.querySelector("[data-slot='streaming-text']")).toBeNull();
 });

@@ -5,7 +5,18 @@ import { Picker } from "./fluid";
 import { Switch } from "./ui/switch";
 import { Badge } from "./ui/badge";
 import type { IconComponent } from "../lib/icon-context";
-import { memo, useState, type ReactNode, type ReactElement } from "react";
+import {
+  Children,
+  createContext,
+  createElement,
+  memo,
+  useContext,
+  useState,
+  type ComponentProps,
+  type ReactNode,
+  type ReactElement,
+} from "react";
+import { StreamingText } from "./ui/streaming-text";
 import { Terminal, Copy, Check, LoaderCircle, ChevronDown } from "@/lib/icons";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -146,36 +157,100 @@ export function CopyButton({ text }: { text: string | (() => string) }) {
 }
 // React uses these functions as component identities. Keep them stable so a
 // composer update or streamed token doesn't remount code blocks and reset wrap.
+const MarkdownStreaming = createContext(false);
+
+function streamLeaves(children: ReactNode, streaming: boolean) {
+  if (!streaming) return children;
+  return Children.map(children, (child) =>
+    typeof child === "string" && /\S/.test(child) ? (
+      <StreamingText>{child}</StreamingText>
+    ) : (
+      child
+    ),
+  );
+}
+
+function streamed(
+  tag:
+    | "p"
+    | "li"
+    | "em"
+    | "strong"
+    | "del"
+    | "blockquote"
+    | "td"
+    | "th"
+    | "h1"
+    | "h2"
+    | "h3"
+    | "h4"
+    | "h5"
+    | "h6",
+) {
+  return function StreamedMarkdown({
+    node: _node,
+    children,
+    ...props
+  }: ComponentProps<typeof tag> & { node?: unknown }) {
+    const streaming = useContext(MarkdownStreaming);
+    return createElement(tag, props, streamLeaves(children, streaming));
+  };
+}
+
 const markdownComponents: Components = {
-  a: ({ children, href }) => (
-    <a href={href} target="_blank" rel="noreferrer">
-      {children}
-    </a>
-  ),
+  a: ({ children, href }) => {
+    const streaming = useContext(MarkdownStreaming);
+    return (
+      <a href={href} target="_blank" rel="noreferrer">
+        {streamLeaves(children, streaming)}
+      </a>
+    );
+  },
   pre: ({ node, children }) => (
     <MarkdownCodeBlock node={node}>{children}</MarkdownCodeBlock>
   ),
+  p: streamed("p"),
+  li: streamed("li"),
+  em: streamed("em"),
+  strong: streamed("strong"),
+  del: streamed("del"),
+  blockquote: streamed("blockquote"),
+  td: streamed("td"),
+  th: streamed("th"),
+  h1: streamed("h1"),
+  h2: streamed("h2"),
+  h3: streamed("h3"),
+  h4: streamed("h4"),
+  h5: streamed("h5"),
+  h6: streamed("h6"),
 };
 
+// Parsing the bounded transcript is expensive. Drafts and unrelated session
+// updates must not parse every unchanged message on each keystroke.
 export const RichText = memo(function RichText({
   text,
   commandRanges = [],
+  streaming = false,
 }: {
   text: string;
   commandRanges?: CommandRange[];
+  /** Reveal words that arrive while this reply is still streaming. */
+  streaming?: boolean;
 }) {
   return (
-    <div className="markdown typeset">
-      <Markdown
-        remarkPlugins={[
-          remarkGfm,
-          [remarkCommandReferences, { ranges: commandRanges }],
-        ]}
-        components={markdownComponents}
-      >
-        {text}
-      </Markdown>
-    </div>
+    <MarkdownStreaming.Provider value={streaming}>
+      <div className="markdown typeset">
+        <Markdown
+          remarkPlugins={[
+            remarkGfm,
+            [remarkCommandReferences, { ranges: commandRanges }],
+          ]}
+          components={markdownComponents}
+        >
+          {text}
+        </Markdown>
+      </div>
+    </MarkdownStreaming.Provider>
   );
 });
 export function ConfigControls({ session }: { session: SessionRecord }) {
