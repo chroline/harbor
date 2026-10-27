@@ -93,6 +93,7 @@ export function ClarificationQuestionnaire({
             </div>
             {q.multiple ? (
               <CheckboxGroup
+                className="questionnaire-options"
                 checkedIndices={
                   new Set(
                     q.options.flatMap((option, i) =>
@@ -103,6 +104,7 @@ export function ClarificationQuestionnaire({
               >
                 {q.options.map((option, index) => (
                   <CheckboxItem
+                    className="questionnaire-option"
                     key={option.id}
                     index={index}
                     label={option.title}
@@ -121,19 +123,18 @@ export function ClarificationQuestionnaire({
               </CheckboxGroup>
             ) : (
               <RadioGroup
+                className="questionnaire-options"
                 value={answers[q.id]?.[0] ?? ""}
                 onValueChange={(value) => choose(q, value)}
               >
                 {q.options.map((option, index) => (
                   <RadioItem
+                    className="questionnaire-option"
                     key={option.id}
                     index={index}
                     value={option.id}
-                    label={
-                      option.description
-                        ? `${option.title} — ${option.description}`
-                        : option.title
-                    }
+                    label={option.title}
+                    description={option.description}
                   />
                 ))}
               </RadioGroup>

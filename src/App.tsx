@@ -956,7 +956,7 @@ export default function App() {
           if (!v && !deleteBusy) setDeleting(null);
         }}
       >
-        <DialogContent>
+        <DialogContent className="archive-dialog">
           <DialogHeader>
             <DialogTitle>Archive “{deleting?.title}”?</DialogTitle>
             <DialogDescription>
@@ -969,8 +969,10 @@ export default function App() {
           {deleting?.worktreeId && (
             <p className="archive-explainer">
               <Archive size={rem(17)} />
-              Tracked, untracked, and ignored files are preserved before
-              removal.
+              <span>
+                Tracked, untracked, and ignored files are preserved before
+                removal.
+              </span>
             </p>
           )}
           <div className="dialog-footer">

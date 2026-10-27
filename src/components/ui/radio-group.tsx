@@ -311,6 +311,7 @@ RadioGroup.displayName = "RadioGroup";
 
 interface RadioItemProps extends HTMLAttributes<HTMLDivElement> {
   label: string;
+  description?: string;
   index: number;
   selected?: boolean;
   onSelect?: () => void;
@@ -318,7 +319,7 @@ interface RadioItemProps extends HTMLAttributes<HTMLDivElement> {
 }
 
 const RadioItem = forwardRef<HTMLDivElement, RadioItemProps>(
-  ({ label, index, selected, onSelect, value, className, ...props }, ref) => {
+  ({ label, description, index, selected, onSelect, value, className, ...props }, ref) => {
     const internalRef = useRef<HTMLDivElement>(null);
     const {
       registerItem,
@@ -350,6 +351,12 @@ const RadioItem = forwardRef<HTMLDivElement, RadioItemProps>(
       }
       onSelect?.();
     };
+    const labelContent = description ? (
+      <>
+        <span className="block font-medium text-foreground">{label}</span>
+        <span className="mt-1 block text-muted-foreground">{description}</span>
+      </>
+    ) : label;
 
     return (
       <div
@@ -370,7 +377,7 @@ const RadioItem = forwardRef<HTMLDivElement, RadioItemProps>(
         // the element that takes focus.
         role="radio"
         aria-checked={isSelected}
-        aria-label={label}
+        aria-label={description ? `${label} — ${description}` : label}
         onClick={handleSelect}
         onMouseDown={(e) => {
           // Pin focus to the row wrapper on press: the group keydown handler
@@ -471,7 +478,7 @@ const RadioItem = forwardRef<HTMLDivElement, RadioItemProps>(
             style={{ fontVariationSettings: fontWeights.semibold }}
             aria-hidden="true"
           >
-            {label}
+            {labelContent}
           </span>
           {/* Weight changes only when selected ('wght' 400 → 550), so weight
               marks state; color goes muted → foreground when selected, hovered
@@ -489,7 +496,7 @@ const RadioItem = forwardRef<HTMLDivElement, RadioItemProps>(
                 : fontWeights.normal,
             }}
           >
-            {label}
+            {labelContent}
           </span>
         </span>
 
