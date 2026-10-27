@@ -153,8 +153,7 @@ pub async fn detach_task_tab(
     {
         builder = builder
             .title_bar_style(tauri::TitleBarStyle::Overlay)
-            .hidden_title(true)
-            .traffic_light_position(tauri::LogicalPosition::new(18.0, 26.0));
+            .hidden_title(true);
         if let Some(effects) = state
             .app
             .config()
@@ -169,10 +168,12 @@ pub async fn detach_task_tab(
     if x.is_finite() && y.is_finite() {
         builder = builder.position(x - 120.0, y - 24.0);
     }
-    if let Err(error) = builder.build() {
+    let window = builder.build().map_err(|error| {
         state.tab_windows.take(&label);
-        return Err(error.to_string());
-    }
+        error.to_string()
+    })?;
+    #[cfg(target_os = "macos")]
+    crate::window_chrome::install(&window);
     let _ = state.app.emit("task-tabs-changed", &session_id);
     Ok(())
 }

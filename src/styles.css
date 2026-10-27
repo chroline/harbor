@@ -406,9 +406,10 @@ a {
   box-shadow: var(--shadow-2);
 }
 .window-controls {
-  /* Native lights span x=18..78px. With the shell's 4px inset and
-     the trigger's centered glyph, this leaves the same 18px on either side. */
-  width: 5.1875rem;
+  /* Native lights end at x=80px. The shell's 4px inset plus the toggle's
+     9px painted-icon inset put its edge at x=98px: the same 18px gap as
+     the red light's left inset. Keep this in sync with window_chrome.rs. */
+  width: 5.3125rem;
   height: 100%;
   flex-shrink: 0;
   display: flex;
@@ -417,7 +418,7 @@ a {
 }
 .traffic-lights {
   display: flex;
-  gap: 0.5625rem;
+  gap: 0.625rem;
 }
 .traffic-lights i {
   width: 0.875rem;

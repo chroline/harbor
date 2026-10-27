@@ -13,6 +13,8 @@ mod subagents;
 mod terminal;
 mod tab_windows;
 mod types;
+#[cfg(target_os = "macos")]
+mod window_chrome;
 mod workspaces;
 mod worktrees;
 use acp::{Rpc, Sink};
@@ -1686,6 +1688,10 @@ pub fn run() {
                 quitting: AtomicBool::new(false),
             });
             app.manage(state);
+            #[cfg(target_os = "macos")]
+            if let Some(window) = app.get_webview_window("main") {
+                window_chrome::install(&window);
+            }
             let show =
                 tauri::menu::MenuItem::with_id(app, "show", "Open Harbor", true, None::<&str>)?;
             let quit =
@@ -1720,19 +1726,8 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             #[cfg(target_os = "macos")]
-            if matches!(
-                event,
-                tauri::WindowEvent::ThemeChanged(_)
-                    | tauri::WindowEvent::Focused(true)
-                    | tauri::WindowEvent::ScaleFactorChanged { .. }
-            ) {
-                // AppKit can reset the traffic lights during appearance or
-                // display changes. Tao's title setter reapplies the configured
-                // trafficLightPosition on the main queue after AppKit layout.
-                // Preserve the current title; don't duplicate native geometry.
-                if let Ok(title) = window.title() {
-                    let _ = window.set_title(&title);
-                }
+            if matches!(event, tauri::WindowEvent::Destroyed) {
+                window_chrome::remove(window);
             }
             if window.label().starts_with("tab-") {
                 let state = window.state::<Arc<AppState>>().inner().clone();
