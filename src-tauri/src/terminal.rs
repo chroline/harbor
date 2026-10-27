@@ -111,7 +111,7 @@ impl NativeTerminal {
             program.trim_start_matches('-'),
             if alive { "" } else { " (exited)" }
         );
-        json!({"title":title,"alive":alive})
+        json!({"title":title,"alive":alive,"cwd":cwd})
     }
     pub fn snapshot(&self) -> serde_json::Value {
         let b = self.output.lock().unwrap();

@@ -161,6 +161,12 @@ impl Database {
             .map_err(|e| e.to_string())?;
         serde_json::from_str(&data).map_err(|e| e.to_string())
     }
+    pub fn delete(&self, kind: &str, id: &str) -> Result<(), String> {
+        self.0.lock().map_err(|e| e.to_string())?
+            .execute("DELETE FROM records WHERE kind=?1 AND id=?2", params![kind, id])
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
     pub fn list<T: DeserializeOwned>(&self, kind: &str) -> Result<Vec<T>, String> {
         let c = self.0.lock().map_err(|e| e.to_string())?;
         let mut q = c

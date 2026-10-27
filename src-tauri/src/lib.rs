@@ -15,6 +15,7 @@ pub mod adapters;
 mod operations;
 mod providers;
 mod sessions;
+mod shell_tabs;
 mod subagents;
 mod terminal;
 mod titles;
@@ -218,7 +219,13 @@ impl AppState {
     async fn shutdown(&self) {
         self.title_generator.stop().await;
         self.command_catalogs.stop().await;
-        let terms = std::mem::take(&mut *self.terminals.lock().await);
+        let terms = {
+            let mut terminals = self.terminals.lock().await;
+            for (id, terminal) in terminals.iter() {
+                let _ = shell_tabs::remember_cwd(&self.db, id, &terminal.status());
+            }
+            std::mem::take(&mut *terminals)
+        };
         for (_, t) in terms {
             t.stop()
         }
@@ -1239,6 +1246,7 @@ async fn delete_session(
     state.tab_windows.close_session(&state.app, &session_id);
     let shells = {
         let mut terminals = state.terminals.lock().await;
+        shell_tabs::remove_session(&state.db, &session_id)?;
         let ids: Vec<_> = terminals.keys().filter(|id| id.starts_with(&prefix)).cloned().collect();
         ids.into_iter().filter_map(|id| terminals.remove(&id)).collect::<Vec<_>>()
     };
@@ -1507,17 +1515,16 @@ async fn create_shell_terminal(
     let session: SessionRecord = state.db.get("session", &session_id)?;
     if session.archived { return Err("This conversation is archived".into()); }
     let id = format!("shell:{session_id}:{:020}:{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis(), uuid::Uuid::new_v4());
-    let sid = id.clone();
-    let weak = Arc::downgrade(state.inner());
-    let sink: Sink = Arc::new(move |kind, payload| {
-        if kind == "terminal/data" {
-            if let Some(state) = weak.upgrade() { state.emit(&sid, kind, payload); }
-        }
-    });
-    let term = terminal::NativeTerminal::start_shell(&session.cwd, sink)?;
+    let term = shell_tabs::start(state.inner(), &id, &session.cwd)?;
     let mut status = term.status();
     status["id"] = json!(id);
-    state.terminals.lock().await.insert(id, term);
+    let mut terminals = state.terminals.lock().await;
+    if state.quitting.load(Ordering::SeqCst) { term.stop(); return Err("Harbor is quitting".into()); }
+    if let Err(error) = shell_tabs::save(&state.db, &id, &session_id, &session.cwd) {
+        term.stop();
+        return Err(error);
+    }
+    terminals.insert(id, term);
     Ok(status)
 }
 #[tauri::command]
@@ -1525,15 +1532,33 @@ async fn list_shell_terminals(
     state: tauri::State<'_, Arc<AppState>>,
     session_id: String,
 ) -> Result<Vec<Value>, String> {
+    let _guard = state.operations.session(&session_id).await;
+    if state.quitting.load(Ordering::SeqCst) { return Err("Harbor is quitting".into()); }
+    let session: SessionRecord = state.db.get("session", &session_id)?;
+    if session.archived { return Ok(vec![]); }
+    let mut terminals = state.terminals.lock().await;
+    if state.quitting.load(Ordering::SeqCst) { return Err("Harbor is quitting".into()); }
+    let mut unavailable = Vec::new();
+    for tab in shell_tabs::list(&state.db, &session_id)? {
+        if !terminals.contains_key(&tab.id) {
+            let cwd = if Path::new(&tab.cwd).is_dir() { &tab.cwd } else { &session.cwd };
+            match shell_tabs::start(state.inner(), &tab.id, cwd) {
+                Ok(terminal) => { terminals.insert(tab.id, terminal); }
+                Err(error) => unavailable.push(json!({"id":tab.id,"title":format!("Terminal unavailable: {error}"),"alive":false})),
+            }
+        }
+    }
     let prefix = format!("shell:{session_id}:");
-    let terminals = state.terminals.lock().await;
     let mut ids: Vec<_> = terminals.keys().filter(|id| id.starts_with(&prefix)).collect();
     ids.sort();
-    Ok(ids.into_iter().map(|id| {
+    let mut result: Vec<_> = ids.into_iter().map(|id| {
         let mut status = terminals[id].status();
         status["id"] = json!(id);
         status
-    }).collect())
+    }).collect();
+    result.extend(unavailable);
+    result.sort_by(|a, b| a["id"].as_str().cmp(&b["id"].as_str()));
+    Ok(result)
 }
 #[tauri::command]
 async fn close_shell_terminal(
@@ -1541,7 +1566,11 @@ async fn close_shell_terminal(
     terminal_id: String,
 ) -> Result<(), String> {
     if !terminal_id.starts_with("shell:") { return Err("Not a shell terminal".into()); }
-    let terminal = state.terminals.lock().await.remove(&terminal_id);
+    let terminal = {
+        let mut terminals = state.terminals.lock().await;
+        state.db.delete("shell-tab", &terminal_id)?;
+        terminals.remove(&terminal_id)
+    };
     if let Some(terminal) = terminal {
         tokio::task::spawn_blocking(move || terminal.stop()).await.map_err(|e| e.to_string())?;
     }
@@ -1552,7 +1581,10 @@ async fn terminal_status(
     state: tauri::State<'_, Arc<AppState>>,
     session_id: String,
 ) -> Result<Value, String> {
-    Ok(state.terminals.lock().await.get(&session_id).ok_or("Terminal is not running")?.status())
+    let terminals = state.terminals.lock().await;
+    let status = terminals.get(&session_id).ok_or("Terminal is not running")?.status();
+    shell_tabs::remember_cwd(&state.db, &session_id, &status)?;
+    Ok(status)
 }
 #[tauri::command]
 async fn terminal_snapshot(
