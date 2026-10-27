@@ -4,6 +4,8 @@ import { planReview, planReviewEntries, planReviewStatus } from "../lib/plan-rev
 import { readRootDraft, useRootDraft } from "../lib/root-draft";
 import { useWorkerDrafts } from "../lib/worker-drafts";
 import { ElicitationForm } from "./ElicitationForm";
+import { SkylineScene } from "./SkylineBackground";
+import { skylineCity } from "@/lib/skyline-city";
 import {
   prepareAttachments,
   restoreDraftFiles,
@@ -719,8 +721,9 @@ export function Chat({
           forceMount
           asChild
         >
-          <section
-            className="chat-main"
+          <SkylineScene
+            variant="chat"
+            city={skylineCity(record(data.settings).skylineCity)}
             style={
               terminals.active || detachedActive
                 ? { display: "none" }
@@ -974,7 +977,7 @@ export function Chat({
                 </div>
               </>
             )}
-          </section>
+          </SkylineScene>
         </Tabs.Content>
         {detachedActive && (
           <section className="chat-main detached-tab-placeholder">

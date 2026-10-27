@@ -33,6 +33,9 @@ import {
 } from "./components/ui/command-menu";
 import { discoveryMode } from "./components/ModePicker";
 import { TaskComposer } from "./components/TaskComposer";
+import { HomeScene, SkylineScene } from "./components/SkylineBackground";
+import { skylineCity } from "./lib/skyline-city";
+import { skylineTimeOfDay } from "./lib/skyline-period";
 import { WorkspacePicker } from "./components/WorkspacePicker";
 import { WorktreePicker } from "./components/WorktreePicker";
 import { Banner, BannerDescription } from "./components/ui/banner";
@@ -832,75 +835,92 @@ export default function App() {
           </SidebarFooter>
         </Sidebar>
         <div className="main-shell workspace-frame">
-          <main className="main-content">
+          <SkylineScene
+            frame
+            role="main"
+            className="main-content"
+            city={skylineCity(record(data.settings).skylineCity)}
+            timeOfDay={skylineTimeOfDay(record(data.settings).skylineTimeOfDay)}
+            variant={view === "home" ? "home" : "chat"}
+            active={view === "home" || !!active}
+          >
             {view === "home" ? (
-              <div className="home-page page-width">
-                <div className="home-welcome">
-                  <h1>What would you like to work on?</h1>
-                </div>
-                <section
-                  ref={taskComposer}
-                  className="home-message-card"
-                  aria-label="New task composer"
-                >
-                  <TaskComposer
-                    catalog={catalog}
-                    files={files}
-                    onFilesChange={setFiles}
-                    value={prompt}
-                    onValueChange={setPrompt}
-                    placeholder="Describe what you want to work on…"
-                    onSubmit={() => void createTask()}
-                    actionLabel={creating ? "Starting task…" : "Start task"}
-                    actionDisabled={!canCreate}
-                    modePicker={discoveryMode(modelState, creating)}
-                    disabled={creating}
-                    busy={creating}
-                    textareaProps={{
-                      "aria-label": "Describe a new task",
-                    }}
-                    context={
-                      <>
-                        <WorkspacePicker
-                          workspaces={data.workspaces}
-                          value={workspace}
-                          disabled={creating || addingWorkspace}
-                          onValueChange={setWorkspace}
-                          onAddWorkspace={() => void addWorkspace()}
+              <HomeScene city={skylineCity(record(data.settings).skylineCity)}>
+                <div className="home-content chat-composer-wrap">
+                  <section
+                    ref={taskComposer}
+                    className="home-message-card"
+                    aria-label="New task composer"
+                  >
+                    <TaskComposer
+                      catalog={catalog}
+                      files={files}
+                      onFilesChange={setFiles}
+                      value={prompt}
+                      onValueChange={setPrompt}
+                      placeholder="Describe what you want to work on…"
+                      onSubmit={() => void createTask()}
+                      actionLabel={creating ? "Starting task…" : "Start task"}
+                      actionDisabled={!canCreate}
+                      modePicker={discoveryMode(modelState, creating)}
+                      configurationAction={
+                        <ProviderConnectionButton
+                          providerId={provider}
+                          disabled={creating}
                         />
-                        {canWorktree && (
-                          <WorktreePicker
-                            workspaceId={workspace}
-                            tree={tree}
-                            onTreeChange={setTree}
-                            branch={branch}
-                            onBranchChange={setBranch}
-                            base={base}
-                            onBaseChange={setBase}
-                            disabled={creating}
-                          />
-                        )}
-                      </>
-                    }
-                    configurationAction={<ProviderConnectionButton providerId={provider} disabled={creating} />}
-                    modelMenu={
-                      <DiscoveryModelMenu
-                        state={modelState}
-                        provider={provider}
-                        onProviderChange={(id) => setProvider(defaultProvider(id))}
-                        disabled={creating}
-                      />
-                    }
-                  />
+                      }
+                      disabled={creating}
+                      busy={creating}
+                      textareaProps={{
+                        "aria-label": "Describe a new task",
+                      }}
+                      context={
+                        <div className="home-composer-heading">
+                          <header className="home-welcome">
+                            <h1>What would you like to work on?</h1>
+                          </header>
+                          <div className="task-location">
+                            <WorkspacePicker
+                              workspaces={data.workspaces}
+                              value={workspace}
+                              disabled={creating || addingWorkspace}
+                              onValueChange={setWorkspace}
+                              onAddWorkspace={() => void addWorkspace()}
+                            />
+                            {canWorktree && (
+                              <WorktreePicker
+                                workspaceId={workspace}
+                                tree={tree}
+                                onTreeChange={setTree}
+                                branch={branch}
+                                onBranchChange={setBranch}
+                                base={base}
+                                onBaseChange={setBase}
+                                disabled={creating}
+                              />
+                            )}
+                          </div>
+                        </div>
+                      }
+                      modelMenu={
+                        <DiscoveryModelMenu
+                          state={modelState}
+                          provider={provider}
+                          onProviderChange={(id) => setProvider(defaultProvider(id))}
+                          disabled={creating}
+                        />
+                      }
+                    />
 
-                  {workspace && !selectedWorkspace?.available && (
-                    <p className="workspace-unavailable">
-                      This workspace folder is unavailable. Choose another
-                      workspace.
-                    </p>
-                  )}
-                </section>
-              </div>
+                    {workspace && !selectedWorkspace?.available && (
+                      <p className="workspace-unavailable">
+                        This workspace folder is unavailable. Choose another
+                        workspace.
+                      </p>
+                    )}
+                  </section>
+                </div>
+              </HomeScene>
             ) : view === "settings" ? (
               <Settings />
             ) : view === "worktrees" ? (
@@ -922,7 +942,7 @@ export default function App() {
                 <Button onClick={() => go("worktrees")}>View archives</Button>
               </div>
             )}
-          </main>
+          </SkylineScene>
         </div>
       </div>
       <CommandMenuDialog

@@ -241,7 +241,10 @@ function TranscriptTurn({
 }) {
   return (
     <TranscriptRow id={id} anchor={anchor} user>
-      <div className="transcript-prompt-header">{header}</div>
+      <div className="transcript-prompt-header">
+        <div className="transcript-prompt-backdrop" aria-hidden="true" />
+        {header}
+      </div>
       <div className="transcript-responses">{children}</div>
     </TranscriptRow>
   );

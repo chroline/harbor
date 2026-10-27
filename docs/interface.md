@@ -12,6 +12,12 @@ the sidebar sits outside the rounded main-content frame, over the original activ
 
 macOS traffic lights are aligned within the 48px titlebar in both main and detached windows. native layout and appearance changes reapply their spacing; fullscreen keeps system placement.
 
+## skyline backgrounds
+
+Settings → Appearance selects San Francisco, Los Angeles, or New York City and either automatic lighting or a fixed dawn, day, sunset, or night image. Automatic lighting follows the local clock and refreshes each minute and on focus. The decorative image persists across new-task and chat views; chat uses a blurred, subdued version. The composer and its menus follow the artwork's light or dark palette without changing the saved application theme.
+
+Artwork and generation prompts are bundled in [San Francisco](../src/assets/artwork/sf/README.md), [Los Angeles](../src/assets/artwork/la/README.md), and [New York City](../src/assets/artwork/nyc/README.md).
+
 ## provider artwork
 
 The Claude Code, OpenAI Codex, and Grok Build icons are bundled SVG brand marks from the [ACP registry](https://github.com/agentclientprotocol/registry). Exact source URLs, pinned registry revision, and checksums are recorded in [artwork provenance](../src/assets/providers/sources.json).

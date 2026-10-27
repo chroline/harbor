@@ -14,6 +14,8 @@ import { ProviderEditor } from "./ProviderEditor";
 import { useStore } from "../lib/store";
 import { call, desktop, json } from "../lib/api";
 import { record, str } from "../lib/protocol";
+import { skylineCities, skylineCity } from "../lib/skyline-city";
+import { skylineTimesOfDay, skylineTimeOfDay } from "../lib/skyline-period";
 import type { EditorChoice } from "../lib/bindings/EditorChoice";
 
 export function Settings() {
@@ -136,6 +138,43 @@ export function Settings() {
             ))}
           </RadioGroup>
         </div>
+        <div className="setting-row">
+          <div>
+            <strong>Background city</strong>
+            <p>Choose the city shown in the skyline background.</p>
+          </div>
+          <Picker
+            label="Background city"
+            className="editor-setting"
+            value={skylineCity(settings.skylineCity)}
+            items={skylineCities}
+            disabled={saving}
+            onValueChange={(value) => {
+              if (value !== skylineCity(settings.skylineCity))
+                void save("skylineCity", value);
+            }}
+          />
+        </div>
+        <div className="setting-row">
+          <div>
+            <strong>Time of day</strong>
+            <p>Follow your local time or choose a fixed appearance.</p>
+          </div>
+          <Picker
+            label="Time of day"
+            className="editor-setting"
+            value={skylineTimeOfDay(settings.skylineTimeOfDay)}
+            items={skylineTimesOfDay}
+            disabled={saving}
+            onValueChange={(value) => {
+              if (value !== skylineTimeOfDay(settings.skylineTimeOfDay))
+                void save("skylineTimeOfDay", value);
+            }}
+          />
+        </div>
+      </section>
+      <section className="settings-section">
+        <h2>Workspace</h2>
         <div className="setting-row">
           <div>
             <strong>Desktop notifications</strong>

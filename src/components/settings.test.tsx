@@ -194,6 +194,66 @@ it("disables the dropdown when no text editors are detected", async () => {
   expect(picker.hasAttribute("disabled")).toBe(true);
 });
 
+it.each([
+  ["Los Angeles", "la"],
+  ["New York City", "nyc"],
+])("saves %s without replacing other settings", async (label, value) => {
+  const user = userEvent.setup();
+  render(<Settings />);
+  const picker = screen.getByRole("combobox", { name: "Background city" });
+  expect(picker.textContent).toContain("San Francisco");
+  await user.click(picker);
+  expect(
+    screen.getAllByRole("option").map((option) => option.textContent),
+  ).toEqual(["San Francisco", "Los Angeles", "New York City"]);
+  await user.click(screen.getByRole("option", { name: label }));
+  await waitFor(() =>
+    expect(mock.call).toHaveBeenCalledWith("save_settings", {
+      settings: { editor: "/Applications/Zed.app", skylineCity: value },
+    }),
+  );
+  expect(mock.refresh).toHaveBeenCalled();
+});
+
+it("shows a previously saved city when settings opens", () => {
+  mock.settings.skylineCity = "nyc";
+  render(<Settings />);
+  expect(
+    screen.getByRole("combobox", { name: "Background city" }).textContent,
+  ).toContain("New York City");
+});
+
+it.each([
+  ["Dawn", "dawn"],
+  ["Day", "day"],
+  ["Sunset", "sunset"],
+  ["Night", "night"],
+  ["Automatic", "automatic"],
+])("saves %s time of day and restores it when settings reopens", async (label, value) => {
+  mock.settings = { ...mock.settings, theme: "light", skylineCity: "nyc", skylineTimeOfDay: value === "automatic" ? "night" : "automatic" };
+  const user = userEvent.setup();
+  const { unmount } = render(<Settings />);
+  await user.click(screen.getByRole("combobox", { name: "Time of day" }));
+  expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual([
+    "Automatic", "Dawn", "Day", "Sunset", "Night",
+  ]);
+  await user.click(screen.getByRole("option", { name: label }));
+  await waitFor(() => expect(mock.call).toHaveBeenCalledWith("save_settings", {
+    settings: { ...mock.settings, skylineTimeOfDay: value },
+  }));
+  expect(mock.refresh).toHaveBeenCalled();
+  unmount();
+  mock.settings.skylineTimeOfDay = value;
+  render(<Settings />);
+  expect(screen.getByRole("combobox", { name: "Time of day" }).textContent).toContain(label);
+});
+
+it.each([undefined, null, "invalid"])("shows Automatic for missing or invalid time of day %s", (value) => {
+  mock.settings.skylineTimeOfDay = value;
+  render(<Settings />);
+  expect(screen.getByRole("combobox", { name: "Time of day" }).textContent).toContain("Automatic");
+});
+
 it("offers exactly the supported providers without custom-agent creation", async () => {
   mock.providers = supportedProviders;
   const user = userEvent.setup();
