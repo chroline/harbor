@@ -315,7 +315,9 @@ it("shows actual worker communications once and separately from their summary", 
     messageId: "send-1",
     direction: "sent",
     label: "Message to parent",
-    content: [{ type: "text", text: "CHILD_READY_713\nHARBOR_CHILD_ORIGIN_713" }],
+    content: [
+      { type: "text", text: "CHILD_READY_713\nHARBOR_CHILD_ORIGIN_713" },
+    ],
   };
   t = reduceEvent(t, update(sent, "child"));
   t = reduceEvent(
@@ -1019,10 +1021,24 @@ it("classifies sidebar loading and attention, with attention winning a mixed sum
 });
 
 it("renders Claude typed worker-message receipts in their own conversations and deduplicates replay", () => {
-  let t = reduceEvent(emptyTranscript(), update({ sessionUpdate:"subagent_update", sessionId:"child" }));
-  const receipt = { sessionUpdate:"session_message", messageId:"message-1", senderSessionId:"root", recipientSessionId:"child", content:[{type:"text",text:"Continue the existing task"}] };
+  let t = reduceEvent(
+    emptyTranscript(),
+    update({ sessionUpdate: "subagent_update", sessionId: "child" }),
+  );
+  const receipt = {
+    sessionUpdate: "session_message",
+    messageId: "message-1",
+    senderSessionId: "root",
+    recipientSessionId: "child",
+    content: [{ type: "text", text: "Continue the existing task" }],
+  };
   t = reduceEvent(t, update(receipt, "child"));
   t = reduceEvent(t, update(receipt, "child"));
   expect(t.messages).toHaveLength(1);
-  expect(t.messages[0]).toMatchObject({ childId:"child", role:"user", label:"Message from parent", text:"Continue the existing task" });
+  expect(t.messages[0]).toMatchObject({
+    childId: "child",
+    role: "user",
+    label: "Message from parent",
+    text: "Continue the existing task",
+  });
 });

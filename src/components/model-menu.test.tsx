@@ -193,7 +193,9 @@ it("selects effort after dismissing the agent picker without choosing an agent",
       />
     </>,
   );
-  await user.click(screen.getByRole("button", { name: "Choose model and reasoning" }));
+  await user.click(
+    screen.getByRole("button", { name: "Choose model and reasoning" }),
+  );
   await user.click(screen.getByRole("button", { name: "Choose model" }));
   await user.click(screen.getByRole("button", { name: "Choose agent" }));
   await user.click(screen.getByRole("button", { name: "Outside" }));
