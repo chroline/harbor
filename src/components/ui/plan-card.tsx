@@ -26,18 +26,18 @@ export function PlanCard({
 }) {
   return (
     <div
-      className="harbor-plan-card"
+      className="harbor-agent-card harbor-plan-card"
       data-slot="plan-card"
       data-state={onApprove ? "pending" : "resolved"}
       aria-busy={busy}
     >
-      <div className="harbor-plan-card-header">
-        <span className="harbor-plan-card-icon">
+      <div className="harbor-agent-card-header harbor-plan-card-header">
+        <span className="harbor-agent-card-icon harbor-plan-card-icon">
           <IconListCheck aria-hidden="true" />
         </span>
         <h3>{title}</h3>
       </div>
-      <div className="harbor-plan-card-inset">
+      <div className="harbor-agent-card-inset harbor-plan-card-inset">
         <div className="harbor-plan-card-preview" aria-hidden="true">
           {preview}
         </div>
@@ -47,11 +47,11 @@ export function PlanCard({
           {error}
         </p>
       )}
-      <div className="harbor-plan-card-footer">
-        <span className="harbor-plan-card-status">
+      <div className="harbor-agent-card-footer harbor-plan-card-footer">
+        <span className="harbor-agent-card-status harbor-plan-card-status">
           {busy ? "Sending your response…" : (status ?? "Ready for review")}
         </span>
-        <div className="harbor-plan-card-actions">
+        <div className="harbor-agent-card-actions harbor-plan-card-actions">
           {view}
           {onApprove && (
             <Button
