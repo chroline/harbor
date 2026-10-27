@@ -76,6 +76,7 @@ afterEach(() => {
   setDraftFiles("chat:root", []);
   mock.children = {};
   cleanup();
+  localStorage.removeItem("harbor.root-draft.chat");
   document.querySelectorAll(".test-chat-actions").forEach((el) => el.remove());
   vi.clearAllMocks();
 });
@@ -487,4 +488,12 @@ it("does not offer sign-in for a process failure", () => {
   );
   expect(screen.getByRole("button", { name: "Retry connection" })).toBeTruthy();
   expect(screen.queryByRole("button", { name: "ChatGPT" })).toBeNull();
+});
+
+it("restores a root draft when quit happens before the database save debounce", () => {
+  const first = render(<Chat session={{ ...session, draft: "older database draft" }} />);
+  fillEditor(screen.getByRole("textbox"), "unsent plan revision before quit");
+  first.unmount();
+  render(<Chat session={{ ...session, draft: "older database draft" }} />);
+  expect(screen.getByRole("textbox").textContent).toBe("unsent plan revision before quit");
 });

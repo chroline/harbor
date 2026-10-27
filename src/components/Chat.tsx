@@ -1,3 +1,5 @@
+import { readRootDraft, useRootDraft } from "../lib/root-draft";
+import { useWorkerDrafts } from "../lib/worker-drafts";
 import {
   prepareAttachments,
   restoreDraftFiles,
@@ -78,13 +80,13 @@ export function Chat({
   } = useStore();
   const terminals = useTerminalTabs(session.id, setError);
   const transcript = transcripts[session.id] ?? emptyTranscript();
-  const [draft, setDraft] = useState(initialDraft ?? session.draft);
+  const [draft, setDraft] = useRootDraft(session.id, initialDraft ?? session.draft);
   const [review, setReview] = useState(session.reviewOpen);
   const initialChild = standaloneTab?.startsWith("worker:")
     ? standaloneTab.slice(7)
     : null;
   const [child, setChild] = useState<string | null>(initialChild);
-  const [childDrafts, setChildDrafts] = useState<Record<string, string>>({});
+  const [childDrafts, setChildDraft] = useWorkerDrafts(session.id, initialChild && initialDraft !== undefined ? { [initialChild]: initialDraft } : undefined);
   const [childOpeningState, setChildOpeningState] = useState<
     Record<string, boolean>
   >({});
@@ -163,7 +165,7 @@ export function Chat({
   ownsParentRef.current = ownsParent;
   const parentWasDetached = useRef(false);
   useEffect(() => {
-    if (!ownsParent && !standaloneTab) setDraft(session.draft);
+    if (!ownsParent && !standaloneTab) setDraft(readRootDraft(session.id) ?? session.draft);
   }, [session.draft, ownsParent, standaloneTab]);
   useEffect(() => {
     if (
@@ -171,7 +173,7 @@ export function Chat({
       parentWasDetached.current &&
       !taskTabs.detached.includes("parent")
     )
-      setDraft(session.draft);
+      setDraft(readRootDraft(session.id) ?? session.draft);
     parentWasDetached.current = taskTabs.detached.includes("parent");
   }, [taskTabs.detached, standaloneTab]);
   const provider = data.providers.find((p) => p.id === session.providerId);
@@ -182,10 +184,9 @@ export function Chat({
   useEffect(() => {
     void loadTranscript(session.id);
     scrollRef.current = session.scrollTop;
-    setDraft(initialDraft ?? session.draft);
+    setDraft(initialDraft ?? readRootDraft(session.id) ?? session.draft);
     setReview(session.reviewOpen);
     setChild(initialChild);
-    setChildDrafts(initialChild ? { [initialChild]: initialDraft ?? "" } : {});
     setChildErrors({});
     setChildOpeningState({});
     setChildSendingState({});
@@ -267,7 +268,7 @@ export function Chat({
         : [];
       if (activeSession.current !== root) return;
       if (id) {
-        setChildDrafts((previous) => ({ ...previous, [id]: "" }));
+        setChildDraft(id, "");
         setChildSendingState((previous) => ({ ...previous, [id]: true }));
         setChildErrors((previous) => ({ ...previous, [id]: null }));
       } else setDraft("");
@@ -297,10 +298,7 @@ export function Chat({
               ...previous,
               [id]: String(error),
             }));
-            setChildDrafts((previous) => ({
-              ...previous,
-              [id]: previous[id] || text,
-            }));
+            setChildDraft(id, (previous) => previous || text);
           } else {
             setError(String(error));
             setDraft((previous) => previous || text);
@@ -845,10 +843,7 @@ export function Chat({
                     value={activeDraft}
                     onValueChange={(value) =>
                       child
-                        ? setChildDrafts((previous) => ({
-                            ...previous,
-                            [child]: value,
-                          }))
+                        ? setChildDraft(child, value)
                         : setDraft(value)
                     }
                     onSubmit={() => void send()}
