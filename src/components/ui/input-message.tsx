@@ -226,7 +226,7 @@ interface InputMessageProps extends Omit<
 }
 
 // ─── File preview tile ────────────────────────────────────────────────────
-// Compact file card with a readable label and an always-visible remove action.
+// Images stand alone as thumbnails; documents retain their name and metadata.
 interface FilePreviewTileProps {
   file: File;
   onRemove?: () => void;
@@ -237,6 +237,7 @@ function FilePreviewTile({ file, onRemove, size }: FilePreviewTileProps) {
   const icons = useIcons();
   const XIcon = icons.x;
   const shape = useShape();
+  const isImage = file.type.startsWith("image/");
   // The tile sits 0.5rem inside the composer's container edge. Derive its curve
   // from that actual inset instead of reusing the popup-specific 0.25rem pair.
   const radius = nestedRadius(shape.containerRadius, 8);
@@ -263,15 +264,32 @@ function FilePreviewTile({ file, onRemove, size }: FilePreviewTileProps) {
       // `cursor-default` opts out of the parent's `cursor-text` so hovering
       // a preview tile doesn't look like it'll land in the textarea.
       data-slot="composer-attachment"
-      className="relative flex w-64 max-w-full shrink-0 items-center gap-2 rounded-lg border border-border/60 bg-background/30 p-1.5 pr-1 cursor-default"
+      className={cn(
+        "relative shrink-0 cursor-default",
+        isImage
+          ? "w-fit"
+          : "flex w-64 max-w-full items-center gap-2 rounded-lg border border-border/60 bg-background/30 p-1.5 pr-1",
+      )}
       title={file.name}
     >
-      <FileThumbnail file={file} size={size} radius={radius} />
-      <div className="min-w-0 flex-1">
+      <FileThumbnail file={file} size={isImage ? size : Math.min(size, 40)} radius={isImage ? 4 : radius} />
+      {!isImage && <div className="min-w-0 flex-1">
         <div className="truncate text-xs leading-4 text-foreground">{displayName}</div>
         <div className="truncate text-[0.6875rem] leading-4 text-muted-foreground">{fileType} · {fileSize}</div>
-      </div>
-      {onRemove && <Tooltip content="Remove" side="top">
+      </div>}
+      {onRemove && (isImage ? (
+        <button
+          type="button"
+          aria-label={`Remove ${file.name}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onRemove();
+          }}
+          className="absolute -right-1.5 -top-1.5 z-10 flex size-6 cursor-pointer items-center justify-center rounded-full border-2 border-surface-2 bg-neutral-600 text-white transition-colors hover:bg-neutral-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        >
+          <XIcon size={rem(14)} strokeWidth={1.5} />
+        </button>
+      ) : <Tooltip content="Remove" side="top">
         <Button
           type="button"
           variant="ghost"
@@ -285,7 +303,7 @@ function FilePreviewTile({ file, onRemove, size }: FilePreviewTileProps) {
         >
           <XIcon size={rem(12)} strokeWidth={2.5} />
         </Button>
-      </Tooltip>}
+      </Tooltip>)}
     </motion.div>
   );
 }
@@ -1193,7 +1211,7 @@ const InputMessage = forwardRef<HTMLDivElement, InputMessageProps>(
                 transition={{ ...spring.moderate, bounce: 0 }}
                 className="overflow-hidden"
               >
-                <div ref={filesRegionRef} data-slot="composer-attachments" className="flex flex-wrap gap-2 px-2 pt-2">
+                <div ref={filesRegionRef} data-slot="composer-attachments" className="flex flex-wrap gap-3 px-2 py-2">
                   <AnimatePresence initial={false} mode="popLayout">
                     {filesArr.map((file, i) => (
                       <FilePreviewTile

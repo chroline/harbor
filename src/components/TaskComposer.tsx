@@ -64,7 +64,7 @@ export function TaskComposer({
         {...input}
         files={files}
         accept=""
-        filePreviewSize={40}
+        filePreviewSize={80}
         onFilesChange={
           onFilesChange
             ? (next) => {

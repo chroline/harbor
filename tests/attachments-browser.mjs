@@ -107,9 +107,7 @@ assert.equal(
 );
 assert.equal(
   await page.evaluate(() =>
-    document
-      .querySelector('[aria-label="Attachments"]')
-      .textContent.includes("preview.png"),
+    !!document.querySelector('[aria-label="Attachments"] img[alt="preview.png"]'),
   ),
   true,
 );
