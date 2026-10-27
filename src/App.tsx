@@ -96,7 +96,7 @@ import { call, desktop, json } from "./lib/api";
 import { record, str } from "./lib/protocol";
 import type { SessionRecord } from "./lib/bindings/SessionRecord";
 import {
-  initialHistory,
+  restoreHistory,
   pruneHistory,
   travel,
   visit,
@@ -119,7 +119,7 @@ import type { Workspace } from "./lib/bindings/Workspace";
 import type { Project } from "./lib/bindings/Project";
 export default function App() {
   const { data, ready, refresh, error, setError, updateSession } = useStore();
-  const [history, setHistory] = useState(initialHistory);
+  const [history, setHistory] = useState(restoreHistory);
   const view = history.entries[history.index];
   const {
     sidebar,
@@ -166,8 +166,9 @@ export default function App() {
     null,
   );
   const sessions = data.sessions.filter((s) => !s.archived);
-  const { pinnedChatIds, togglePinnedChat } = usePinnedChats();
-  const sidebarOrder = useSidebarOrder();
+  const savedSessionIds = useMemo(() => ready ? new Set(data.sessions.map((s) => s.id)) : undefined, [ready, data.sessions]);
+  const { pinnedChatIds, togglePinnedChat } = usePinnedChats(savedSessionIds);
+  const sidebarOrder = useSidebarOrder(savedSessionIds);
   const sidebarProjects = sidebarOrder.sort(
     "projects",
     data.projects,
@@ -289,6 +290,16 @@ export default function App() {
       ),
     );
   }, [ready, data.sessions]);
+  useEffect(() => {
+    if (
+      !ready ||
+      (typeof view === "object" && !sessions.some((s) => s.id === view.session))
+    )
+      return;
+    try {
+      localStorage.setItem("harbor.last-view", JSON.stringify(view));
+    } catch {}
+  }, [ready, view, sessions]);
   const theme = str(record(data.settings).theme, "dark");
   useEffect(() => {
     let disposed = false;

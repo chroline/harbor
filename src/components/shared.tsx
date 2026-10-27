@@ -5,7 +5,7 @@ import { Picker } from "./fluid";
 import { Switch } from "./ui/switch";
 import { Badge } from "./ui/badge";
 import type { IconComponent } from "../lib/icon-context";
-import { useState, type ReactNode, type ReactElement } from "react";
+import { memo, useState, type ReactNode, type ReactElement } from "react";
 import { Terminal, Copy, Check, LoaderCircle, ChevronDown } from "@/lib/icons";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -157,7 +157,7 @@ const markdownComponents: Components = {
   ),
 };
 
-export function RichText({
+export const RichText = memo(function RichText({
   text,
   commandRanges = [],
 }: {
@@ -177,7 +177,7 @@ export function RichText({
       </Markdown>
     </div>
   );
-}
+});
 export function ConfigControls({ session }: { session: SessionRecord }) {
   const { updateSession, setError } = useStore();
   const [busy, setBusy] = useState(false);

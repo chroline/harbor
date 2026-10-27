@@ -41,6 +41,27 @@ it("restores running terminals and closes only the requested shell", async () =>
   });
   expect(error).not.toHaveBeenCalled();
 });
+it("restores the selected terminal after remount and waits for its list", async () => {
+  let resolve!: (value: (typeof tab)[]) => void;
+  call.mockImplementation(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      }),
+  );
+  const { result, unmount } = renderHook(() =>
+    useTerminalTabs("chat", vi.fn(), tab.id),
+  );
+  expect(result.current.active).toBe(tab.id);
+  expect(result.current.loaded).toBe(false);
+  await act(async () => resolve([tab]));
+  expect(result.current.active).toBe(tab.id);
+  expect(result.current.loaded).toBe(true);
+  unmount();
+  const next = renderHook(() => useTerminalTabs("chat", vi.fn(), tab.id));
+  await act(async () => resolve([]));
+  expect(next.result.current.active).toBeNull();
+});
 
 it("keeps a terminal available if closing fails and reports the failure", async () => {
   call.mockImplementation((command) =>

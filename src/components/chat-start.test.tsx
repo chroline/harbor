@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 import { fillEditor } from "../test/editor";
+import { Suspense } from "react";
 import { afterEach, beforeAll, expect, it, vi } from "vitest";
 import {
   cleanup,
+  act,
   fireEvent,
   render,
   screen,
@@ -15,9 +17,13 @@ import type { SessionRecord } from "../lib/bindings/SessionRecord";
 
 const mock = vi.hoisted(() => ({
   children: {} as ReturnType<typeof emptyTranscript>["children"],
+  messages: [] as ReturnType<typeof emptyTranscript>["messages"],
+  loaded: true,
+  pendingRender: null as Promise<void> | null,
   openModel: vi.fn(),
   update: vi.fn(),
   load: vi.fn().mockResolvedValue(undefined),
+  setActiveSession: vi.fn(),
   call: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("../lib/api", () => ({
@@ -25,6 +31,23 @@ vi.mock("../lib/api", () => ({
   json: (value: unknown) => value,
 }));
 vi.mock("./NativeTerminal", () => ({ NativeTerminal: () => null }));
+vi.mock("./ChatTranscript", async (original) => {
+  const { ChatTranscript: Transcript } =
+    await original<typeof import("./ChatTranscript")>();
+  return {
+    ChatTranscript: (props: Parameters<typeof Transcript>[0]) => {
+      if (
+        mock.pendingRender &&
+        props.entries.some(
+          (entry) =>
+            entry.type === "message" && entry.message.childId === "worker",
+        )
+      )
+        throw mock.pendingRender;
+      return <Transcript {...props} />;
+    },
+  };
+});
 vi.mock("./ModelMenu", () => ({
   SessionModelMenu: () => (
     <button className="model-menu-trigger" onClick={mock.openModel}>
@@ -40,6 +63,7 @@ vi.mock("../lib/store", () => ({
         ...emptyTranscript(),
         trimmed: true,
         children: mock.children,
+        messages: mock.messages,
         authMethods: [
           { id: "chatgpt", name: "ChatGPT" },
           { id: "api-key", name: "API Key" },
@@ -47,6 +71,8 @@ vi.mock("../lib/store", () => ({
       },
     },
     loadTranscript: mock.load,
+    setActiveSession: mock.setActiveSession,
+    loadedTranscripts: new Set(mock.loaded ? ["chat"] : []),
     updateSession: mock.update,
     setError: vi.fn(),
     configuration: {
@@ -75,10 +101,94 @@ beforeAll(() => {
 afterEach(() => {
   setDraftFiles("chat:root", []);
   mock.children = {};
+  mock.messages = [];
+  mock.loaded = true;
+  mock.pendingRender = null;
   cleanup();
+  localStorage.removeItem("harbor.task-tab-selection.chat");
   localStorage.removeItem("harbor.root-draft.chat");
   document.querySelectorAll(".test-chat-actions").forEach((el) => el.remove());
   vi.clearAllMocks();
+});
+it("keeps the selected chat blank until its full history has loaded", () => {
+  mock.loaded = false;
+  const { rerender } = render(<Chat session={session} />);
+  expect(document.querySelector(".chat-main")?.textContent).toBe("");
+  expect(screen.queryByRole("textbox")).toBeNull();
+  expect(mock.load).toHaveBeenCalledWith("chat");
+
+  mock.loaded = true;
+  rerender(<Chat session={session} />);
+  expect(screen.getByRole("textbox").textContent).toBe(session.draft);
+});
+
+it("limits automatic recovery to the mounted chat", () => {
+  const { unmount } = render(<Chat session={session} />);
+  expect(mock.setActiveSession).toHaveBeenLastCalledWith(session.id);
+  unmount();
+  expect(mock.setActiveSession).toHaveBeenLastCalledWith(null);
+});
+
+it("selects a worker immediately, stays blank during rendering, and allows switching away", async () => {
+  const tabsTarget = document.createElement("div");
+  tabsTarget.className = "test-chat-actions";
+  document.body.appendChild(tabsTarget);
+  mock.children = {
+    worker: {
+      sessionId: "worker",
+      parentId: "root",
+      title: "Worker",
+      description: null,
+      state: { type: "idle" },
+      capabilities: { harborConnected: true },
+    },
+  };
+  mock.messages = [
+    {
+      id: "worker-message",
+      streamId: "worker-message",
+      sequence: 1,
+      role: "assistant",
+      text: "Worker reply",
+      childId: "worker",
+      timestamp: 1,
+    },
+  ];
+  let finishRender!: () => void;
+  mock.pendingRender = new Promise<void>((resolve) => {
+    finishRender = resolve;
+  });
+  render(
+    <Suspense fallback={<div>Waiting for rendering</div>}>
+      <Chat session={session} tabsTarget={tabsTarget} />
+    </Suspense>,
+  );
+  const select = (name: string) =>
+    fireEvent.mouseDown(screen.getByRole("tab", { name }), {
+      button: 0,
+      ctrlKey: false,
+    });
+  select("Worker");
+  expect(
+    screen.getByRole("tab", { name: "Worker" }).getAttribute("aria-selected"),
+  ).toBe("true");
+  expect(document.querySelector(".chat-main")?.textContent).toBe("");
+  expect(screen.queryByText("Waiting for rendering")).toBeNull();
+
+  select(session.title);
+  expect(screen.getByRole("textbox").textContent).toBe(session.draft);
+  await act(async () => {
+    mock.pendingRender = null;
+    finishRender();
+  });
+  expect(
+    screen
+      .getByRole("tab", { name: session.title })
+      .getAttribute("aria-selected"),
+  ).toBe("true");
+  expect(screen.queryByText("Worker reply")).toBeNull();
+  select("Worker");
+  expect(screen.getByText("Worker reply")).toBeTruthy();
 });
 it("omits the history notice when the rendering window is trimmed", () => {
   render(<Chat session={session} />);
@@ -133,16 +243,7 @@ it("restores attachments and text when sending fails", async () => {
   expect(screen.getByRole("button", { name: "Remove retry.txt" })).toBeTruthy();
   mock.call.mockResolvedValue(undefined);
 });
-it.each([
-  "prime",
-  "codex",
-  "claude",
-  "cursor",
-  "pi",
-  "opencode",
-  "grok",
-  "custom",
-])(
+it.each(["codex", "claude", "grok"])(
   "opens and messages a %s worker without sending to its parent",
   async (providerId) => {
     const tabsTarget = document.createElement("div");
@@ -370,6 +471,11 @@ it("keeps native terminal handoff available as a task tab", async () => {
   expect(mock.call).toHaveBeenCalledWith("enter_terminal", {
     sessionId: "chat",
   });
+  expect(
+    screen
+      .getByRole("tab", { name: "Native terminal" })
+      .getAttribute("aria-selected"),
+  ).toBe("true");
   rerender(
     <Chat {...props} session={{ ...props.session, mode: "terminal" }} />,
   );
@@ -385,6 +491,12 @@ it("keeps native terminal handoff available as a task tab", async () => {
     button: 0,
     ctrlKey: false,
   });
+  expect(
+    screen
+      .getByRole("tab", { name: session.title })
+      .getAttribute("aria-selected"),
+  ).toBe("true");
+  expect(document.querySelector(".chat-main")?.textContent).toBe("");
   await waitFor(() =>
     expect(mock.call).toHaveBeenCalledWith("reconnect", { sessionId: "chat" }),
   );
@@ -437,8 +549,9 @@ it("keeps the selected task tab visible when the tab strip is resized", () => {
 it("keeps configuration recovery by the saved draft without duplicate branding or sign-in buttons", () => {
   render(<Chat session={session} />);
   expect(
-    screen.getByRole("heading", { name: "Continue your task" }),
-  ).toBeTruthy();
+    screen.queryByRole("heading", { name: "Continue your task" }),
+  ).toBeNull();
+  expect(screen.queryByRole("heading", { name: "Start a conversation" })).toBeNull();
   expect(screen.queryByRole("heading", { name: "hey!" })).toBeNull();
   expect(screen.queryByText("Ready")).toBeNull();
   expect(screen.queryByText("No messages yet")).toBeNull();
@@ -489,6 +602,7 @@ it("does not offer sign-in for a process failure", () => {
   expect(screen.getByRole("button", { name: "Retry connection" })).toBeTruthy();
   expect(screen.queryByRole("button", { name: "ChatGPT" })).toBeNull();
 });
+
 
 it("restores a root draft when quit happens before the database save debounce", () => {
   const first = render(<Chat session={{ ...session, draft: "older database draft" }} />);

@@ -3,6 +3,7 @@ import { PlanReview } from "./PlanReview";
 import { planReview, planReviewEntries, planReviewStatus } from "../lib/plan-review";
 import { readRootDraft, useRootDraft } from "../lib/root-draft";
 import { useWorkerDrafts } from "../lib/worker-drafts";
+import { ElicitationForm } from "./ElicitationForm";
 import {
   prepareAttachments,
   restoreDraftFiles,
@@ -14,7 +15,7 @@ import { normalizeCommandAliases } from "../lib/commands";
 import { rem } from "@/lib/units";
 import { SessionModelMenu } from "./ModelMenu";
 import { ChatScroller, TranscriptRow } from "./ChatScroller";
-import { PlanTrace, SubagentTrace } from "./AgentTrace";
+import { PlanTrace } from "./AgentTrace";
 import { Marker, MarkerContent } from "./ui/marker";
 import { codeLanguage } from "./CodeBlock";
 import { chatMinimapItems } from "./chat-minimap";
@@ -22,13 +23,23 @@ import { ChatTranscript } from "./ChatTranscript";
 import { useSessionMode } from "./ModePicker";
 import { useTerminalTabs } from "../hooks/use-terminal-tabs";
 import { useTaskTabs, orderTaskTabs } from "../hooks/use-task-tabs";
+import {
+  readTaskTabSelection,
+  saveTaskTabSelection,
+} from "../lib/task-tab-selection";
 import { TaskComposer } from "./TaskComposer";
 import * as Tabs from "@radix-ui/react-tabs";
 import { ThinkingIndicator } from "./ui/thinking-indicator";
-import { ElicitationForm } from "./ElicitationForm";
 import { Card } from "./ui/card";
 import { Disclosure } from "./fluid";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useDeferredValue,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import {
   CircleAlert,
@@ -76,19 +87,56 @@ export function Chat({
   const {
     data,
     transcripts,
+    loadedTranscripts,
     loadTranscript,
+    setActiveSession,
     setError,
     updateSession,
     configuration,
   } = useStore();
-  const terminals = useTerminalTabs(session.id, setError);
+  const [initialTab] = useState(
+    () => standaloneTab ?? readTaskTabSelection(session.id),
+  );
+  const terminals = useTerminalTabs(
+    session.id,
+    setError,
+    !standaloneTab && initialTab.startsWith("shell:")
+      ? initialTab.slice(6)
+      : null,
+  );
   const transcript = transcripts[session.id] ?? emptyTranscript();
   const [draft, setDraft] = useRootDraft(session.id, initialDraft ?? session.draft);
   const [review, setReview] = useState(session.reviewOpen);
-  const initialChild = standaloneTab?.startsWith("worker:")
-    ? standaloneTab.slice(7)
+  const initialChild = initialTab.startsWith("worker:")
+    ? initialTab.slice(7)
     : null;
   const [child, setChild] = useState<string | null>(initialChild);
+  const [nativeTerminal, setNativeTerminal] = useState(
+    session.mode === "terminal",
+  );
+  const historyLoaded = loadedTranscripts.has(session.id);
+  const conversation = useMemo(
+    () =>
+      historyLoaded &&
+      !nativeTerminal &&
+      !terminals.active &&
+      session.mode === "gui"
+        ? { sessionId: session.id, child }
+        : null,
+    [
+      session.id,
+      child,
+      historyLoaded,
+      nativeTerminal,
+      terminals.active,
+      session.mode,
+    ],
+  );
+  // Commit tab selection with a blank pane first. Mounting a saved transcript
+  // can be expensive, so let React prepare it at interruptible priority.
+  const deferredConversation = useDeferredValue(conversation, null);
+  const conversationReady =
+    !!conversation && deferredConversation === conversation;
   const [childDrafts, setChildDraft] = useWorkerDrafts(session.id, initialChild && initialDraft !== undefined ? { [initialChild]: initialDraft } : undefined);
   const [childOpeningState, setChildOpeningState] = useState<
     Record<string, boolean>
@@ -179,11 +227,14 @@ export function Chat({
       setDraft(readRootDraft(session.id) ?? session.draft);
     parentWasDetached.current = taskTabs.detached.includes("parent");
   }, [taskTabs.detached, standaloneTab]);
-  const provider = data.providers.find((p) => p.id === session.providerId);
   const working = ["working", "needs_input"].includes(session.status);
   const connected =
     ["idle", "working", "needs_input", "completed"].includes(session.status) &&
     session.mode === "gui";
+  useEffect(() => {
+    setActiveSession(session.id);
+    return () => setActiveSession(null);
+  }, [session.id, setActiveSession]);
   useEffect(() => {
     void loadTranscript(session.id);
     scrollRef.current = session.scrollTop;
@@ -332,9 +383,11 @@ export function Chat({
     }
   };
   const toggleTerminal = () => {
-    if (session.mode === "terminal") {
+    if (nativeTerminal) {
+      setNativeTerminal(false);
       void reconnect();
     } else if (session.capabilities.nativeHandoff) {
+      setNativeTerminal(true);
       void call("enter_terminal", { sessionId: session.id }).catch((e) =>
         setError(String(e)),
       );
@@ -375,20 +428,20 @@ export function Chat({
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, [session, terminals, standaloneTab, taskTabs.detached]);
-  const messages = transcript.messages.filter((m) =>
-    child ? sameWorker(m.childId, child) : !m.childId,
+  const messages = useMemo(
+    () =>
+      conversationReady
+        ? transcript.messages.filter((m) =>
+            child ? sameWorker(m.childId, child) : !m.childId,
+          )
+        : [],
+    [transcript, child, conversationReady],
   );
   const entries = useMemo(
-    () => planReviewEntries(timeline(transcript, child), transcript.interactions, child),
-    [transcript, child],
+    () => (conversationReady ? planReviewEntries(timeline(transcript, child), transcript.interactions, child) : []),
+    [transcript, child, conversationReady],
   );
   const minimapItems = useMemo(() => chatMinimapItems(entries), [entries]);
-  const empty =
-    !entries.length &&
-    !working &&
-    !child &&
-    !transcript.requests.length &&
-    !transcript.plan.length;
   const configurationError =
     connected &&
     !!session.error &&
@@ -399,11 +452,29 @@ export function Chat({
     /auth|sign.?in|log.?in|credential/i.test(session.error);
   const activeTab = terminals.active
     ? `shell:${terminals.active}`
-    : session.mode === "terminal"
+    : nativeTerminal
       ? "terminal"
       : child
         ? `worker:${child}`
         : "parent";
+  useEffect(() => {
+    // Wait for both sources before validating a saved selection. Otherwise
+    // the initial empty tab list would overwrite it during startup.
+    if (standaloneTab || !terminals.loaded || !historyLoaded) return;
+    if (child && !transcript.children[child]) {
+      setChild(null);
+      return;
+    }
+    saveTaskTabSelection(session.id, activeTab);
+  }, [
+    session.id,
+    activeTab,
+    child,
+    terminals.loaded,
+    historyLoaded,
+    transcript,
+    standaloneTab,
+  ]);
   const detachedActive =
     !standaloneTab && taskTabs.detached.includes(activeTab);
   const tabItems = orderTaskTabs(
@@ -467,6 +538,59 @@ export function Chat({
     observer.observe(list);
     return () => observer.disconnect();
   }, [activeTab, tabsTarget]);
+  // Draft edits do not change conversation content. Reuse the history tree
+  // so typing never reconciles every saved message and tool disclosure.
+  const renderedTranscript = useMemo(
+    () => (
+      <ChatTranscript
+        entries={entries}
+        renderPlan={(interaction) => interaction.status === "pending" && connected && transcript.requests.some(request=>request.id === interaction.id)
+          ? <RequestCard request={interaction} sessionId={session.id} childName={transcript.children[str(interaction.params.sessionId)]?.title} />
+          : <div className="request-card request-card-plan"><PlanReview review={planReview(interaction)!} busy={false} status={planReviewStatus(interaction)} /></div>}
+        renderTool={(tool) => (
+          <ToolCard tool={tool} terminals={transcript.terminals} detailsOnly />
+        )}
+        working={
+          (child ? workerWorking : session.status === "working") &&
+          !transcript.requests.length
+        }
+      >
+        {!child && transcript.plan.length > 0 && (
+          <TranscriptRow id="plan">
+            <PlanTrace entries={transcript.plan} />
+          </TranscriptRow>
+        )}
+        {connected &&
+          transcript.requests.filter(r=>!entries.some(entry=>entry.type === "message" && entry.message.planReview?.status === "pending" && entry.message.planReview.id === r.id)).map((r) => (
+            <TranscriptRow key={String(r.id)} id={`request:${r.id}`}>
+              <RequestCard
+                request={r}
+                sessionId={session.id}
+                childName={transcript.children[str(r.params.sessionId)]?.title}
+              />
+            </TranscriptRow>
+          ))}
+        {session.status === "needs_input" && !transcript.requests.length && (
+          <TranscriptRow id="waiting-for-response">
+            <Marker>
+              <MarkerContent>
+                <ThinkingIndicator label="Waiting for your response" />
+              </MarkerContent>
+            </Marker>
+          </TranscriptRow>
+        )}
+      </ChatTranscript>
+    ),
+    [
+      entries,
+      transcript,
+      child,
+      workerWorking,
+      session.status,
+      session.id,
+      connected,
+    ],
+  );
   return (
     <Tabs.Root
       asChild
@@ -483,10 +607,15 @@ export function Chat({
         terminals.setActive(null);
         if (value === "terminal") {
           setChild(null);
-          if (session.mode !== "terminal") toggleTerminal();
+          setNativeTerminal(true);
+          if (session.mode !== "terminal" || busy)
+            void call("enter_terminal", { sessionId: session.id }).catch((e) =>
+              setError(String(e)),
+            );
         } else {
+          setNativeTerminal(false);
           setChild(value === "parent" ? null : value.slice("worker:".length));
-          if (session.mode === "terminal") void reconnect();
+          if (session.mode === "terminal" || nativeTerminal) void reconnect();
         }
       }}
     >
@@ -584,31 +713,32 @@ export function Chat({
           asChild
         >
           <section
-            className={`chat-main${empty ? " chat-main-empty" : ""}`}
+            className="chat-main"
             style={
               terminals.active || detachedActive
                 ? { display: "none" }
                 : undefined
             }
           >
-            {session.mode === "terminal" &&
+            {nativeTerminal &&
+              session.mode === "terminal" &&
               (!taskTabs.detached.includes("terminal") || !!standaloneTab) && (
                 <NativeTerminal
                   sessionId={session.id}
                   visible={!terminals.active}
                 />
               )}
-            {session.mode === "terminal" && (
+            {nativeTerminal && session.mode === "terminal" && (
               <div className="terminal-caption">
                 Native CLI · Exit with <code>/exit</code>, then select a
                 conversation to restore the conversation.
               </div>
             )}
-            {session.mode !== "terminal" && (
+            {conversationReady && (
               <>
                 <ChatScroller
                   key={`${session.id}:${child ?? "root"}`}
-                  ready={!!transcripts[session.id]}
+                  ready
                   minimapItems={minimapItems}
                   savedScrollTop={
                     conversationPositions.current[
@@ -673,86 +803,9 @@ export function Chat({
                       </Marker>
                     </TranscriptRow>
                   )}
-                  <ChatTranscript
-                    entries={entries}
-        renderPlan={(interaction) => interaction.status === "pending" && connected && transcript.requests.some(request=>request.id === interaction.id)
-          ? <RequestCard request={interaction} sessionId={session.id} childName={transcript.children[str(interaction.params.sessionId)]?.title} />
-          : <div className="request-card request-card-plan"><PlanReview review={planReview(interaction)!} busy={false} status={planReviewStatus(interaction)} /></div>}
-                    renderTool={(tool) => (
-                      <ToolCard
-                        tool={tool}
-                        terminals={transcript.terminals}
-                        detailsOnly
-                      />
-                    )}
-                    working={
-                      (child ? workerWorking : session.status === "working") &&
-                      !transcript.requests.length
-                    }
-                  >
-                    {!child && transcript.plan.length > 0 && (
-                      <TranscriptRow id="plan">
-                        <PlanTrace entries={transcript.plan} />
-                      </TranscriptRow>
-                    )}
-                    {!child && Object.keys(transcript.children).length > 0 && (
-                      <TranscriptRow id="subagents">
-                        <SubagentTrace
-                          workers={Object.values(transcript.children)}
-                          onSelect={setChild}
-                        />
-                      </TranscriptRow>
-                    )}
-                    {connected &&
-                      transcript.requests.filter(r=>!entries.some(entry=>entry.type === "message" && entry.message.planReview?.status === "pending" && entry.message.planReview.id === r.id)).map((r) => (
-                        <TranscriptRow
-                          key={String(r.id)}
-                          id={`request:${r.id}`}
-                        >
-                          <RequestCard
-                            request={r}
-                            sessionId={session.id}
-                            childName={
-                              transcript.children[str(r.params.sessionId)]
-                                ?.title
-                            }
-                          />
-                        </TranscriptRow>
-                      ))}
-                    {session.status === "needs_input" &&
-                      !transcript.requests.length && (
-                        <TranscriptRow id="waiting-for-response">
-                          <Marker>
-                            <MarkerContent>
-                              <ThinkingIndicator label="Waiting for your response" />
-                            </MarkerContent>
-                          </Marker>
-                        </TranscriptRow>
-                      )}
-                    {!!transcript.diagnostics.length && (
-                      <TranscriptRow id="connection-logs">
-                        <Disclosure
-                          title={`Connection logs (${transcript.diagnostics.length})`}
-                          className="diagnostics"
-                        >
-                          <CodeBlock
-                            text={transcript.diagnostics.join("\n")}
-                            title="Connection logs"
-                            compact
-                          />
-                        </Disclosure>
-                      </TranscriptRow>
-                    )}
-                  </ChatTranscript>
+                  {renderedTranscript}
                 </ChatScroller>
                 <div className="chat-composer-wrap" ref={composer}>
-                  {empty && (
-                    <h1 className="chat-start-title">
-                      {draft.trim()
-                        ? "Continue your task"
-                        : "Start a conversation"}
-                    </h1>
-                  )}
                   {session.error && (
                     <div className="chat-notice" role="alert">
                       <CircleAlert size={rem(15)} aria-hidden="true" />
@@ -911,33 +964,6 @@ export function Chat({
                         : undefined
                     }
                   />
-                  <div className="composer-caption">
-                    <span>
-                      {session.status === "connecting" ? (
-                        <>
-                          <LoaderCircle size={rem(13)} className="spin" />{" "}
-                          Reconnecting…
-                        </>
-                      ) : !connected && !session.error ? (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          disabled={busy}
-                          onClick={() => void reconnect()}
-                        >
-                          <span className="inline-flex items-center gap-2">
-                            <RefreshCw size={rem(13)} /> Reconnect
-                          </span>
-                        </Button>
-                      ) : (
-                        <>{provider?.name}</>
-                      )}
-                    </span>
-                    <span>
-                      ⌘ ↵ Send <span className="separator-dot">·</span> ↵ New
-                      line
-                    </span>
-                  </div>
                 </div>
               </>
             )}
@@ -986,9 +1012,13 @@ export function Chat({
               </section>
             </Tabs.Content>
           ))}
-        {review && session.isGit && !terminals.active && !detachedActive && (
-          <Review sessionId={session.id} onClose={() => setReview(false)} />
-        )}
+        {review &&
+          session.isGit &&
+          conversationReady &&
+          !terminals.active &&
+          !detachedActive && (
+            <Review sessionId={session.id} onClose={() => setReview(false)} />
+          )}
       </div>
     </Tabs.Root>
   );

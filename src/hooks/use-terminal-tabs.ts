@@ -8,9 +8,11 @@ export type TerminalTab = TerminalStatus & { id: string };
 export function useTerminalTabs(
   sessionId: string,
   onError: (message: string) => void,
+  initialActive: string | null = null,
 ) {
   const [tabs, setTabs] = useState<TerminalTab[]>([]);
-  const [active, setActive] = useState<string | null>(null);
+  const [active, setActive] = useState<string | null>(initialActive);
+  const [loaded, setLoaded] = useState(false);
   const [creating, setCreating] = useState(false);
   const pending = useRef(false);
   const closed = useRef(new Set<string>());
@@ -18,7 +20,7 @@ export function useTerminalTabs(
     let disposed = false;
     void call<TerminalTab[]>("list_shell_terminals", { sessionId })
       .then((saved) => {
-        if (!disposed)
+        if (!disposed) {
           setTabs((current) => [
             ...(saved ?? []).filter(
               (tab) =>
@@ -27,8 +29,22 @@ export function useTerminalTabs(
             ),
             ...current,
           ]);
+          // Only invalidate the restored selection. A user may create or
+          // select another tab while this initial request is still in flight.
+          setActive((id) =>
+            id === initialActive && !saved?.some((tab) => tab.id === id)
+              ? null
+              : id,
+          );
+          setLoaded(true);
+        }
       })
-      .catch(() => {});
+      .catch((error) => {
+        if (!disposed) {
+          onError(String(error));
+          setLoaded(true);
+        }
+      });
     return () => {
       disposed = true;
     };
@@ -97,5 +113,5 @@ export function useTerminalTabs(
         : current,
     );
   }, []);
-  return { tabs, active, setActive, creating, create, close, update };
+  return { tabs, active, setActive, loaded, creating, create, close, update };
 }

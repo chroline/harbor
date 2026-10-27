@@ -21,10 +21,10 @@ mod terminal;
 mod titles;
 mod tab_windows;
 mod types;
-#[cfg(target_os = "macos")]
-mod window_chrome;
 mod workspaces;
 mod worktrees;
+#[cfg(target_os = "macos")]
+mod window_chrome;
 use acp::{Rpc, Sink};
 use serde_json::{json, Value};
 use std::{
@@ -1212,27 +1212,36 @@ async fn export_transcript(
     Ok(path.to_string_lossy().into())
 }
 #[tauri::command]
-fn get_events(
+async fn get_events(
     state: tauri::State<'_, Arc<AppState>>,
     session_id: String,
     after: f64,
+    limit: Option<u32>,
 ) -> Result<Vec<SessionEvent>, String> {
-    state.db.events(&session_id, after, 5000)
+    let state = state.inner().clone();
+    tokio::task::spawn_blocking(move || state.db.events(&session_id, after, limit.unwrap_or(5000)))
+        .await
+        .map_err(|e| e.to_string())?
 }
 #[tauri::command]
-fn save_session_ui(
+async fn save_session_ui(
     state: tauri::State<'_, Arc<AppState>>,
     session_id: String,
     draft: String,
     scroll_top: f64,
     review_open: bool,
 ) -> Result<(), String> {
-    state.update(&session_id, |s| {
-        s.draft = draft;
-        s.scroll_top = scroll_top;
-        s.review_open = review_open;
-    })?;
-    Ok(())
+    let state = state.inner().clone();
+    tokio::task::spawn_blocking(move || {
+        state.update(&session_id, |s| {
+            s.draft = draft;
+            s.scroll_top = scroll_top;
+            s.review_open = review_open;
+        })?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 #[tauri::command]
 async fn delete_session(

@@ -1,3 +1,5 @@
+import { reconcileStorage } from "./reconcile-storage";
+import { pruneDraftFiles } from "./attachments";
 import {
   createContext,
   useContext,
@@ -19,7 +21,9 @@ type Store = {
   ready: boolean;
   refresh: () => Promise<void>;
   transcripts: Record<string, Transcript>;
+  loadedTranscripts: ReadonlySet<string>;
   loadTranscript: (id: string) => Promise<void>;
+  setActiveSession: (id: string | null) => void;
   error: string | null;
   setError: (error: string | null) => void;
   updateSession: (s: SessionRecord) => void;
@@ -38,11 +42,16 @@ export function StoreProvider({
   const [transcripts, setTranscripts] = useState<Record<string, Transcript>>(
     {},
   );
+  const cached = useRef<Record<string, Transcript>>({});
+  // Live events can create partial entries for unopened chats. Only histories
+  // read from the beginning are safe checkpoints for incremental loading.
+  const hydrated = useRef(new Set<string>());
   const [error, setError] = useState<string | null>(null);
   const pending = useRef<SessionEvent[]>([]);
   const loading = useRef(new Set<string>());
   const live = useRef<Record<string, SessionEvent[]>>({});
   const active = useRef("");
+  const [activeSessionId, setActiveSession] = useState<string | null>(null);
   const reconnect = useRef(new AutoReconnect());
   const [, configurationChanged] = useState(0);
   const configurationRef = useRef<SessionConfiguration | null>(null);
@@ -52,7 +61,13 @@ export function StoreProvider({
       .sort((a, b) => cache[b].lastSequence - cache[a].lastSequence)
       .slice(0, 5);
     if (cache[active.current]) keys.push(active.current);
+    for (const id of hydrated.current)
+      if (!keys.includes(id)) hydrated.current.delete(id);
     return Object.fromEntries(keys.map((k) => [k, cache[k]]));
+  };
+  const publishTranscripts = (cache: Record<string, Transcript>) => {
+    cached.current = bound(cache);
+    setTranscripts(cached.current);
   };
   const updateSession = (s: SessionRecord) => {
     configurationRef.current?.observe(s);
@@ -72,7 +87,13 @@ export function StoreProvider({
     });
   const configuration = configurationRef.current;
   const refresh = async () => {
-    if (desktop) setData(await call<Bootstrap>("bootstrap"));
+    if (desktop) {
+      const next = await call<Bootstrap>("bootstrap");
+      const ids = new Set(next.sessions.map((s) => s.id));
+      try { reconcileStorage(localStorage, ids); } catch { /* Storage may be unavailable. */ }
+      pruneDraftFiles(ids);
+      setData(next);
+    }
     setReady(true);
   };
   const loadTranscript = async (id: string) => {
@@ -81,19 +102,35 @@ export function StoreProvider({
     loading.current.add(id);
     live.current[id] = [];
     try {
-      let t = emptyTranscript();
-      let after = 0;
+      let t =
+        (hydrated.current.has(id) && cached.current[id]) || emptyTranscript();
+      let after = t.lastSequence;
+      const replay = async (events: SessionEvent[]) => {
+        let started = performance.now();
+        for (let i = 0; i < events.length; i++) {
+          if (i > 0 && (i % 100 === 0 || performance.now() - started >= 8)) {
+            // A resolved promise only yields to microtasks. Use a task boundary
+            // so WebKit can paint and process chat switches during cold replay.
+            await new Promise<void>((resolve) => setTimeout(resolve, 0));
+            started = performance.now();
+          }
+          t = reduceEvent(t, events[i]);
+        }
+      };
       for (;;) {
         const events = await call<SessionEvent[]>("get_events", {
           sessionId: id,
           after,
+          limit: 250,
         });
-        for (const e of events) t = reduceEvent(t, e);
-        if (events.length < 5000) break;
+        await replay(events);
+        if (events.length < 250) break;
         after = events.at(-1)!.sequence;
       }
-      for (const e of live.current[id] ?? []) t = reduceEvent(t, e);
-      setTranscripts((prev) => bound({ ...prev, [id]: t }));
+      await replay(live.current[id] ?? []);
+      hydrated.current.add(id);
+      if (cached.current[id] !== t)
+        publishTranscripts({ ...cached.current, [id]: t });
     } catch (e) {
       setError(String(e));
     } finally {
@@ -134,17 +171,17 @@ export function StoreProvider({
     const timer = setInterval(() => {
       if (!pending.current.length) return;
       const events = pending.current.splice(0);
-      setTranscripts((prev) => {
-        const next = { ...prev };
-        for (const event of events) {
-          if (loading.current.has(event.sessionId)) continue;
-          next[event.sessionId] = reduceEvent(
-            next[event.sessionId] ?? emptyTranscript(),
-            event,
-          );
-        }
-        return bound(next);
-      });
+      const next = { ...cached.current };
+      let changed = false;
+      for (const event of events) {
+        if (loading.current.has(event.sessionId)) continue;
+        const previous = next[event.sessionId];
+        const transcript = reduceEvent(previous ?? emptyTranscript(), event);
+        if (transcript === previous) continue;
+        next[event.sessionId] = transcript;
+        changed = true;
+      }
+      if (changed) publishTranscripts(next);
     }, 50);
     return () => {
       disposed = true;
@@ -157,12 +194,14 @@ export function StoreProvider({
   }, [data.sessions, configuration]);
   useEffect(() => {
     if (!desktop || !ready || !autoReconnect) return;
-    for (const session of data.sessions) {
+    // Opening the app should not launch an agent for every saved chat.
+    const session = data.sessions.find((s) => s.id === activeSessionId);
+    if (session) {
       void reconnect.current.restore(session, async (sessionId) => {
         updateSession(await call<SessionRecord>("reconnect", { sessionId }));
       });
     }
-  }, [ready, data.sessions, autoReconnect]);
+  }, [ready, data.sessions, autoReconnect, activeSessionId]);
   return (
     <Context.Provider
       value={{
@@ -170,7 +209,9 @@ export function StoreProvider({
         ready,
         refresh,
         transcripts,
+        loadedTranscripts: new Set(hydrated.current),
         loadTranscript,
+        setActiveSession,
         error,
         setError,
         updateSession,

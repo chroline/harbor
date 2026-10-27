@@ -116,6 +116,8 @@ pub enum CommandRequest {
         #[ts(rename = "sessionId")]
         session_id: String,
         after: f64,
+        #[ts(optional)]
+        limit: Option<u32>,
     },
     ExportTranscript {
         #[ts(rename = "sessionId")]
