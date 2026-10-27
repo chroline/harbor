@@ -31,7 +31,8 @@
      together. A slightly more grey value gives muted real semantic presence.
      Dark keeps the ladder value (#1E1E1E = surface-2). */
   --muted: light-dark(#f4f4f5, #1e1e1e);
-  --muted-foreground: light-dark(#737373, #a3a3a3);
+  /* Harbor's translucent light chrome needs a stronger secondary text tone. */
+  --muted-foreground: light-dark(#666666, #a3a3a3);
 
   /* ── Interactive states ── */
   --accent: light-dark(#e5e5e5, #525252);

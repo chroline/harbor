@@ -1069,6 +1069,8 @@ const CommandMenuList = forwardRef<HTMLDivElement, CommandMenuListProps>(
         className="scroll-divider flex min-h-0 flex-1 flex-col border-t-[0.0625rem] border-border/60 [&::before]:!-top-[0.0625rem]"
         viewportClassName="min-h-0 flex-1 [&>div[style]]:!block [&>div[style]]:!min-w-0 [--scroll-fade-size:2rem] scroll-fade"
       >
+        {/* Empty-state status is a sibling: listboxes may only own options/groups. */}
+        {empty && children}
         <div
           ref={(node) => {
             listRef.current = node;
@@ -1096,7 +1098,7 @@ const CommandMenuList = forwardRef<HTMLDivElement, CommandMenuListProps>(
           {...props}
         >
           {fill && <FluidHoverHighlight hover={fill} className={listShape.bg} />}
-          {children}
+          {!empty && children}
           {sections.map((section, sectionIndex) => {
             // Ids from the section's position, never its heading text: a
             // heading with a space ("Go to") would split aria-labelledby
@@ -1320,14 +1322,19 @@ const CommandMenuItem = memo(forwardRef<HTMLDivElement, CommandMenuItemProps>(
           // py-1/-my-1 keeps truncate's overflow:hidden from clipping
           // ascenders and descenders outside the trimmed box.
           <span className="flex min-w-0 flex-1 items-baseline gap-2">
-            <span className="max-w-[50%] shrink-0 truncate [text-box:trim-both_cap_alphabetic] py-1 -my-1">
+            <span className={cn(
+              "shrink-0 truncate [text-box:trim-both_cap_alphabetic] py-1 -my-1",
+              item.description ? "max-w-[50%]" : "max-w-full"
+            )}>
               {item.label}
             </span>
-            {/* The description shares the label's size, muted on both
-                states of the row. */}
+            {/* Selected descriptions need foreground contrast on the raised fill. */}
             {item.description && (
               <span
-                className="min-w-0 flex-1 truncate [text-box:trim-both_cap_alphabetic] py-1 -my-1 text-muted-foreground"
+                className={cn(
+                  "min-w-0 flex-1 truncate [text-box:trim-both_cap_alphabetic] py-1 -my-1",
+                  isActive ? "text-foreground" : "text-muted-foreground"
+                )}
               >
                 {item.description}
               </span>

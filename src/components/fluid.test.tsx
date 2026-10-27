@@ -11,6 +11,7 @@ import {
 } from "./ui/thinking-steps";
 import { TabsSubtle, TabsSubtleItem } from "./ui/tabs-subtle";
 import { Field, Disclosure } from "./fluid";
+import { CommandMenu, CommandMenuInput, CommandMenuList, CommandMenuEmpty } from "./ui/command-menu";
 
 beforeAll(() => {
   vi.stubGlobal(
@@ -35,6 +36,25 @@ afterEach(cleanup);
 const wrap = (node: React.ReactNode) => (
   <MotionConfig reducedMotion="always">{node}</MotionConfig>
 );
+
+it("announces an empty search outside its listbox and restores keyboard selection", () => {
+  const select = vi.fn();
+  render(wrap(
+    <CommandMenu items={[{ value: "review", label: "Review changes" }]} onSelect={select}>
+      <CommandMenuInput placeholder="Find a command" />
+      <CommandMenuList><CommandMenuEmpty>No matching commands.</CommandMenuEmpty></CommandMenuList>
+    </CommandMenu>
+  ));
+  const input = screen.getByRole("combobox");
+  fireEvent.change(input, { target: { value: "missing" } });
+  expect(screen.getByRole("status").textContent).toBe("No matching commands.");
+  expect(screen.getByRole("status").closest('[role="listbox"]')).toBeNull();
+  fireEvent.change(input, { target: { value: "Review" } });
+  expect(screen.queryByRole("status")).toBeNull();
+  fireEvent.keyDown(input, { key: "ArrowDown" });
+  fireEvent.keyDown(input, { key: "Enter" });
+  expect(select).toHaveBeenCalledWith(expect.objectContaining({ value: "review" }));
+});
 
 describe("Fluid behavior adapters", () => {
   it("submits a setup composer exactly once inside a dialog shortcut handler", () => {
