@@ -152,7 +152,7 @@ export function Worktrees({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((row, index) => {
+                {rows.map((row) => {
                   const tree = data.worktrees.find(
                     (t) => t.path === row.path && t.state === "active",
                   );
@@ -162,7 +162,6 @@ export function Worktrees({
                   return (
                     <TableRow
                       key={`${str(row.workspace)}:${str(row.path)}`}
-                      index={index}
                     >
                       <TableCell>
                         <strong>{str(row.branch, "Detached HEAD")}</strong>
