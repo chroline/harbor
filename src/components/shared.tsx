@@ -13,6 +13,8 @@ import {
   createElement,
   memo,
   useContext,
+  useLayoutEffect,
+  useRef,
   useState,
   type ComponentProps,
   type ReactNode,
@@ -209,7 +211,7 @@ function streamed(
 
 export function ChatLink({ href, children }: { href?: string; children: ReactNode }) {
   const { setError } = useStore();
-  return (
+  const link = (
     <a href={href} target="_blank" rel="noreferrer" onClick={(event) => {
       if (isTauri() && href && /^(https?:|mailto:)/i.test(href)) {
         event.preventDefault();
@@ -219,10 +221,29 @@ export function ChatLink({ href, children }: { href?: string; children: ReactNod
       {children}
     </a>
   );
+  return href ? <Tooltip content={href} className="chat-link-preview">{link}</Tooltip> : link;
+}
+
+function MarkdownOrderedList({ node: _node, children, start, style, ...props }: ComponentProps<"ol"> & { node?: unknown }) {
+  const ref = useRef<HTMLOListElement>(null);
+  useLayoutEffect(() => {
+    const list = ref.current;
+    if (!list) return;
+    const measure = () => {
+      const widths = Array.from(list.children, (child) =>
+        child.tagName === "LI" ? parseFloat(getComputedStyle(child, "::before").width) || 0 : 0,
+      );
+      list.style.setProperty("--list-marker-width", `${widths.reduce((max, width) => Math.max(max, width), 0)}px`);
+    };
+    measure();
+    void document.fonts.ready.then(measure);
+  }, [children, start]);
+  return <ol {...props} ref={ref} start={start} style={style}>{children}</ol>;
 }
 
 const markdownComponents: Components = {
   img: ({ src, alt, title }) => <MessageImage src={typeof src === "string" ? src : undefined} alt={alt} title={title} />,
+  ol: MarkdownOrderedList,
   a: ({ children, href }) => {
     const streaming = useContext(MarkdownStreaming);
     return <ChatLink href={href}>{streamLeaves(children, streaming)}</ChatLink>;
@@ -244,10 +265,16 @@ const markdownComponents: Components = {
         );
       }
     }
+    const codeText = code?.type === "element"
+      ? code.children.map(markdownText).join("").replace(/\n$/, "")
+      : "";
     return (
-      <pre {...props} dir="ltr" tabIndex={0}>
-        {children}
-      </pre>
+      <div className="markdown-code-block">
+        <div className="markdown-code-actions"><CopyButton text={codeText} /></div>
+        <pre {...props} dir="ltr" tabIndex={0}>
+          {children}
+        </pre>
+      </div>
     );
   },
   p: streamed("p"),

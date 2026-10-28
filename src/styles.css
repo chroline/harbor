@@ -186,6 +186,7 @@
   --secondary: var(--muted);
   --popover: var(--surface-3);
   --composer-background: var(--surface-2);
+  --link-color: light-dark(#2672d6, #80b5ff);
   font-family: var(--font-sans);
   font-size: 1rem;
   font-synthesis: none;
@@ -1499,19 +1500,120 @@ html.standalone #root {
   color: var(--muted-foreground);
   margin-bottom: 0.625rem;
 }
-.markdown :not(pre) > code {
-  padding: 0.125rem 0.3125rem;
-  background: var(--secondary);
-  border-radius: var(--radius-sm);
-  font-size: 0.91em;
+.markdown a {
+  color: var(--link-color);
+  font-weight: 550;
+  text-decoration: none;
 }
-.markdown pre {
+.markdown a:hover,
+.markdown a:focus-visible {
+  text-decoration: underline dotted;
+  text-underline-offset: 0.2em;
+}
+.markdown ul {
+  padding-left: calc(1.9em - 0.25rem);
+}
+.markdown li ul {
+  padding-left: calc(1.9em - 0.25rem);
+}
+.markdown ol {
+  padding-left: calc(max(1.9em, var(--list-marker-width, 1.5em) + 0.775em) - 0.25rem);
+}
+.markdown li ol {
+  padding-left: calc(max(1.9em, var(--list-marker-width, 1.5em) + 0.775em) - 0.25rem);
+}
+.markdown li {
+  padding-left: 0.25rem;
+  position: relative;
+  list-style: none;
+}
+.markdown li::before {
+  position: absolute;
+  right: calc(100% - 0.25rem + 0.3em);
+  color: var(--muted-foreground);
+}
+.markdown ul > li::before {
+  content: "";
+  right: calc(100% - 0.25rem + 0.775em);
+  width: 0.35em;
+  height: 0.35em;
+  border-radius: 50%;
+  background: currentColor;
+  line-height: inherit;
+  top: 0.5lh;
+  transform: translateY(-50%);
+}
+.markdown ul ul > li::before {
+  background: transparent;
+  border: 0.08em solid currentColor;
+}
+.markdown .task-list-item::before {
+  content: none;
+}
+.markdown ol > li::before {
+  content: counter(list-item, decimal) ".";
+  right: calc(100% - 0.25rem + 0.775em);
+  font-variant-numeric: tabular-nums;
+}
+.markdown ol ol > li::before {
+  content: counter(list-item, lower-alpha) ".";
+}
+.markdown ol ol ol > li::before {
+  content: counter(list-item, lower-roman) ".";
+}
+.markdown ol ol ol ol > li::before {
+  content: counter(list-item, decimal) ".";
+}
+.markdown ol ol ol ol ol > li::before {
+  content: counter(list-item, lower-alpha) ".";
+}
+.markdown ol ol ol ol ol ol > li::before {
+  content: counter(list-item, lower-roman) ".";
+}
+.chat-link-preview {
+  max-width: min(32rem, calc(100vw - 2rem));
+  overflow-wrap: anywhere;
+}
+.markdown :not(pre) > code {
+  padding: 0.08em 0.3em;
+  background: color-mix(in srgb, currentColor 8%, transparent);
+  border-radius: 0.5em;
+  font-size: 0.95em;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+.markdown-code-block {
+  position: relative;
+  min-width: 0;
+  margin: 0.75rem 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+}
+.markdown-code-actions {
+  position: absolute;
+  z-index: 1;
+  top: 0.375rem;
+  right: 0.375rem;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.markdown-code-block:hover .markdown-code-actions,
+.markdown-code-block:focus-within .markdown-code-actions {
+  opacity: 1;
+}
+@media (hover: none) {
+  .markdown-code-actions { opacity: 1; }
+}
+.markdown .markdown-code-block pre {
   min-width: 0;
   overflow: auto;
   white-space: pre;
-  font-size: 0.875rem;
+  font-size: 0.75rem;
   line-height: 1.5;
   margin: 0;
+  padding: 1rem 3rem 1rem 1rem;
+  background: transparent;
   tab-size: 2;
 }
 .markdown pre:focus-visible,
@@ -3756,7 +3858,7 @@ html.transitioning *::after {
   color: var(--muted-foreground);
 }
 .command-reference {
-  @apply text-blue-400;
+  color: var(--link-color);
   font-weight: 500;
   font-variation-settings:
     "wght" 500,
