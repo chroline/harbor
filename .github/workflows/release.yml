@@ -1,0 +1,77 @@
+name: macOS release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-latest
+    env:
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
+      - name: Validate tag, versions, and signing credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_TYPE" == tag ]] || { echo 'Run this workflow on a version tag.'; exit 1; }
+          node -e 'const p=require("./package.json").version; const t=require("./src-tauri/tauri.conf.json").version; const tag=process.env.GITHUB_REF_NAME; if (p!==t || tag!==`v${p}` || !/^\d+\.\d+\.\d+$/.test(p)) throw Error("Tag and app versions must match a stable vMAJOR.MINOR.PATCH release");'
+          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID KEYCHAIN_PASSWORD; do
+            [[ -n "${!name}" ]] || { echo "Missing $name secret"; exit 1; }
+          done
+          [[ "$APPLE_SIGNING_IDENTITY" == 'Developer ID Application:'* ]] || { echo 'A Developer ID Application identity is required'; exit 1; }
+      - name: Import signing certificate
+        shell: bash
+        run: |
+          set -euo pipefail
+          certificate="$RUNNER_TEMP/harbor-certificate.p12"
+          keychain="$RUNNER_TEMP/harbor-release.keychain-db"
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$certificate"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$keychain"
+          security list-keychains -d user -s "$keychain"
+          security import "$certificate" -k "$keychain" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$keychain"
+          rm "$certificate"
+      - run: npm ci
+      - name: Build and notarize DMG
+        run: npm run tauri -- build --target aarch64-apple-darwin --bundles dmg
+      - name: Verify signed and notarized app
+        shell: bash
+        run: |
+          set -euo pipefail
+          app='src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Harbor.app'
+          codesign --verify --deep --strict --verbose=2 "$app"
+          xcrun stapler validate "$app"
+          spctl --assess --type execute --verbose=2 "$app"
+      - name: Create draft release
+        shell: bash
+        run: |
+          set -euo pipefail
+          dmgs=(src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg)
+          [[ ${#dmgs[@]} -eq 1 && -f "${dmgs[0]}" ]] || { echo 'Expected one DMG'; exit 1; }
+          gh release create "$GITHUB_REF_NAME" "${dmgs[0]}" --draft --title "Harbor ${GITHUB_REF_NAME}" --generate-notes --verify-tag

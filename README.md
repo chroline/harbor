@@ -12,6 +12,7 @@
 </p>
 
 <p align="center">
+  <a href="#install">install</a> ·
   <a href="#get-started">get started</a> ·
   <a href="docs/getting-started.md">the guide</a> ·
   <a href="#reference">reference</a>
@@ -37,6 +38,20 @@ Harbor is built in that spirit: a place to work with coding agents, follow an id
 - **follow the thread.** move between the main conversation and its workers, review changes, and keep a terminal beside the work. pull a tab into its own window when you want more room.
 - **come back to it.** conversations and archives stay on your machine. reconnect a session or restore an archived worktree when you need it again.
 
+## install
+
+Harbor runs on Apple silicon Macs with macOS 12 or later. Once a release is published, download the DMG from [GitHub Releases](https://github.com/chroline/harbor/releases/latest), open it, and drag Harbor into Applications. Open Harbor from Applications, then install and authenticate your preferred agent separately.
+
+To build from source instead, install Node 22+, Rust, and the Xcode command-line tools, then run from the project folder:
+
+```sh
+npm ci
+npm run desktop:build
+open src-tauri/target/release/bundle/macos/Harbor.app
+```
+
+The local build uses a development signing certificate. See [development](docs/development.md) for signing details and folder permissions.
+
 ## get started
 
 for local development on Apple silicon with macOS 12 or later, install Node 22+, Rust, and the Xcode command-line tools, then run:
@@ -48,7 +63,7 @@ npm run desktop
 
 install and authenticate your preferred agent separately, then configure its executable in settings. choose a folder, or leave the workspace empty, and start a conversation.
 
-Harbor is a development release. the [setup guide](docs/getting-started.md) covers your first conversation; [provider compatibility](docs/providers.md) records tested versions and capabilities.
+the [setup guide](docs/getting-started.md) covers your first conversation; [provider compatibility](docs/providers.md) records tested versions and capabilities.
 
 ## reference
 

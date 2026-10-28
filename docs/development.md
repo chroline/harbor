@@ -21,17 +21,25 @@ when moving from the old ad-hoc build, macOS may ask once more for each protecte
 
 `npm run desktop:verify-signing` checks the actual app signature, signs a modified temporary copy, and verifies that the changed copy satisfies the original app identity. `npm run desktop` runs Tauri's unbundled hot-reload executable and does not use this packaged identity; use the built `.app` when checking folder permission persistence. release signing can override the local certificate with `APPLE_SIGNING_IDENTITY`.
 
-## background design lab
+## macOS releases
 
-With `npm run dev` running, open [Background studies](http://127.0.0.1:1420/labs/backgrounds.html) for six independent animated treatments: Light tide, Woven light, Liquid glass, Contour field, Dither bloom, and Chromatic echo. All studies share the selected city and lighting so they can be compared fairly. Dawn and Day use the light palette for the preview, composer, and lab controls; Sunset and Night use the dark palette. Open any study to preview it behind an editable sample composer, adjust intensity and speed, or add it to the browser-local shortlist. Pause and reduced-motion preferences stop animation; offscreen and hidden previews also pause.
+The `macOS release` GitHub Actions workflow builds an Apple silicon DMG, signs it with a Developer ID Application certificate, submits it to Apple for notarization, and verifies the app before creating a draft GitHub release. Configure these repository secrets first:
 
-Woven light is implemented in the new-task UI at **40% intensity** and **0.5× motion speed**, over aligned blurred artwork at **20% opacity**. The dots remain at full opacity, with a size range of 20–70% of full size at that intensity. The product and lab share the renderer and accepted defaults in `src/lib/woven-light.ts`; lab controls adjust previews only.
+- `APPLE_CERTIFICATE`: base64-encoded `.p12` export containing the Developer ID Application certificate and private key.
+- `APPLE_CERTIFICATE_PASSWORD`: password for that export.
+- `APPLE_SIGNING_IDENTITY`: full signing identity, beginning with `Developer ID Application:`.
+- `APPLE_ID`, `APPLE_PASSWORD`, and `APPLE_TEAM_ID`: Apple account email, app-specific password, and developer team ID for notarization.
+- `KEYCHAIN_PASSWORD`: a password for the temporary CI keychain.
+
+See [Tauri's macOS signing guide](https://v2.tauri.app/distribute/sign/macos/) for certificate export and notarization setup. Keep the certificate and credentials private. Set the version in `package.json` and `src-tauri/tauri.conf.json` to the same stable version, then push a matching tag such as `v0.1.0`. The workflow can also be manually dispatched against an existing version tag. Review the draft release and its DMG, then publish it for users. A release is not available until that publication step is complete.
+
+## background rendering
+
+Woven light is implemented in the new-task UI at **40% intensity** and **0.5× motion speed**, over aligned blurred artwork at **20% opacity**. The dots remain at full opacity, with a size range of 20–70% of full size at that intensity. The renderer and accepted defaults are in `src/lib/woven-light.ts`.
 
 While animating, the background paints on every display refresh, including 120 Hz. Artwork is sampled once per image/size change on a separate canvas; the GPU retains the 3200-pixel sampling grid and filters directly into a display-resolution canvas. There is no intermediate enlargement or per-frame layout measurement. Hidden, offscreen, inactive, and reduced-motion scenes still stop scheduling animation. A single pool has twice the original falloff radius and the same peak brightness. In the product, it follows the cursor until the cursor leaves the frame. Composer focus fades the pool out and transitions all dots to 20% over 450 ms, then stops scheduling frames until blur. Interaction state stays outside React in `src/lib/woven-light-motion.ts`; the GPU and Canvas fallback share the same size endpoints and focus blend.
 
 To measure the actual app, open `http://127.0.0.1:1420/?skyline-performance` in development and select **Measure animation (10 seconds)**. This opt-in probe counts canvas paints and separately reports RAF cadence; it is excluded from production builds. `/tests/skyline-performance.html?skyline=day` runs the same page with deterministic fixture IPC and lighting. `/tests/skyline-comparison.html` compares frozen frames with the previous renderer. On the local 120 Hz browser at 1280×720 and DPR 2, the actual page measured 120 fps (9.8 ms p95 frame interval), up from the previous fixture baseline of 21.6 fps. This is a browser measurement, not a native packaged WebKit measurement.
-
-The lab lives in `labs/backgrounds.html` and `src/design-lab/`. It uses bundled artwork, makes no provider calls, and does not change the app's saved settings. It is a development-only entry point, excluded from the production app bundle. A URL fragment such as `#dither` opens a specific study directly.
 
 ## visual feedback
 
@@ -72,7 +80,7 @@ use `HARBOR_SMOKE_ARGS='["--no-auto-update","agent","stdio"]'` for Grok Build. S
 
 ## verification limits
 
-this is a runnable development release, not a completed cross-provider certification. provider-specific child cancellation beyond shared transport tests, macOS notification permission delivery, and full close/quit/crash recovery through the packaged UI require separate live acceptance. See the current [three-provider verification record](subagent-verification.md) for tested versions and handoff results. the core paths exist; fixture tests are not a substitute for those live checks. Windows/Linux packaging, remote hosts, an app account, a full editor, Developer ID distribution signing, and notarization are not included. local macOS builds use the development certificate described above.
+provider-specific child cancellation beyond shared transport tests, macOS notification permission delivery, and full close/quit/crash recovery through the packaged UI require separate live acceptance. See the current [three-provider verification record](subagent-verification.md) for tested versions and handoff results. the core paths exist; fixture tests are not a substitute for those live checks. Windows/Linux packaging, remote hosts, an app account, and a full editor are not included. local macOS builds use the development certificate described above.
 
 ## provider contracts
 
