@@ -211,6 +211,13 @@ pub enum CommandRequest {
         session_id: String,
         path: String,
     },
+    ReadMessageImage {
+        #[ts(rename = "sessionId")]
+        session_id: String,
+        #[ts(rename = "childId")]
+        child_id: Option<String>,
+        source: String,
+    },
     OpenInEditor {
         #[ts(rename = "sessionId")]
         session_id: String,

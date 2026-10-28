@@ -23,6 +23,7 @@ import { Terminal, Copy, Check, LoaderCircle, ChevronDown } from "@/lib/icons";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { MermaidBlock } from "./MermaidBlock";
+import { MessageImage } from "./MessageImage";
 import type { RootContent } from "hast";
 import { Button } from "./ui/button";
 import { Tooltip } from "./ui/tooltip";
@@ -221,6 +222,7 @@ export function ChatLink({ href, children }: { href?: string; children: ReactNod
 }
 
 const markdownComponents: Components = {
+  img: ({ src, alt, title }) => <MessageImage src={typeof src === "string" ? src : undefined} alt={alt} title={title} />,
   a: ({ children, href }) => {
     const streaming = useContext(MarkdownStreaming);
     return <ChatLink href={href}>{streamLeaves(children, streaming)}</ChatLink>;

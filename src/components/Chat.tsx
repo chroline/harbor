@@ -34,6 +34,7 @@ import { Marker, MarkerContent } from "./ui/marker";
 import { FileChange, FileRead } from "./FileDiff";
 import { chatMinimapItems } from "./chat-minimap";
 import { ChatTranscript } from "./ChatTranscript";
+import { MessageImage, MessageImageContext } from "./MessageImage";
 import { useSessionMode } from "./ModePicker";
 import { useTerminalTabs } from "../hooks/use-terminal-tabs";
 import { useTaskTabs, orderTaskTabs } from "../hooks/use-task-tabs";
@@ -687,6 +688,7 @@ export function Chat({
       connected,
     ],
   );
+  const imageContext = useMemo(() => ({ sessionId: session.id, childId: child }), [session.id, child]);
   return (
     <Tabs.Root
       asChild
@@ -897,7 +899,9 @@ export function Chat({
                       </Marker>
                     </TranscriptRow>
                   )}
-                  {renderedTranscript}
+                  <MessageImageContext.Provider value={imageContext}>
+                    {renderedTranscript}
+                  </MessageImageContext.Provider>
                 </ChatScroller>
                 <div className="chat-composer-wrap" ref={composer}>
                   {session.error && (
@@ -1212,11 +1216,10 @@ export function ToolCard({
             const imageSource = toolImageSource(c);
             if (imageSource) {
               return (
-                <img
+                <MessageImage
                   key={i}
                   src={imageSource}
                   alt={tool.title}
-                  className="block h-auto max-h-[32rem] max-w-full rounded-lg object-contain object-left"
                 />
               );
             }

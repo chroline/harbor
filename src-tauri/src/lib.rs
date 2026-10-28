@@ -13,6 +13,7 @@ mod live_question_tests;
 #[cfg(test)]
 mod provider_contract_tests;
 mod model_config;
+mod message_images;
 pub mod adapters;
 mod operations;
 mod prompt_queue;
@@ -1568,6 +1569,28 @@ async fn get_review(
         .map_err(|e| e.to_string())?
 }
 #[tauri::command]
+async fn read_message_image(
+    state: tauri::State<'_, Arc<AppState>>,
+    session_id: String,
+    child_id: Option<String>,
+    source: String,
+) -> Result<String, String> {
+    let session: SessionRecord = state.db.get("session", &session_id)?;
+    if let Some(child) = &child_id {
+        let _: SubagentRecord = state.db.get("subagent", &worker_key(&session_id, child))?;
+    }
+    let native_id = child_id.as_deref().or(session.native_session_id.as_deref()).or(session.acp_session_id.as_deref());
+    let images = if session.provider_id == "grok" {
+        std::env::var_os("HOME").and_then(|home| native_id.and_then(|id|
+            adapters::grok_build::plan::plan_path(Path::new(&home), Path::new(&session.cwd), id)
+                .and_then(|plan| plan.parent().map(|p| p.join("images")))))
+    } else { None };
+    tokio::task::spawn_blocking(move || {
+        let path = message_images::resolve(Path::new(&session.cwd), images.as_deref(), &source)?;
+        message_images::read(&path)
+    }).await.map_err(|e| e.to_string())?
+}
+#[tauri::command]
 async fn read_file(
     state: tauri::State<'_, Arc<AppState>>,
     session_id: String,
@@ -2016,6 +2039,7 @@ pub fn run() {
             list_worktrees,
             get_review,
             read_file,
+            read_message_image,
             open_in_editor,
             enter_terminal,
             tab_windows::list_detached_tabs,
