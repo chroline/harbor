@@ -64,7 +64,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          app='src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Harbor.app'
+          dmgs=(src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg)
+          [[ ${#dmgs[@]} -eq 1 && -f "${dmgs[0]}" ]] || { echo 'Expected one DMG'; exit 1; }
+          mountpoint=$(mktemp -d)
+          hdiutil attach "${dmgs[0]}" -readonly -nobrowse -mountpoint "$mountpoint"
+          trap 'hdiutil detach "$mountpoint"; rmdir "$mountpoint"' EXIT
+          app="$mountpoint/Harbor.app"
           codesign --verify --deep --strict --verbose=2 "$app"
           xcrun stapler validate "$app"
           spctl --assess --type execute --verbose=2 "$app"
