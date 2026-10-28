@@ -4,6 +4,8 @@
 
 Harbor supports exactly **Claude Code**, **OpenAI Codex**, and **Grok Build**. Persisted IDs are `claude`, `codex`, and `grok`. The Rust registry generates the browser defaults and supported command ID type. Executable, arguments, and native CLI paths remain configurable; adding arbitrary providers is not supported.
 
+Grok sends terminal commands as shell text when its ACP request has no arguments. Harbor runs those requests through the system shell; requests with explicit arguments run the executable directly.
+
 Implementation policies live behind required, typed [provider adapters](adapters.md), with one central registration table and explicit unsupported/unverified capabilities. That document describes how contributors can implement and register another integration.
 
 ## Tested installations

@@ -5,6 +5,19 @@ pub(crate) mod plan;
 pub(crate) mod questions;
 mod workers;
 pub struct GrokBuild;
+
+// Grok sends shell command text in `command` with no ACP args.
+pub(crate) fn terminal_command(command: &str) -> tokio::process::Command {
+    #[cfg(unix)]
+    let mut process = tokio::process::Command::new("/bin/sh");
+    #[cfg(unix)]
+    process.arg("-c").arg(command);
+    #[cfg(windows)]
+    let mut process = tokio::process::Command::new("cmd.exe");
+    #[cfg(windows)]
+    process.arg("/C").arg(command);
+    process
+}
 impl Adapter for GrokBuild {
     fn descriptor(&self) -> AdapterDescriptor {
         AdapterDescriptor {

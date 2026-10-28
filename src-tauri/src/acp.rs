@@ -528,7 +528,12 @@ impl Rpc {
                 } else {
                     self.cwd.clone()
                 };
-                let mut cmd = Command::new(command);
+                let has_args = p["args"].as_array().is_some_and(|args| !args.is_empty());
+                let mut cmd = if self.provider_id == SupportedProviderId::Grok && !has_args {
+                    adapters::grok_build::terminal_command(command)
+                } else {
+                    Command::new(command)
+                };
                 if let Some(args) = p["args"].as_array() {
                     for a in args {
                         cmd.arg(a.as_str().ok_or("Invalid argument")?);
@@ -708,11 +713,19 @@ mod tests {
         Arc<StdMutex<Vec<(String, Value)>>>,
         String,
     ) {
+        fixture_for("codex").await
+    }
+    async fn fixture_for(provider_id: &str) -> (
+        Arc<Rpc>,
+        tempfile::TempDir,
+        Arc<StdMutex<Vec<(String, Value)>>>,
+        String,
+    ) {
         let temp = tempfile::tempdir().unwrap();
         let events = Arc::new(StdMutex::new(Vec::new()));
         let copy = events.clone();
         let provider = ProviderDefinition {
-            id: "codex".into(),
+            id: provider_id.into(),
             name: "Fixture".into(),
             command: "node".into(),
             args: vec![format!(
@@ -749,6 +762,43 @@ mod tests {
             .unwrap();
         let id = session["sessionId"].as_str().unwrap().to_string();
         (rpc, temp, events, id)
+    }
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn grok_terminal_command_runs_as_shell_text_and_preserves_explicit_args() {
+        let (rpc, _temp, _events, id) = fixture_for("grok").await;
+        for (command, args, expected) in [
+            ("/bin/bash -lc 'printf grok-terminal'", json!([]), "grok-terminal"),
+            ("/usr/bin/printf", json!(["%s", "argument with spaces"]), "argument with spaces"),
+        ] {
+            let terminal = rpc.client_request("terminal/create", json!({
+                "sessionId":id,"command":command,"args":args
+            })).await.unwrap();
+            let params = json!({"sessionId":id,"terminalId":terminal["terminalId"]});
+            assert_eq!(rpc.client_request("terminal/wait_for_exit", params.clone()).await.unwrap()["exitCode"], 0);
+            let output = rpc.client_request("terminal/output", params.clone()).await.unwrap();
+            assert_eq!(output["output"], expected);
+            rpc.client_request("terminal/release", params).await.unwrap();
+        }
+        rpc.stop().await;
+    }
+    #[cfg(unix)]
+    #[tokio::test]
+    #[ignore = "requires Grok authentication and model access"]
+    async fn live_grok_terminal_command() {
+        let temp = tempfile::tempdir().unwrap();
+        let events = Arc::new(StdMutex::new(Vec::new()));
+        let copy = events.clone();
+        let provider = crate::types::providers().into_iter().find(|p| p.id == "grok").unwrap();
+        let rpc = Rpc::start(&provider, temp.path().to_str().unwrap(), Arc::new(move |kind, value| {
+            copy.lock().unwrap().push((kind.to_string(), value));
+        })).await.unwrap();
+        rpc.request("initialize", json!({"protocolVersion":1,"clientCapabilities":adapters::client_capabilities(SupportedProviderId::Grok)}), Some(Duration::from_secs(30))).await.unwrap();
+        let session = rpc.request("session/new", json!({"cwd":temp.path(),"mcpServers":[]}), Some(Duration::from_secs(30))).await.unwrap();
+        let id = session["sessionId"].as_str().unwrap();
+        rpc.request("session/prompt", json!({"sessionId":id,"prompt":[{"type":"text","text":"Run the terminal command printf harbor_grok_terminal_ok, then report its output."}]}), Some(Duration::from_secs(90))).await.unwrap();
+        assert!(events.lock().unwrap().iter().any(|(kind, value)| kind == "tool_terminal" && value["output"].as_str().is_some_and(|output| output.contains("harbor_grok_terminal_ok"))));
+        rpc.stop().await;
     }
     async fn prompt(rpc: &Arc<Rpc>, id: &str, text: &str) -> Reply {
         rpc.request(
