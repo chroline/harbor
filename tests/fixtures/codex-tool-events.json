@@ -1,0 +1,523 @@
+[
+  {
+    "sequence": 1,
+    "sessionId": "codex-fixture",
+    "kind": "session/update",
+    "timestamp": 1500,
+    "payload": {
+      "sessionId": "root",
+      "update": {
+        "kind": "read",
+        "locations": [
+          {
+            "path": "/home/example/.agents/skills/github-cli/SKILL.md"
+          }
+        ],
+        "name": "exec_command",
+        "sessionUpdate": "tool_call",
+        "status": "in_progress",
+        "title": "Read file '/home/example/.agents/skills/github-cli/SKILL.md'",
+        "toolCallId": "codex-0"
+      }
+    }
+  },
+  {
+    "sequence": 2,
+    "sessionId": "codex-fixture",
+    "kind": "session/update",
+    "timestamp": 2000,
+    "payload": {
+      "sessionId": "root",
+      "update": {
+        "sessionUpdate": "tool_call_update",
+        "status": "completed",
+        "toolCallId": "codex-0"
+      }
+    }
+  },
+  {
+    "sequence": 3,
+    "sessionId": "codex-fixture",
+    "kind": "session/update",
+    "timestamp": 2500,
+    "payload": {
+      "sessionId": "root",
+      "update": {
+        "_meta": {
+          "terminal_info": {
+            "cwd": "/workspace/project",
+            "terminal_id": "codex-1"
+          }
+        },
+        "content": [
+          {
+            "terminalId": "codex-1",
+            "type": "terminal"
+          }
+        ],
+        "kind": "execute",
+        "name": "exec_command",
+        "rawInput": {
+          "command": "gh auth status",
+          "cwd": "/workspace/project"
+        },
+        "sessionUpdate": "tool_call",
+        "status": "in_progress",
+        "title": "gh auth status",
+        "toolCallId": "codex-1"
+      }
+    }
+  },
+  {
+    "sequence": 4,
+    "sessionId": "codex-fixture",
+    "kind": "session/update",
+    "timestamp": 3000,
+    "payload": {
+      "sessionId": "root",
+      "update": {
+        "_meta": {
+          "terminal_output": {
+            "data": "github.com\n  X Failed to log in to github.com account example (default)\n  - Active account: true\n  - The token in default is invalid.\n  - To re-authenticate, run: gh auth login -h github.com\n  - To forget about this account, run: gh auth logout -h github.com -u example\n",
+            "terminal_id": "codex-1"
+          }
+        },
+        "sessionUpdate": "tool_call_update",
+        "toolCallId": "codex-1"
+      }
+    }
+  },
+  {
+    "sequence": 5,
+    "sessionId": "codex-fixture",
+    "kind": "session/update",
+    "timestamp": 3500,
+    "payload": {
+      "sessionId": "root",
+      "update": {
+        "_meta": {
+          "terminal_exit": {
+            "exit_code": 1,
+            "signal": null,
+            "terminal_id": "codex-1"
+          }
+        },
+        "sessionUpdate": "tool_call_update",
+        "status": "failed",
+        "toolCallId": "codex-1"
+      }
+    }
+  },
+  {
+    "sequence": 6,
+    "sessionId": "codex-fixture",
+    "kind": "session/update",
+    "timestamp": 4000,
+    "payload": {
+      "sessionId": "root",
+      "update": {
+        "kind": "search",
+        "rawInput": {
+          "action": null,
+          "query": ""
+        },
+        "sessionUpdate": "tool_call",
+        "status": "in_progress",
+        "title": "Web search",
+        "toolCallId": "codex-2"
+      }
+    }
+  },
+  {
+    "sequence": 7,
+    "sessionId": "codex-fixture",
+    "kind": "session/update",
+    "timestamp": 4500,
+    "payload": {
+      "sessionId": "root",
+      "update": {
+        "rawInput": {
+          "action": {
+            "queries": [
+              "site:developers.cloudflare.com workers ci github actions wrangler deploy api token d1 migrations permissions",
+              "site:docs.github.com actions concurrency queue cancel in progress pending runs"
+            ],
+            "query": null,
+            "type": "search"
+          },
+          "query": "site:developers.cloudflare.com workers ci github actions wrangler deploy api token d1 migrations permissions ..."
+        },
+        "sessionUpdate": "tool_call_update",
+        "status": "completed",
+        "title": "Web search: site:developers.cloudflare.com workers ci github actions wrangler deploy api token d1 migrations permissions, site:docs.github.com actions concurrency queue cancel in progress pending runs",
+        "toolCallId": "codex-2"
+      }
+    }
+  },
+  {
+    "sequence": 8,
+    "sessionId": "codex-fixture",
+    "kind": "session/update",
+    "timestamp": 5000,
+    "payload": {
+      "sessionId": "root",
+      "update": {
+        "kind": "search",
+        "rawInput": {
+          "action": null,
+          "query": ""
+        },
+        "sessionUpdate": "tool_call",
+        "status": "in_progress",
+        "title": "Web search",
+        "toolCallId": "codex-3"
+      }
+    }
+  },
+  {
+    "sequence": 9,
+    "sessionId": "codex-fixture",
+    "kind": "session/update",
+    "timestamp": 5500,
+    "payload": {
+      "sessionId": "root",
+      "update": {
+        "rawInput": {
+          "action": {
+            "type": "openPage",
+            "url": "https://developers.cloudflare.com/workers/ci-cd/external-cicd/github-actions/"
+          },
+          "query": "https://developers.cloudflare.com/workers/ci-cd/external-cicd/github-actions/"
+        },
+        "sessionUpdate": "tool_call_update",
+        "status": "completed",
+        "title": "Open page: https://developers.cloudflare.com/workers/ci-cd/external-cicd/github-actions/",
+        "toolCallId": "codex-3"
+      }
+    }
+  },
+  {
+    "sequence": 10,
+    "sessionId": "codex-fixture",
+    "kind": "session/update",
+    "timestamp": 6000,
+    "payload": {
+      "sessionId": "root",
+      "update": {
+        "content": [
+          {
+            "content": {
+              "text": "Action: exec /bin/zsh -lc 'gh auth status'",
+              "type": "text"
+            },
+            "type": "content"
+          },
+          {
+            "content": {
+              "text": "Status: In progress",
+              "type": "text"
+            },
+            "type": "content"
+          }
+        ],
+        "kind": "think",
+        "rawInput": {
+          "action": {
+            "command": "/bin/zsh -lc 'gh auth status'",
+            "cwd": "/workspace/project",
+            "source": "unifiedExec",
+            "type": "command"
+          }
+        },
+        "sessionUpdate": "tool_call",
+        "status": "in_progress",
+        "title": "Guardian Review",
+        "toolCallId": "codex-4"
+      }
+    }
+  },
+  {
+    "sequence": 11,
+    "sessionId": "codex-fixture",
+    "kind": "session/update",
+    "timestamp": 6500,
+    "payload": {
+      "sessionId": "root",
+      "update": {
+        "content": [
+          {
+            "content": {
+              "text": "Action: exec /bin/zsh -lc 'gh auth status'",
+              "type": "text"
+            },
+            "type": "content"
+          },
+          {
+            "content": {
+              "text": "Status: Approved\nRisk: low\nAuthorization: high\nRationale: Read-only GitHub authentication status check needed to create the explicitly requested private repository; it does not modify data or expose credentials.",
+              "type": "text"
+            },
+            "type": "content"
+          }
+        ],
+        "sessionUpdate": "tool_call_update",
+        "status": "completed",
+        "toolCallId": "codex-4"
+      }
+    }
+  },
+  {
+    "sequence": 12,
+    "sessionId": "codex-fixture",
+    "kind": "session/update",
+    "timestamp": 7000,
+    "payload": {
+      "sessionId": "root",
+      "update": {
+        "_meta": {
+          "terminal_info": {
+            "cwd": "/workspace/project",
+            "terminal_id": "codex-5"
+          }
+        },
+        "content": [
+          {
+            "terminalId": "codex-5",
+            "type": "terminal"
+          }
+        ],
+        "kind": "execute",
+        "rawInput": {
+          "command": "/bin/zsh -lc 'gh repo view example/project --json name,visibility,url'",
+          "cwd": "/workspace/project"
+        },
+        "sessionUpdate": "tool_call",
+        "status": "in_progress",
+        "title": "gh repo view example/project --json name,visibility,url",
+        "toolCallId": "codex-5"
+      }
+    }
+  },
+  {
+    "sequence": 13,
+    "sessionId": "codex-fixture",
+    "kind": "session/update",
+    "timestamp": 7500,
+    "payload": {
+      "sessionId": "root",
+      "update": {
+        "_meta": {
+          "terminal_output": {
+            "data": "GraphQL: Could not resolve to a Repository with the name 'example/project'. (repository)\n",
+            "terminal_id": "codex-5"
+          }
+        },
+        "sessionUpdate": "tool_call_update",
+        "toolCallId": "codex-5"
+      }
+    }
+  },
+  {
+    "sequence": 14,
+    "sessionId": "codex-fixture",
+    "kind": "session/update",
+    "timestamp": 8000,
+    "payload": {
+      "sessionId": "root",
+      "update": {
+        "_meta": {
+          "terminal_exit": {
+            "exit_code": 1,
+            "signal": null,
+            "terminal_id": "codex-5"
+          }
+        },
+        "name": "exec_command",
+        "sessionUpdate": "tool_call_update",
+        "status": "failed",
+        "toolCallId": "codex-5"
+      }
+    }
+  },
+  {
+    "sequence": 15,
+    "sessionId": "codex-fixture",
+    "kind": "session/update",
+    "timestamp": 8500,
+    "payload": {
+      "sessionId": "root",
+      "update": {
+        "content": [
+          {
+            "_meta": {
+              "kind": "add"
+            },
+            "newText": "name: Deploy production\n\non:\n  push:\n    branches: [main]\n\npermissions:\n  contents: read\n\nconcurrency:\n  group: production-deploy\n  queue: max\n\njobs:\n  deploy:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: oven-sh/setup-bun@v2\n        with:\n          bun-version: 1.4.4\n      - run: bun install --frozen-lockfile\n      - run: bun run test\n      - run: bun run typecheck\n      - run: bun run lint\n      - run: bun run build:web\n      - name: Check whether this commit is still at the tip of main\n        id: current\n        env:\n          GH_TOKEN: ${{ github.token }}\n          COMMIT_SHA: ${{ github.sha }}\n        run: |\n          main_sha=\"$(gh api \"repos/${GITHUB_REPOSITORY}/commits/main\" --jq .sha)\"\n          if [ \"$main_sha\" = \"$COMMIT_SHA\" ]; then\n            echo \"deploy=true\" >> \"$GITHUB_OUTPUT\"\n          else\n            echo \"deploy=false\" >> \"$GITHUB_OUTPUT\"\n            echo \"A newer commit is on main; skipping this deployment.\"\n          fi\n      - name: Apply production migrations\n        if: steps.current.outputs.deploy == 'true'\n        env:\n          OMNIPLAY_CLOUDFLARE_API_TOKEN: ${{ secrets.OMNIPLAY_CLOUDFLARE_API_TOKEN }}\n        run: bun run db:migrate:remote\n      - name: Deploy Worker and web assets\n        if: steps.current.outputs.deploy == 'true'\n        env:\n          OMNIPLAY_CLOUDFLARE_API_TOKEN: ${{ secrets.OMNIPLAY_CLOUDFLARE_API_TOKEN }}\n        run: bun run deploy:api\n",
+            "oldText": null,
+            "path": "/workspace/project/.github/workflows/deploy.yml",
+            "type": "diff"
+          },
+          {
+            "_meta": {
+              "kind": "update"
+            },
+            "newText": "\nGitHub Actions deploys pushes to `main` after tests, typecheck, lint, and the web build pass. It applies pending production D1 migrations before deploying the Worker and assets. Production runs are serialized; a run skips deployment if its commit is no longer the tip of `main`. Configure the repository secret `OMNIPLAY_CLOUDFLARE_API_TOKEN` with a Cloudflare API token scoped to the OmniPlay account and the permissions needed to deploy the Worker and apply D1 migrations. See [Cloudflare's GitHub Actions guide](https://developers.cloudflare.com/workers/ci-cd/external-cicd/github-actions/) and [Workers permissions](https://developers.cloudflare.com/workers/authorization/). Check the Actions run after pushing; a failed check or migration blocks deployment. D1 migrations change production data independently of Worker version rollbacks, so review migrations for compatibility and use the recovery procedure below when needed.\n\n```sh\n",
+            "oldText": "\n```sh\n",
+            "path": "/workspace/project/BACKEND.md",
+            "type": "diff"
+          }
+        ],
+        "kind": "edit",
+        "sessionUpdate": "tool_call",
+        "status": "in_progress",
+        "title": "Editing files",
+        "toolCallId": "codex-6"
+      }
+    }
+  },
+  {
+    "sequence": 16,
+    "sessionId": "codex-fixture",
+    "kind": "session/update",
+    "timestamp": 9000,
+    "payload": {
+      "sessionId": "root",
+      "update": {
+        "sessionUpdate": "tool_call_update",
+        "status": "completed",
+        "toolCallId": "codex-6"
+      }
+    }
+  },
+  {
+    "sequence": 17,
+    "sessionId": "codex-fixture",
+    "kind": "session/update",
+    "timestamp": 9500,
+    "payload": {
+      "sessionId": "root",
+      "update": {
+        "_meta": {
+          "terminal_info": {
+            "cwd": "/workspace/project",
+            "terminal_id": "codex-7"
+          }
+        },
+        "content": [
+          {
+            "terminalId": "codex-7",
+            "type": "terminal"
+          }
+        ],
+        "kind": "execute",
+        "rawInput": {
+          "command": "/bin/zsh -lc 'curl -fsS https://omniplay.stream/health'",
+          "cwd": "/workspace/project"
+        },
+        "sessionUpdate": "tool_call",
+        "status": "in_progress",
+        "title": "curl -fsS https://omniplay.stream/health",
+        "toolCallId": "codex-7"
+      }
+    }
+  },
+  {
+    "sequence": 18,
+    "sessionId": "codex-fixture",
+    "kind": "session/update",
+    "timestamp": 10000,
+    "payload": {
+      "sessionId": "root",
+      "update": {
+        "_meta": {
+          "terminal_output": {
+            "data": "{\"ok\":true}",
+            "terminal_id": "codex-7"
+          }
+        },
+        "sessionUpdate": "tool_call_update",
+        "toolCallId": "codex-7"
+      }
+    }
+  },
+  {
+    "sequence": 19,
+    "sessionId": "codex-fixture",
+    "kind": "session/update",
+    "timestamp": 10500,
+    "payload": {
+      "sessionId": "root",
+      "update": {
+        "_meta": {
+          "terminal_exit": {
+            "exit_code": 0,
+            "signal": null,
+            "terminal_id": "codex-7"
+          }
+        },
+        "name": "exec_command",
+        "sessionUpdate": "tool_call_update",
+        "status": "completed",
+        "toolCallId": "codex-7"
+      }
+    }
+  },
+  {
+    "sequence": 20,
+    "sessionId": "codex-fixture",
+    "kind": "session/update",
+    "timestamp": 11000,
+    "payload": {
+      "sessionId": "root",
+      "update": {
+        "_meta": {
+          "terminal_info": {
+            "cwd": "/workspace/project",
+            "terminal_id": "codex-8"
+          }
+        },
+        "content": [
+          {
+            "terminalId": "codex-8",
+            "type": "terminal"
+          }
+        ],
+        "kind": "execute",
+        "name": "exec_command",
+        "rawInput": {
+          "command": "git status --short --branch",
+          "cwd": "/workspace/project"
+        },
+        "sessionUpdate": "tool_call",
+        "status": "in_progress",
+        "title": "git status --short --branch",
+        "toolCallId": "codex-8"
+      }
+    }
+  },
+  {
+    "sequence": 21,
+    "sessionId": "codex-fixture",
+    "kind": "session/update",
+    "timestamp": 11500,
+    "payload": {
+      "sessionId": "root",
+      "update": {
+        "_meta": {
+          "terminal_exit": {
+            "exit_code": 0,
+            "signal": null,
+            "terminal_id": "codex-8"
+          },
+          "terminal_output": {
+            "data": "## main...origin/main\n",
+            "terminal_id": "codex-8"
+          }
+        },
+        "sessionUpdate": "tool_call_update",
+        "status": "completed",
+        "toolCallId": "codex-8"
+      }
+    }
+  }
+]

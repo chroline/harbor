@@ -1,0 +1,30 @@
+html,
+body {
+  height: auto;
+  overflow: auto;
+  background: var(--background);
+}
+.fixture-main {
+  max-width: 880px;
+  margin: 40px auto;
+  padding: 0 24px 64px;
+}
+.fixture-main header {
+  margin-bottom: 30px;
+}
+.fixture-main header > p {
+  color: var(--muted-foreground);
+  font-size: 13px;
+}
+.fixture-main h1 {
+  font-size: 30px;
+  margin: 10px 0;
+}
+.fixture-main nav {
+  display: flex;
+  gap: 20px;
+  margin-top: 16px;
+}
+.fixture-main nav a {
+  text-decoration: underline;
+}
