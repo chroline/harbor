@@ -44,7 +44,8 @@ it.each(
   ({ city, variant, period }) => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 9, 20, 12));
-    document.documentElement.classList.add("light");
+    const theme = period === "dawn" || period === "day" ? "light" : "dark";
+    document.documentElement.classList.add(theme);
     const { container } = render(
       <SkylineScene frame city={city} timeOfDay={period} variant={variant}>
         <SkylineScene variant={variant}>
@@ -55,7 +56,6 @@ it.each(
         </SkylineScene>
       </SkylineScene>,
     );
-    const theme = period === "dawn" || period === "day" ? "light" : "dark";
     const check = () => {
       expect(container.querySelector("img")!.getAttribute("src")).toContain(
         `/${city}/${period}.webp`,
@@ -68,7 +68,7 @@ it.each(
           .querySelector(".composer-picker-menu")!
           .classList.contains(theme),
       ).toBe(true);
-      expect(document.documentElement.classList.contains("light")).toBe(true);
+      expect(document.documentElement.classList.contains(theme)).toBe(true);
     };
     check();
     act(() => vi.advanceTimersByTime(12 * 60 * 60 * 1000));
@@ -141,8 +141,8 @@ it.each(
     })),
   ),
 )(
-  "themes the $variant scene at $hour:00 and its portaled menus $theme independently of the $appTheme app",
-  ({ variant, hour, theme, appTheme }) => {
+  "themes the $variant scene at $hour:00 and its portaled menus for the $appTheme app",
+  ({ variant, hour, appTheme }) => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 9, 20, hour));
     document.documentElement.classList.add(appTheme);
@@ -155,15 +155,16 @@ it.each(
       </SkylineScene>,
     );
     expect(
-      container.querySelector(".skyline-scene")!.classList.contains(theme),
+      container.querySelector(".skyline-scene")!.classList.contains(appTheme),
     ).toBe(true);
     expect(
       document
         .querySelector(".composer-picker-menu")!
-        .classList.contains(theme),
+        .classList.contains(appTheme),
     ).toBe(true);
     expect(document.documentElement.classList.contains(appTheme)).toBe(true);
-    expect(document.documentElement.classList.contains(theme)).toBe(false);
+    const period = container.querySelector("img")!.dataset.skylinePeriod;
+    expect(appTheme === "light" ? ["dawn", "day"] : ["sunset", "night"]).toContain(period);
   },
 );
 

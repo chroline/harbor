@@ -230,12 +230,12 @@ it.each([
   ["Night", "night"],
   ["Automatic", "automatic"],
 ])("saves %s time of day and restores it when settings reopens", async (label, value) => {
-  mock.settings = { ...mock.settings, theme: "light", skylineCity: "nyc", skylineTimeOfDay: value === "automatic" ? "night" : "automatic" };
+  mock.settings = { ...mock.settings, theme: value === "sunset" || value === "night" ? "dark" : "light", skylineCity: "nyc", skylineTimeOfDay: value === "automatic" ? "day" : "automatic" };
   const user = userEvent.setup();
   const { unmount } = render(<Settings />);
   await user.click(screen.getByRole("combobox", { name: "Time of day" }));
   expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual([
-    "Automatic", "Dawn", "Day", "Sunset", "Night",
+    ...(mock.settings.theme === "light" ? ["Automatic", "Dawn", "Day"] : ["Automatic", "Sunset", "Night"]),
   ]);
   await user.click(screen.getByRole("option", { name: label }));
   await waitFor(() => expect(mock.call).toHaveBeenCalledWith("save_settings", {

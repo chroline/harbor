@@ -16,11 +16,14 @@ import { call, desktop, json } from "../lib/api";
 import { record, str } from "../lib/protocol";
 import { skylineCities, skylineCity } from "../lib/skyline-city";
 import { skylineTimesOfDay, skylineTimeOfDay } from "../lib/skyline-period";
+import { timeForTheme, useSkylineTheme } from "../lib/skyline-theme";
 import type { EditorChoice } from "../lib/bindings/EditorChoice";
 
 export function Settings() {
   const { data, refresh, setError } = useStore();
   const settings = record(data.settings);
+  const resolvedTheme = useSkylineTheme();
+  const theme = settings.theme === "light" || settings.theme === "dark" ? settings.theme : resolvedTheme;
   const editor = str(settings.editor);
   const [editors, setEditors] = useState<EditorChoice[]>([]);
   const [loadingEditors, setLoadingEditors] = useState(desktop);
@@ -163,8 +166,8 @@ export function Settings() {
           <Picker
             label="Time of day"
             className="editor-setting"
-            value={skylineTimeOfDay(settings.skylineTimeOfDay)}
-            items={skylineTimesOfDay}
+            value={timeForTheme(skylineTimeOfDay(settings.skylineTimeOfDay), theme)}
+            items={skylineTimesOfDay.filter(({ value }) => value === "automatic" || timeForTheme(value, theme) === value)}
             disabled={saving}
             onValueChange={(value) => {
               if (value !== skylineTimeOfDay(settings.skylineTimeOfDay))

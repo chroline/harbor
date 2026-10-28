@@ -14,6 +14,7 @@ import {
   type SkylinePeriod,
   type SkylineTimeOfDay,
 } from "@/lib/skyline-period";
+import { periodForTheme, useSkylineTheme } from "@/lib/skyline-theme";
 import type { SkylineCity } from "@/lib/skyline-city";
 import { ComposerThemeContext } from "@/lib/composer-theme";
 import { SkylinePixels } from "./SkylinePixels";
@@ -70,8 +71,10 @@ export const SkylineScene = forwardRef<HTMLDivElement, SceneProps>(
   ) {
     const [clockPeriod, setClockPeriod] = useState(() => skylinePeriod());
     const inheritedPeriod = useContext(SkylinePeriodContext);
-    const period =
-      inheritedPeriod ?? (timeOfDay === "automatic" ? clockPeriod : timeOfDay);
+    const appTheme = useSkylineTheme();
+    const period = inheritedPeriod ?? periodForTheme(
+      timeOfDay === "automatic" ? clockPeriod : timeOfDay, appTheme,
+    );
     const scene = useRef<HTMLDivElement | null>(null);
     const sharedBackground = useContext(SkylineFrameContext);
 
