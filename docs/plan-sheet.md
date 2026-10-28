@@ -32,7 +32,7 @@ Implement plan and Keep planning retain the existing provider option IDs. Additi
 
 ## Verification
 
-`tests/plan-review-browser.mjs` exercises realistic provider payload fixtures in the browser. The fixtures do not run live providers or modify project files. Evidence and final check totals are recorded in `UI-REVIEW.md`. The prior live-provider Plan mode verification remains separate in `docs/providers.md`; this change only replaces review presentation.
+`tests/plan-review-browser.mjs` exercises realistic provider payload fixtures in the browser. The fixtures do not run live providers or modify project files. The prior live-provider Plan mode verification remains separate in `docs/providers.md`; this change only replaces review presentation.
 
 ## Plan card runtime reconstruction
 
