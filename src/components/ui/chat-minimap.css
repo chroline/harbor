@@ -81,12 +81,12 @@
 .chat-minimap-preview {
   z-index: 60;
   width: min(18rem, calc(100vw - 5rem));
-  padding: 0.75rem 0.875rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--popover);
+  padding: 0.75rem;
+  border: 0;
+  border-radius: var(--radius-xl);
+  background: var(--panel);
   color: var(--foreground);
-  box-shadow: 0 4px 20px #00000018;
+  box-shadow: var(--shadow-3);
   overflow-wrap: anywhere;
 }
 .chat-minimap-preview p {

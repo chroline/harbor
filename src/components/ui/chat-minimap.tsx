@@ -67,8 +67,8 @@ export function ChatMinimap({
         return (
           <HoverCard.Root
             key={item.id}
-            openDelay={100}
-            closeDelay={100}
+            openDelay={0}
+            closeDelay={0}
             open={previewId === item.id}
             onOpenChange={(open) =>
               setPreviewId((previous) =>
