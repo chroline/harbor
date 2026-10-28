@@ -3379,9 +3379,7 @@ html.transitioning *::after {
   transition: --skyline-blur 350ms ease, --skyline-image-opacity 350ms ease;
 }
 [data-skyline-background="true"][data-skyline-variant="chat"] {
-  --skyline-blur: 3px;
-  --skyline-saturation: 0.5;
-  --skyline-image-opacity: calc(var(--skyline-opacity) * 0.1);
+  --skyline-image-opacity: 0;
 }
 .skyline-frame[data-skyline-active="false"] > .home-landscape {
   visibility: hidden;
@@ -3427,20 +3425,6 @@ html.transitioning *::after {
   background: var(--frame-solid);
   /* Clip the backing only: the message's rounded edge and shadow stay intact. */
   clip-path: inset(0);
-}
-.chat-scene .transcript-prompt-backdrop::before {
-  content: "";
-  position: fixed;
-  left: var(--skyline-left);
-  top: var(--skyline-top);
-  width: var(--skyline-width);
-  height: var(--skyline-height);
-  background-image: var(--skyline-image);
-  background-position: center top;
-  background-size: cover;
-  opacity: var(--skyline-image-opacity);
-  filter: blur(var(--skyline-blur)) saturate(var(--skyline-saturation, 1));
-  transform: scale(1.1);
 }
 .home-landscape > img {
   width: 100%;
