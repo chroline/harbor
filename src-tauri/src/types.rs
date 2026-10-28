@@ -77,6 +77,48 @@ pub enum CommandRequest {
         config_id: String,
         value: Value,
     },
+    SubmitPrompt {
+        #[ts(rename = "sessionId")] session_id: String,
+        #[ts(rename = "childId")] child_id: Option<String>,
+        text: String,
+        #[ts(optional)] attachments: Option<Vec<PromptAttachment>>,
+        intent: crate::prompt_queue::SubmissionIntent,
+    },
+    GetPromptQueue {
+        #[ts(rename = "sessionId")] session_id: String,
+        #[ts(rename = "childId")] child_id: Option<String>,
+    },
+    RemoveQueuedPrompt {
+        #[ts(rename = "sessionId")] session_id: String,
+        #[ts(rename = "childId")] child_id: Option<String>,
+        id: String,
+    },
+    BeginQueuedEdit {
+        #[ts(rename = "sessionId")] session_id: String,
+        #[ts(rename = "childId")] child_id: Option<String>,
+        id: String,
+    },
+    EndQueuedEdit {
+        #[ts(rename = "sessionId")] session_id: String,
+        #[ts(rename = "childId")] child_id: Option<String>,
+        id: String,
+        text: Option<String>,
+        attachments: Option<Vec<PromptAttachment>>,
+        steer: bool,
+    },
+    SteerQueuedPrompt {
+        #[ts(rename = "sessionId")] session_id: String,
+        #[ts(rename = "childId")] child_id: Option<String>,
+        id: String,
+    },
+    ResumePromptQueue {
+        #[ts(rename = "sessionId")] session_id: String,
+        #[ts(rename = "childId")] child_id: Option<String>,
+    },
+    HoldPromptQueue {
+        #[ts(rename = "sessionId")] session_id: String,
+        blocked: bool,
+    },
     SendPrompt {
         #[ts(rename = "sessionId")]
         session_id: String,
@@ -119,6 +161,10 @@ pub enum CommandRequest {
         #[ts(optional)]
         limit: Option<u32>,
     },
+    GetRecentEvents {
+        #[ts(rename = "sessionId")]
+        session_id: String,
+    },
     ExportTranscript {
         #[ts(rename = "sessionId")]
         session_id: String,
@@ -133,6 +179,10 @@ pub enum CommandRequest {
         review_open: bool,
     },
     DeleteSession {
+        #[ts(rename = "sessionId")]
+        session_id: String,
+    },
+    SessionHasUncommittedChanges {
         #[ts(rename = "sessionId")]
         session_id: String,
     },
@@ -318,6 +368,13 @@ pub struct SessionEvent {
     pub kind: String,
     pub payload: Value,
     pub timestamp: f64,
+}
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, export_to = "../../src/lib/bindings/")]
+pub struct RecentEvents {
+    pub events: Vec<SessionEvent>,
+    pub has_earlier: bool,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]

@@ -15,6 +15,7 @@ mod provider_contract_tests;
 mod model_config;
 pub mod adapters;
 mod operations;
+mod prompt_queue;
 mod providers;
 mod sessions;
 mod shell_tabs;
@@ -44,6 +45,7 @@ use tokio::sync::Mutex;
 use types::*;
 
 pub struct AppState {
+    prompt_queues: prompt_queue::Coordinator,
     db: db::Database,
     data: PathBuf,
     app: tauri::AppHandle,
@@ -194,6 +196,7 @@ impl AppState {
             .ok_or("This agent is disconnected. Reconnect to continue.".into())
     }
     async fn stop(&self, id: &str) {
+        self.prompt_queues.pause_session(self, id);
         self.title_generator.cancel(id).await;
         self.relay_targets.lock().unwrap().remove(id);
         let transports = {
@@ -945,7 +948,13 @@ async fn open_subagent(state: tauri::State<'_, Arc<AppState>>, session_id: Strin
 
 #[tauri::command]
 async fn send_subagent_prompt(state: tauri::State<'_, Arc<AppState>>, session_id: String, child_id: String, text: String, attachments: Option<Vec<PromptAttachment>>) -> Result<(), String> {
+    send_subagent_prompt_impl(state.inner(), session_id, child_id, text, attachments).await
+}
+async fn send_subagent_prompt_impl(state: &Arc<AppState>, session_id: String, child_id: String, text: String, attachments: Option<Vec<PromptAttachment>>) -> Result<(), String> {
     let guard = state.operations.session(&session_id).await;
+    send_subagent_prompt_locked(state,session_id,child_id,text,attachments,guard).await
+}
+async fn send_subagent_prompt_locked(state: &Arc<AppState>, session_id: String, child_id: String, text: String, attachments: Option<Vec<PromptAttachment>>, guard: tokio::sync::OwnedMutexGuard<()>) -> Result<(),String> {
     let files = attachments.unwrap_or_default();
     if text.trim().is_empty() && files.is_empty() { return Err("Write a message or attach a file first".into()); }
     state.connection(&session_id).await?;
@@ -963,6 +972,7 @@ async fn send_subagent_prompt(state: tauri::State<'_, Arc<AppState>>, session_id
     };
     let (mut content, file_metadata, paths) = attachments::prepare(&state.data, &text, &files, &capabilities).await?;
     if rpc.busy.swap(true,Ordering::SeqCst) { return Err("This worker is already working".into()); }
+    let turn_generation=rpc.turn_generation.fetch_add(1,Ordering::SeqCst)+1;
     rpc.grant_attachment_reads(&paths).await;
     let prompt = if via_parent {
         if let Err(error) = state.update(&session_id,|s| s.status="working".into()) {
@@ -987,6 +997,7 @@ async fn send_subagent_prompt(state: tauri::State<'_, Arc<AppState>>, session_id
             Ok(state.db.subagents(&session_id)?.iter().any(|c| subagents::same_worker(&c.session_id,&child_id) && subagents::is_working(&c.state)))
         }).await { result=Err(error); }
     }
+    if rpc.turn_generation.load(Ordering::SeqCst) != turn_generation {return Ok(());}
     rpc.busy.store(false,Ordering::SeqCst);
     rpc.cancel_requests().await;
     let active = if via_parent { state.connections.lock().await.get(&session_id).is_some_and(|active| Arc::ptr_eq(active,&rpc)) }
@@ -1013,6 +1024,56 @@ async fn send_subagent_prompt(state: tauri::State<'_, Arc<AppState>>, session_id
 }
 
 #[tauri::command]
+async fn submit_prompt(state: tauri::State<'_, Arc<AppState>>, session_id: String, child_id: Option<String>, text: String, attachments: Option<Vec<PromptAttachment>>, intent: prompt_queue::SubmissionIntent) -> Result<prompt_queue::QueueSnapshot, String> {
+    let _guard = state.operations.session(&session_id).await;
+    let files=attachments.unwrap_or_default();
+    if text.trim().is_empty() && files.is_empty() {return Err("Write a message or attach a file first".into());}
+    attachments::validate(&files)?;
+    let shared_parent=prompt_queue::validate(state.inner(), &session_id, &child_id, &intent).await?;
+    let steering=intent==prompt_queue::SubmissionIntent::Steer;
+    state.prompt_queues.submit(state.inner(), &session_id, &child_id, text, files, intent, shared_parent);
+    if steering {state.prompt_queues.steer(state.inner(), &session_id, &child_id).await;}
+    Ok(state.prompt_queues.snapshot(&session_id,&child_id))
+}
+#[tauri::command]
+fn get_prompt_queue(state: tauri::State<'_, Arc<AppState>>, session_id: String, child_id: Option<String>) -> prompt_queue::QueueSnapshot {state.prompt_queues.snapshot(&session_id,&child_id)}
+#[tauri::command]
+fn remove_queued_prompt(state: tauri::State<'_, Arc<AppState>>, session_id: String, child_id: Option<String>, id: String) -> prompt_queue::QueueSnapshot {state.prompt_queues.remove(state.inner(),&session_id,&child_id,&id)}
+#[tauri::command]
+async fn begin_queued_edit(state: tauri::State<'_, Arc<AppState>>, window: tauri::WebviewWindow, session_id: String, child_id: Option<String>, id: String) -> Result<prompt_queue::QueuedEdit,String> {
+    let _guard = state.operations.session(&session_id).await;
+    state.prompt_queues.begin_edit(state.inner(), &session_id, &child_id, &id, window.label())
+}
+#[tauri::command]
+async fn end_queued_edit(state: tauri::State<'_, Arc<AppState>>, window: tauri::WebviewWindow, session_id: String, child_id: Option<String>, id: String, text: Option<String>, attachments: Option<Vec<PromptAttachment>>, steer: bool) -> Result<prompt_queue::QueueSnapshot,String> {
+    let _guard = state.operations.session(&session_id).await;
+    let update = if let Some(text) = text {
+        let files = attachments.unwrap_or_default();
+        if text.trim().is_empty() && files.is_empty() { return Err("Write a message or attach a file first".into()); }
+        attachments::validate(&files)?;
+        Some((text, files))
+    } else { None };
+    let shared = if steer { Some(prompt_queue::validate(state.inner(), &session_id, &child_id, &prompt_queue::SubmissionIntent::Steer).await?) } else { None };
+    let snapshot = state.prompt_queues.end_edit(state.inner(), &session_id, &child_id, &id, window.label(), update, shared)?;
+    if steer { state.prompt_queues.steer(state.inner(), &session_id, &child_id).await; return Ok(state.prompt_queues.snapshot(&session_id, &child_id)); }
+    Ok(snapshot)
+}
+#[tauri::command]
+async fn steer_queued_prompt(state: tauri::State<'_, Arc<AppState>>, session_id: String, child_id: Option<String>, id: String) -> Result<prompt_queue::QueueSnapshot,String> {
+    let _guard = state.operations.session(&session_id).await;
+    let shared = prompt_queue::validate(state.inner(), &session_id, &child_id, &prompt_queue::SubmissionIntent::Steer).await?;
+    state.prompt_queues.steer_queued(state.inner(), &session_id, &child_id, &id, shared)?;
+    state.prompt_queues.steer(state.inner(), &session_id, &child_id).await;
+    Ok(state.prompt_queues.snapshot(&session_id, &child_id))
+}
+#[tauri::command]
+async fn resume_prompt_queue(state: tauri::State<'_, Arc<AppState>>, session_id: String, child_id: Option<String>) -> Result<prompt_queue::QueueSnapshot,String> {
+    prompt_queue::validate(state.inner(),&session_id,&child_id,&prompt_queue::SubmissionIntent::Send).await?;
+    Ok(state.prompt_queues.resume(state.inner(),&session_id,&child_id))
+}
+#[tauri::command]
+fn hold_prompt_queue(state: tauri::State<'_, Arc<AppState>>, window: tauri::WebviewWindow, session_id: String, blocked: bool) {state.prompt_queues.configuration(&session_id,window.label(),blocked);}
+#[tauri::command]
 async fn send_prompt(
     state: tauri::State<'_, Arc<AppState>>,
     session_id: String,
@@ -1029,6 +1090,9 @@ async fn send_prompt_impl(
     question_answer: Option<(Value, Value)>,
 ) -> Result<(), String> {
     let guard = state.operations.session(&session_id).await;
+    send_prompt_locked(state,session_id,text,attachments,question_answer,guard).await
+}
+async fn send_prompt_locked(state: &Arc<AppState>, session_id: String, text: String, attachments: Option<Vec<PromptAttachment>>, question_answer: Option<(Value, Value)>, guard: tokio::sync::OwnedMutexGuard<()>) -> Result<(),String> {
     let files = attachments.unwrap_or_default();
     let rpc = state.connection(&session_id).await?;
     let configuration_guard = rpc.configuration_lock.lock().await;
@@ -1137,6 +1201,12 @@ async fn cancel_turn(
     session_id: String,
     child_id: Option<String>,
 ) -> Result<(), String> {
+    let _guard = state.operations.session(&session_id).await;
+    prompt_queue::validate(state.inner(), &session_id, &child_id, &prompt_queue::SubmissionIntent::Steer).await?;
+    state.prompt_queues.pause(state.inner(), &session_id, &child_id, None);
+    cancel_turn_impl(state.inner(), session_id, child_id).await
+}
+async fn cancel_turn_impl(state: &Arc<AppState>, session_id: String, child_id: Option<String>) -> Result<(), String> {
     let rpc = state.connection(&session_id).await?;
     let s: SessionRecord = state.db.get("session", &session_id)?;
     if let Some(child) = child_id {
@@ -1166,7 +1236,7 @@ async fn cancel_turn(
     rpc.notify("session/cancel", json!({"sessionId":s.acp_session_id}))
         .await?;
     let generation = rpc.turn_generation.load(Ordering::SeqCst);
-    let weak = Arc::downgrade(state.inner());
+    let weak = Arc::downgrade(state);
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(Duration::from_secs(8)).await;
         if rpc.busy.load(Ordering::SeqCst)
@@ -1286,6 +1356,16 @@ async fn export_transcript(
     Ok(path.to_string_lossy().into())
 }
 #[tauri::command]
+async fn get_recent_events(
+    state: tauri::State<'_, Arc<AppState>>,
+    session_id: String,
+) -> Result<RecentEvents, String> {
+    let state = state.inner().clone();
+    tokio::task::spawn_blocking(move || state.db.recent_events(&session_id))
+        .await
+        .map_err(|e| e.to_string())?
+}
+#[tauri::command]
 async fn get_events(
     state: tauri::State<'_, Arc<AppState>>,
     session_id: String,
@@ -1318,6 +1398,20 @@ async fn save_session_ui(
     .map_err(|e| e.to_string())?
 }
 #[tauri::command]
+async fn session_has_uncommitted_changes(
+    state: tauri::State<'_, Arc<AppState>>,
+    session_id: String,
+) -> Result<bool, String> {
+    let session: SessionRecord = state.db.get("session", &session_id)?;
+    let Some(tree_id) = session.worktree_id else {
+        return Ok(false);
+    };
+    let tree: WorktreeRecord = state.db.get("worktree", &tree_id)?;
+    tokio::task::spawn_blocking(move || worktrees::has_uncommitted_changes(&tree.path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+#[tauri::command]
 async fn delete_session(
     state: tauri::State<'_, Arc<AppState>>,
     session_id: String,
@@ -1326,6 +1420,7 @@ async fn delete_session(
     let s: SessionRecord = state.db.get("session", &session_id)?;
     let _workspace_guard = state.operations.workspace(&s.cwd).await;
     let prefix = format!("shell:{session_id}:");
+    state.prompt_queues.clear(state.inner(), &session_id);
     state.tab_windows.close_session(&state.app, &session_id);
     let shells = {
         let mut terminals = state.terminals.lock().await;
@@ -1556,6 +1651,7 @@ async fn enter_terminal(
         return Err("The installed provider version changed. Reconnect to check compatibility before switching.".into());
     }
     let args = adapters::native_resume_args(require_provider(&provider.id)?, &native_id)?;
+    state.prompt_queues.pause_session(state.inner(), &session_id);
     state.update(&session_id, |s| s.mode = "handoff".into())?;
     state.stop(&session_id).await;
     let sid = session_id.clone();
@@ -1741,6 +1837,7 @@ pub fn run() {
     setup_path();
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let data = app.path().app_data_dir()?;
@@ -1781,6 +1878,7 @@ pub fn run() {
                 }
             }
             let state = Arc::new(AppState {
+                prompt_queues: prompt_queue::Coordinator::default(),
                 db,
                 data,
                 app: app.handle().clone(),
@@ -1835,6 +1933,10 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            if matches!(event, tauri::WindowEvent::Destroyed) {
+                let state=window.state::<Arc<AppState>>();
+                state.prompt_queues.release_owner(state.inner(),window.label());
+            }
             #[cfg(target_os = "macos")]
             if matches!(event, tauri::WindowEvent::Destroyed) {
                 window_chrome::remove(window);
@@ -1890,14 +1992,24 @@ pub fn run() {
             reconnect,
             authenticate,
             set_config,
+            submit_prompt,
+            get_prompt_queue,
+            remove_queued_prompt,
+            begin_queued_edit,
+            end_queued_edit,
+            steer_queued_prompt,
+            resume_prompt_queue,
+            hold_prompt_queue,
             send_prompt,
             open_subagent,
             send_subagent_prompt,
             cancel_turn,
             answer_request,
             get_events,
+            get_recent_events,
             save_session_ui,
             delete_session,
+            session_has_uncommitted_changes,
             restore_archive,
             restore_chat,
             list_branches,

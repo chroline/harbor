@@ -244,6 +244,44 @@ impl Database {
         })
         .collect()
     }
+    /// Read the newest complete turns first. Small setup/worker events from the
+    /// prefix preserve routing; bulk prose and tool output stay off the first read.
+    pub fn recent_events(&self, session: &str) -> Result<RecentEvents, String> {
+        let c = self.0.lock().map_err(|e| e.to_string())?;
+        let start: i64 = c.query_row(
+            "WITH dialogue AS (
+                SELECT sequence,kind,
+                    CASE WHEN kind='user_message' OR json_extract(payload,'$.update.sessionUpdate')='user_message_chunk' THEN 1 ELSE 0 END AS is_user,
+                    COALESCE(json_extract(payload,'$.sessionId'),'native') AS stream
+                FROM events WHERE session_id=?1 AND (kind='user_message' OR (kind='session/update' AND
+                    CASE WHEN instr(payload,'message_chunk')>0 OR instr(payload,'thought_chunk')>0 OR instr(payload,'tool_call')>0
+                    THEN json_extract(payload,'$.update.sessionUpdate') IN ('user_message_chunk','agent_message_chunk','agent_thought_chunk','tool_call','tool_call_update') ELSE 0 END))
+            ), boundaries AS (
+                SELECT sequence,kind,is_user,LAG(is_user) OVER (PARTITION BY stream ORDER BY sequence) AS previous_user FROM dialogue
+            ) SELECT CASE WHEN COUNT(*) < 3 THEN 0 ELSE MIN(sequence) END FROM (
+                SELECT sequence FROM boundaries WHERE is_user=1 AND (kind='user_message' OR COALESCE(previous_user,0)=0) ORDER BY sequence DESC LIMIT 3
+            )",
+            [session], |r| r.get(0),
+        ).map_err(|e| e.to_string())?;
+        let has_earlier = start > 0 && c.query_row(
+            "SELECT EXISTS(SELECT 1 FROM events WHERE session_id=?1 AND sequence<?2)",
+            params![session, start], |r| r.get::<_, bool>(0),
+        ).map_err(|e| e.to_string())?;
+        let mut query = c.prepare(
+            "SELECT sequence,kind,payload,timestamp FROM events WHERE session_id=?1 AND (
+                sequence>=?2 OR kind IN ('initialized','connected','disconnected','history_reset','child_connected','child_disconnected','child_status','child_history_reset','request','answered')
+                OR (kind='session/update' AND CASE WHEN instr(payload,'subagent_update')>0 OR instr(payload,'available_commands_update')>0 THEN json_extract(payload,'$.update.sessionUpdate') IN ('subagent_update','available_commands_update') ELSE 0 END)
+            ) ORDER BY sequence"
+        ).map_err(|e| e.to_string())?;
+        let events = query.query_map(params![session, start], |r| {
+            Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, f64>(3)?))
+        }).map_err(|e| e.to_string())?.map(|row| {
+            let (sequence, kind, payload, timestamp) = row.map_err(|e| e.to_string())?;
+            Ok(SessionEvent { sequence: sequence as f64, session_id: session.into(), kind,
+                payload: serde_json::from_str(&payload).map_err(|e| e.to_string())?, timestamp })
+        }).collect::<Result<Vec<_>, String>>()?;
+        Ok(RecentEvents { events, has_earlier })
+    }
     pub fn has_user_message(&self, session: &str) -> Result<bool, String> {
         self.0.lock().map_err(|e| e.to_string())?
             .query_row("SELECT EXISTS(SELECT 1 FROM events WHERE session_id=?1 AND kind='user_message')", [session], |r| r.get(0))
@@ -415,6 +453,47 @@ fn migrate_workspaces(c: &mut Connection) -> Result<(), String> {
 mod workspace_tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn recent_events_returns_complete_newest_turns_with_worker_context() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Database::open(&tmp.path().join("recent.sqlite")).unwrap();
+        let worker = db.event("chat", "session/update", json!({"sessionId":"root", "update":{"sessionUpdate":"subagent_update","sessionId":"worker","title":"Worker"}})).unwrap();
+        db.event("other", "user_message", json!({"text":"Other chat"})).unwrap();
+        for i in 0..6 {
+            db.event("chat", "user_message", json!({"text":format!("Prompt {i}")})).unwrap();
+            for chunk in 0..4 {
+                db.event("chat", "session/update", json!({"sessionId":"root", "update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":format!("Reply {i} chunk {chunk}")}}})).unwrap();
+            }
+            db.event("chat", "turn_complete", json!({})).unwrap();
+        }
+        let recent = db.recent_events("chat").unwrap();
+        assert!(recent.has_earlier);
+        assert_eq!(recent.events[0].sequence, worker.sequence);
+        assert_eq!(recent.events.iter().filter(|e| e.kind == "user_message").map(|e| e.payload["text"].as_str().unwrap()).collect::<Vec<_>>(), vec!["Prompt 3","Prompt 4","Prompt 5"]);
+        assert_eq!(recent.events.iter().filter(|e| e.kind == "session/update").count(), 13);
+        assert!(recent.events.iter().all(|e| e.session_id == "chat"));
+        let short = db.recent_events("other").unwrap();
+        assert!(!short.has_earlier);
+        assert_eq!(short.events.len(), 1);
+        let empty = db.recent_events("empty").unwrap();
+        assert!(!empty.has_earlier);
+        assert!(empty.events.is_empty());
+    }
+    #[test]
+    fn recent_events_groups_imported_prompt_chunks_into_complete_turns() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = Database::open(&tmp.path().join("chunks.sqlite")).unwrap();
+        for i in 0..6 {
+            for part in ["a","b"] {
+                db.event("chat", "session/update", json!({"sessionId":"root", "update":{"sessionUpdate":"user_message_chunk","content":{"type":"text","text":format!("Prompt {i} {part}")}}})).unwrap();
+            }
+            db.event("chat", "session/update", json!({"sessionId":"root", "update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Reply"}}})).unwrap();
+        }
+        let recent = db.recent_events("chat").unwrap();
+        assert!(recent.has_earlier);
+        assert_eq!(recent.events.len(),9);
+        assert_eq!(recent.events[0].payload["update"]["content"]["text"], "Prompt 3 a");
+    }
     #[test]
     fn migration_preserves_associations_missing_folders_and_is_repeatable() {
         let tmp = tempfile::tempdir().unwrap();

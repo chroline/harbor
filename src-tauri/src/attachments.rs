@@ -5,6 +5,18 @@ use std::path::{Path, PathBuf};
 
 const MAX_BYTES: usize = 20 * 1024 * 1024;
 
+/// Validate before accepting a queued message, without writing any files.
+pub fn validate(files: &[PromptAttachment]) -> Result<(), String> {
+    if files.len() > 10 {return Err("Attach up to 10 files per message".into());}
+    let mut total=0;
+    for file in files {
+        if file.data.len()>MAX_BYTES.div_ceil(3)*4 {return Err("Attachments must total 20 MB or less per message".into());}
+        total+=STANDARD.decode(&file.data).map_err(|_| format!("Could not decode {}",file.name))?.len();
+        if total>MAX_BYTES {return Err("Attachments must total 20 MB or less per message".into());}
+    }
+    Ok(())
+}
+
 /// Persist attachments before a turn; transcripts retain metadata rather than base64 payloads.
 pub async fn prepare(
     data: &Path,

@@ -393,6 +393,13 @@ pub fn restore(archive: &ArchiveRecord) -> Result<WorktreeRecord, String> {
     tree.state = "active".into();
     Ok(tree)
 }
+pub fn has_uncommitted_changes(cwd: &str) -> Result<bool, String> {
+    Ok(!run(
+        Path::new(cwd),
+        "git",
+        &["status", "--porcelain=v1", "-z", "--untracked-files=normal", "--ignored=no"],
+    )?.is_empty())
+}
 pub fn review(cwd: &str) -> Result<Value, String> {
     let p = Path::new(cwd);
     let status = run(p, "git", &["status", "--porcelain=v1", "-z"])?;
@@ -417,6 +424,34 @@ pub fn review(cwd: &str) -> Result<Value, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn uncommitted_changes_include_staged_unstaged_and_untracked_but_not_ignored() {
+        let temp = tempfile::tempdir().unwrap();
+        let repo = temp.path();
+        run(repo, "git", &["init", "-b", "main"]).unwrap();
+        fs::write(repo.join("tracked.txt"), "base\n").unwrap();
+        fs::write(repo.join(".gitignore"), "ignored.txt\n").unwrap();
+        run(repo, "git", &["add", "."]).unwrap();
+        run(repo, "git", &["-c", "user.name=Harbor Test", "-c", "user.email=test@harbor.local", "commit", "-m", "initial"]).unwrap();
+        // Use a real linked worktree, matching the archive flow.
+        let tree_dir = tempfile::tempdir().unwrap();
+        let tree = tree_dir.path().join("tree");
+        run(repo, "git", &["worktree", "add", "-b", "test-changes", tree.to_str().unwrap()]).unwrap();
+        let cwd = tree.to_str().unwrap();
+        assert!(!has_uncommitted_changes(cwd).unwrap());
+        fs::write(tree.join("ignored.txt"), "ignored\n").unwrap();
+        assert!(!has_uncommitted_changes(cwd).unwrap());
+        fs::write(tree.join("tracked.txt"), "modified\n").unwrap();
+        assert!(has_uncommitted_changes(cwd).unwrap());
+        run(&tree, "git", &["add", "tracked.txt"]).unwrap();
+        assert!(has_uncommitted_changes(cwd).unwrap());
+        run(&tree, "git", &["reset", "--hard", "HEAD"]).unwrap();
+        fs::write(tree.join("new.txt"), "new\n").unwrap();
+        assert!(has_uncommitted_changes(cwd).unwrap());
+        fs::remove_file(tree.join("new.txt")).unwrap();
+        assert!(!has_uncommitted_changes(cwd).unwrap());
+        assert!(has_uncommitted_changes("/harbor/nonexistent/worktree").is_err());
+    }
     #[test]
     fn base_branch_choices_include_local_and_remote_branches_without_symbolic_aliases() {
         let temp = tempfile::tempdir().unwrap();
