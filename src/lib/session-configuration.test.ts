@@ -155,10 +155,54 @@ it("keeps chat creation blocked when a successful response did not confirm the s
 
 it("rejects configuration responses belonging to another conversation", async () => {
   const { queue, apply, update } = harness();
-  apply.mockResolvedValueOnce({ ...session("idle", "plan"), acpSessionId: "other-wire" });
+  apply.mockResolvedValueOnce({
+    ...session("idle", "plan"),
+    acpSessionId: "other-wire",
+  });
   queue.select(session(), "mode", "plan");
   await vi.waitFor(() => expect(queue.get("chat").busy).toBe(false));
   expect(queue.get("chat").error).toContain("conversation");
   expect(update).not.toHaveBeenCalled();
   expect(queue.blocked("chat")).toBe(true);
+});
+
+it("acknowledges the backend hold before applying configuration and releases it after confirmation", async () => {
+  let release!: () => void;
+  const hold = vi
+    .fn()
+    .mockImplementation((_id: string, blocked: boolean) =>
+      blocked
+        ? new Promise<void>((resolve) => (release = resolve))
+        : Promise.resolve(),
+    );
+  const apply = vi.fn().mockResolvedValue(session("idle", "plan"));
+  const queue = new SessionConfiguration({
+    apply,
+    hold,
+    update: vi.fn(),
+    changed: vi.fn(),
+  });
+  queue.select(session(), "mode", "plan");
+  await vi.waitFor(() => expect(hold).toHaveBeenCalledWith("chat", true));
+  expect(apply).not.toHaveBeenCalled();
+  release();
+  await vi.waitFor(() => expect(hold).toHaveBeenCalledWith("chat", false));
+  expect(apply).toHaveBeenCalledOnce();
+});
+
+it("keeps messages held when configuration fails and releases on cancellation", async () => {
+  const hold = vi.fn().mockResolvedValue(undefined);
+  const queue = new SessionConfiguration({
+    apply: vi.fn().mockRejectedValue(new Error("Provider refused")),
+    hold,
+    update: vi.fn(),
+    changed: vi.fn(),
+  });
+  queue.select(session(), "mode", "plan");
+  await vi.waitFor(() =>
+    expect(queue.get("chat").error).toContain("Provider refused"),
+  );
+  expect(hold).not.toHaveBeenCalledWith("chat", false);
+  queue.cancel("chat");
+  await vi.waitFor(() => expect(hold).toHaveBeenCalledWith("chat", false));
 });

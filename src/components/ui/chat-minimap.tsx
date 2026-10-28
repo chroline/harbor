@@ -16,11 +16,13 @@ export type ChatMinimapItem = {
 type ChatMinimapProps = ComponentProps<"nav"> & {
   items: readonly ChatMinimapItem[];
   currentItemId: string | null;
+  onNavigate?: ReturnType<typeof useMessageScroller>["scrollToMessage"];
 };
 
 export function ChatMinimap({
   items,
   currentItemId,
+  onNavigate,
   className,
   ...props
 }: ChatMinimapProps) {
@@ -92,7 +94,7 @@ export function ChatMinimap({
                   setPreviewId(null);
                 }}
                 onClick={() =>
-                  scrollToMessage(item.id, {
+                  (onNavigate ?? scrollToMessage)(item.id, {
                     align: "start",
                     behavior: reducedMotion ? "auto" : "smooth",
                   })

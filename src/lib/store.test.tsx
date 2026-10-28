@@ -4,10 +4,18 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { StoreProvider, useStore } from "./store";
 import type { SessionEvent } from "./bindings/SessionEvent";
 import type { SessionRecord } from "./bindings/SessionRecord";
+import { emptyTranscript, reduceEvent } from "./protocol";
 
 const mock = vi.hoisted(() => ({
   call: vi.fn(),
   handlers: new Map<string, (event: { payload: unknown }) => void>(),
+  readCache: vi.fn(),
+  writeCache: vi.fn(),
+}));
+vi.mock("./transcript-cache", () => ({
+  readTranscriptCache: mock.readCache,
+  writeTranscriptCache: mock.writeCache,
+  pruneTranscriptCache: vi.fn(),
 }));
 vi.mock("./api", async (original) => ({
   ...(await original<typeof import("./api")>()),
@@ -33,6 +41,8 @@ let sessions: SessionRecord[];
 beforeEach(() => {
   history = [];
   sessions = [];
+  mock.readCache.mockReset().mockResolvedValue(null);
+  mock.writeCache.mockReset().mockResolvedValue(undefined);
   mock.call.mockReset().mockImplementation(async (command, args) => {
     if (command === "bootstrap")
       return { sessions, providers: [], projects: [], workspaces: [] };
@@ -47,6 +57,15 @@ beforeEach(() => {
           (e) => e.sessionId === args.sessionId && e.sequence > args.after,
         )
         .slice(0, args.limit ?? 5000);
+    if (command === "get_recent_events") {
+      const events = history.filter((e) => e.sessionId === args.sessionId);
+      const users = events.filter((e) => e.kind === "user_message");
+      const start = users.length >= 3 ? users.at(-3)!.sequence : 0;
+      return {
+        events: events.filter((e) => e.sequence >= start),
+        hasEarlier: events.some((e) => e.sequence < start),
+      };
+    }
     throw new Error(`Unexpected command: ${command}`);
   });
 });
@@ -97,9 +116,9 @@ it("reconnects only the open chat and stops recovery when it closes", async () =
   await waitFor(() =>
     expect(result.current.data.sessions[0].status).toBe("idle"),
   );
-  expect(mock.call.mock.calls.filter(([name]) => name === "reconnect")).toEqual([
-    ["reconnect", { sessionId: "a" }],
-  ]);
+  expect(mock.call.mock.calls.filter(([name]) => name === "reconnect")).toEqual(
+    [["reconnect", { sessionId: "a" }]],
+  );
   act(() => result.current.setActiveSession("b"));
   await waitFor(() =>
     expect(result.current.data.sessions[1].status).toBe("idle"),
@@ -141,7 +160,7 @@ it("reuses complete history when switching back and fetches only newer events", 
   expect(mock.call).toHaveBeenCalledWith("get_events", {
     sessionId: "a",
     after: 1,
-    limit: 250,
+    limit: 5000,
   });
   expect(result.current.transcripts.a).toBe(cached);
   history.push(event("a", 3));
@@ -167,8 +186,12 @@ it("does not mistake a background stream fragment for complete history", async (
 });
 
 it("loads every page while allowing the event loop to run during replay", async () => {
-  history = Array.from({ length: 601 }, (_, i) => event("a", i + 1));
+  history = Array.from({ length: 10001 }, (_, i) => event("a", i + 1));
   const { result } = await setup();
+  let clock = 0;
+  const now = vi
+    .spyOn(performance, "now")
+    .mockImplementation(() => (clock += 0.01));
   let finished = false;
   let yielded = false;
   const timer = setTimeout(() => {
@@ -179,14 +202,18 @@ it("loads every page while allowing the event loop to run during replay", async 
     finished = true;
   });
   clearTimeout(timer);
+  now.mockRestore();
   expect(yielded).toBe(true);
-  expect(result.current.transcripts.a.lastSequence).toBe(601);
+  expect(result.current.transcripts.a.lastSequence).toBe(10001);
+  expect(result.current.transcripts.a.messages).toHaveLength(10001);
+  expect(result.current.transcripts.a.messages[0].text).toBe("message 1");
   const reads = mock.call.mock.calls.filter(([name]) => name === "get_events");
-  expect(reads.map(([, args]) => args.after)).toEqual([0, 250, 500]);
+  expect(reads.map(([, args]) => args.after)).toEqual([0, 5000, 10000]);
 });
 
-it("retains live events received during hydration without duplicating them", async () => {
-  history = [event("a", 1)];
+it("shows newest turns before older history and keeps that preview live without caching it as complete", async () => {
+  history = Array.from({ length: 10 }, (_, i) => event("a", i + 1));
+  const older = [...history];
   const { result } = await setup();
   const read = mock.call.getMockImplementation()!;
   let finish!: (events: SessionEvent[]) => void;
@@ -201,6 +228,103 @@ it("retains live events received during hydration without duplicating them", asy
   act(() => {
     loading = result.current.loadTranscript("a");
   });
+  await waitFor(() =>
+    expect(result.current.visibleTranscripts.has("a")).toBe(true),
+  );
+  expect(result.current.loadedTranscripts.has("a")).toBe(false);
+  expect(result.current.transcripts.a.messages.map((m) => m.text)).toEqual([
+    "message 8",
+    "message 9",
+    "message 10",
+  ]);
+  expect(mock.writeCache).not.toHaveBeenCalled();
+  await waitFor(() => expect(finish).toBeTypeOf("function"));
+  act(() => mock.handlers.get("session-event")!({ payload: event("a", 11) }));
+  await waitFor(() =>
+    expect(result.current.transcripts.a.lastSequence).toBe(11),
+  );
+  await act(async () => {
+    finish(older);
+    await loading;
+  });
+  expect(result.current.loadedTranscripts.has("a")).toBe(true);
+  expect(result.current.transcripts.a.messages.map((m) => m.text)).toEqual(
+    Array.from({ length: 11 }, (_, i) => `message ${i + 1}`),
+  );
+  expect(mock.writeCache).toHaveBeenCalledWith(
+    "a",
+    result.current.transcripts.a,
+  );
+});
+
+it("adds newest turns to a persisted checkpoint without duplicating its messages", async () => {
+  history = [event("a", 1), event("a", 2), event("a", 3)];
+  const checkpoint = reduceEvent(
+    reduceEvent(emptyTranscript(), history[0]),
+    history[1],
+  );
+  mock.readCache.mockResolvedValue(checkpoint);
+  const { result } = await setup();
+  await act(() => result.current.loadTranscript("a"));
+  expect(mock.call).toHaveBeenCalledWith("get_recent_events", {
+    sessionId: "a",
+  });
+  expect(result.current.transcripts.a.messages.map((m) => m.text)).toEqual([
+    "message 1",
+    "message 2",
+    "message 3",
+  ]);
+  expect(mock.writeCache).toHaveBeenCalledWith(
+    "a",
+    result.current.transcripts.a,
+  );
+  expect(result.current.loadedTranscripts.has("a")).toBe(true);
+});
+
+it("marks an unchanged persisted checkpoint fully loaded after its recent read", async () => {
+  history = [event("a", 1), event("a", 2)];
+  mock.readCache.mockResolvedValue(
+    history.reduce(reduceEvent, emptyTranscript()),
+  );
+  const { result } = await setup();
+  await act(() => result.current.loadTranscript("a"));
+  expect(result.current.loadedTranscripts.has("a")).toBe(true);
+  expect(result.current.visibleTranscripts.has("a")).toBe(true);
+});
+
+it("discards a checkpoint ahead of the authoritative event log", async () => {
+  history = [event("a", 1), event("a", 2)];
+  mock.readCache.mockResolvedValue(
+    reduceEvent(emptyTranscript(), event("a", 99)),
+  );
+  const { result } = await setup();
+  await act(() => result.current.loadTranscript("a"));
+  expect(mock.call).toHaveBeenCalledWith("get_recent_events", {
+    sessionId: "a",
+  });
+  expect(result.current.transcripts.a.messages.map((m) => m.text)).toEqual([
+    "message 1",
+    "message 2",
+  ]);
+});
+
+it("retains live events received during hydration without duplicating them", async () => {
+  history = [event("a", 1)];
+  const { result } = await setup();
+  const read = mock.call.getMockImplementation()!;
+  let finish!: (events: SessionEvent[]) => void;
+  mock.call.mockImplementation((command, args) =>
+    command === "get_recent_events"
+      ? new Promise((resolve) => {
+          finish = (events) => resolve({ events, hasEarlier: false });
+        })
+      : read(command, args),
+  );
+  let loading!: Promise<void>;
+  act(() => {
+    loading = result.current.loadTranscript("a");
+  });
+  await waitFor(() => expect(finish).toBeTypeOf("function"));
   act(() => mock.handlers.get("session-event")!({ payload: event("a", 2) }));
   await act(async () => {
     finish(history);
@@ -263,6 +387,8 @@ it("keeps independently loading chats and retries a failed history read", async 
   expect(result.current.transcripts.a.messages[0].text).toBe("message 1");
   expect(result.current.transcripts.b.messages[0].text).toBe("message 2");
   expect(
-    mock.call.mock.calls.filter(([name]) => name === "get_events"),
+    mock.call.mock.calls.filter(([name]) =>
+      ["get_events", "get_recent_events"].includes(name),
+    ),
   ).toHaveLength(3);
 });

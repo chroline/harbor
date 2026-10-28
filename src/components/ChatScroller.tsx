@@ -8,8 +8,11 @@ import {
   useState,
   type Ref,
   type ReactNode,
+  type CSSProperties,
+  type FocusEventHandler,
 } from "react";
 import { useReducedMotion } from "motion/react";
+import { flushSync } from "react-dom";
 import {
   MessageScroller,
   MessageScrollerButton,
@@ -25,6 +28,8 @@ import { ChatMinimap, type ChatMinimapItem } from "./ui/chat-minimap";
 
 const OVERLAP_CLEARANCE = 8;
 const GUTTER_CLEARANCE = 12;
+const REVEAL_TURN_EVENT = "harbor:reveal-turn";
+const TURN_OVERSCAN = 1200;
 
 function minimapOverlapsContent(root: HTMLElement) {
   const content = root.querySelector<HTMLElement>(".conversation-content");
@@ -50,6 +55,9 @@ function pointerInMinimapGutter(root: HTMLElement, clientX: number) {
 }
 
 const TranscriptScrollerContext = createContext(false);
+const TranscriptHeightsContext = createContext<Map<string, number> | null>(
+  null,
+);
 export const useTranscriptScroller = () =>
   useContext(TranscriptScrollerContext);
 
@@ -59,17 +67,29 @@ export function TranscriptRow({
   user = false,
   children,
   ref,
+  style,
+  onFocusCapture,
+  onBlurCapture,
+  virtualMounted,
 }: {
   id: string;
   anchor?: boolean;
   user?: boolean;
   children: ReactNode;
   ref?: Ref<HTMLDivElement>;
+  style?: CSSProperties;
+  onFocusCapture?: FocusEventHandler<HTMLDivElement>;
+  onBlurCapture?: FocusEventHandler<HTMLDivElement>;
+  virtualMounted?: boolean;
 }) {
   const inScroller = useTranscriptScroller();
   return inScroller ? (
     <MessageScrollerItem
       ref={ref}
+      style={style}
+      onFocusCapture={onFocusCapture}
+      onBlurCapture={onBlurCapture}
+      data-virtual-mounted={virtualMounted}
       messageId={id}
       scrollAnchor={anchor}
       className={user ? "transcript-turn" : undefined}
@@ -79,6 +99,10 @@ export function TranscriptRow({
   ) : (
     <div
       ref={ref}
+      style={style}
+      onFocusCapture={onFocusCapture}
+      onBlurCapture={onBlurCapture}
+      data-virtual-mounted={virtualMounted}
       data-transcript-row={id}
       className={user ? "transcript-turn" : undefined}
     >
@@ -87,15 +111,99 @@ export function TranscriptRow({
   );
 }
 
+/** Keep stable scroll targets while unmounting expensive offscreen markdown,
+ * images, and tool output. Virtualize whole turns to preserve sticky prompts. */
+export function VirtualTranscriptTurn({
+  id,
+  anchor = false,
+  user = false,
+  live = false,
+  children,
+}: {
+  id: string;
+  anchor?: boolean;
+  user?: boolean;
+  live?: boolean;
+  children: ReactNode;
+}) {
+  const inScroller = useTranscriptScroller();
+  const enabled = inScroller && typeof IntersectionObserver !== "undefined";
+  const heights = useContext(TranscriptHeightsContext);
+  const row = useRef<HTMLDivElement>(null);
+  const height = useRef(heights?.get(id) ?? 240);
+  const [nearby, setNearby] = useState(false);
+  const [revealed, setRevealed] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const mounted = !enabled || nearby || revealed || live || focused;
+
+  useLayoutEffect(() => {
+    const element = row.current;
+    if (!element || !enabled) return;
+    const root = element.closest<HTMLElement>(
+      '[data-slot="message-scroller-viewport"]',
+    );
+    const observer = new IntersectionObserver(
+      ([entry]) => setNearby(entry.isIntersecting),
+      { root, rootMargin: `${TURN_OVERSCAN}px 0px` },
+    );
+    let revealFrame = 0;
+    const reveal = () => {
+      setRevealed(true);
+      cancelAnimationFrame(revealFrame);
+      // Hold premeasured content until the jump's intersection observations
+      // arrive, then let visibility own it again (including unused overscan).
+      revealFrame = requestAnimationFrame(() => {
+        revealFrame = requestAnimationFrame(() => setRevealed(false));
+      });
+    };
+    element.addEventListener(REVEAL_TURN_EVENT, reveal);
+    observer.observe(element);
+    return () => {
+      element.removeEventListener(REVEAL_TURN_EVENT, reveal);
+      observer.disconnect();
+      cancelAnimationFrame(revealFrame);
+    };
+  }, [enabled]);
+
+  useLayoutEffect(() => {
+    const element = row.current;
+    if (!element || !mounted) return;
+    const measure = () => {
+      height.current = element.getBoundingClientRect().height;
+      heights?.set(id, height.current);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [mounted, heights, id]);
+
+  return (
+    <TranscriptRow
+      ref={row}
+      id={id}
+      anchor={anchor}
+      user={user}
+      style={mounted ? undefined : { height: height.current }}
+      virtualMounted={mounted}
+      onFocusCapture={() => setFocused(true)}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget))
+          setFocused(false);
+      }}
+    >
+      {mounted && children}
+    </TranscriptRow>
+  );
+}
+
 function ScrollContent({
   children,
-  savedScrollTop,
   onScrollPosition,
   requestId,
   minimapItems,
 }: {
   children: ReactNode;
-  savedScrollTop?: number;
   onScrollPosition: (top: number) => void;
   requestId?: string;
   minimapItems: readonly ChatMinimapItem[];
@@ -175,38 +283,32 @@ function ScrollContent({
   }, [minimapItems]);
   const onPosition = useRef(onScrollPosition);
   onPosition.current = onScrollPosition;
-  const restored = useRef(false);
-  const liveEdge = useRef(savedScrollTop === undefined);
-  const initialTop = useRef(savedScrollTop);
+  const opened = useRef(false);
+  const liveEdge = useRef(true);
   const lastRequest = useRef(requestId);
   const reducedMotion = useReducedMotion();
-  const { scrollToMessage, scrollToStart } = useMessageScroller();
+  const { scrollToMessage, scrollToEnd } = useMessageScroller();
   const { end } = useMessageScrollerScrollable();
 
   useLayoutEffect(() => {
     const frame = requestAnimationFrame(() => {
-      if (viewport.current && initialTop.current !== undefined) {
-        // Enter the primitive's free-scrolling mode before restoring pixels,
-        // so its next content measurement cannot follow output over the saved view.
-        scrollToStart({ behavior: "auto" });
-        viewport.current.scrollTop = initialTop.current;
-      }
-      restored.current = true;
+      scrollToEnd({ behavior: "auto" });
+      opened.current = true;
     });
     return () => cancelAnimationFrame(frame);
-  }, [scrollToStart]);
+  }, [scrollToEnd]);
 
   const attachViewport = useCallback((element: HTMLDivElement | null) => {
     // A conversation can switch before the browser dispatches its final scroll
     // event. Save the actual DOM position while its viewport is still attached.
-    if (!element && viewport.current && restored.current) {
+    if (!element && viewport.current && opened.current) {
       onPosition.current(viewport.current.scrollTop);
     }
     viewport.current = element;
   }, []);
 
   useEffect(() => {
-    if (restored.current) liveEdge.current = !end;
+    if (opened.current) liveEdge.current = !end;
   }, [end]);
 
   useEffect(() => {
@@ -230,13 +332,52 @@ function ScrollContent({
       }}
     >
       {showMinimap && (
-        <ChatMinimap items={minimapItems} currentItemId={currentItemId} />
+        <ChatMinimap
+          items={minimapItems}
+          currentItemId={currentItemId}
+          onNavigate={(id, options) => {
+            const root = viewport.current;
+            const target =
+              root &&
+              Array.from(
+                root.querySelectorAll<HTMLElement>("[data-virtual-mounted]"),
+              ).find((row) => row.dataset.messageId === id);
+            if (!root || !target) {
+              return scrollToMessage(id, options);
+            }
+            const bounds = target.getBoundingClientRect();
+            const view = root.getBoundingClientRect();
+            if (
+              target.dataset.virtualMounted === "true" &&
+              bounds.bottom >= view.top - TURN_OVERSCAN &&
+              bounds.top <= view.bottom + TURN_OVERSCAN
+            )
+              return scrollToMessage(id, options);
+            // Measure the destination before the primitive calculates its
+            // offset. Smoothly traversing unmeasured turns changes that offset
+            // mid-animation, so distant virtual jumps use an immediate scroll.
+            const candidates = Array.from(
+              root.querySelectorAll<HTMLElement>("[data-virtual-mounted]"),
+            ).filter((row) => {
+              const rect = row.getBoundingClientRect();
+              return (
+                rect.bottom >= bounds.top - TURN_OVERSCAN &&
+                rect.top <= bounds.bottom + root.clientHeight + TURN_OVERSCAN
+              );
+            });
+            flushSync(() => {
+              for (const row of candidates)
+                row.dispatchEvent(new Event(REVEAL_TURN_EVENT));
+            });
+            return scrollToMessage(id, { ...options, behavior: "auto" });
+          }}
+        />
       )}
       <MessageScroller className="conversation-scroll">
         <MessageScrollerViewport
           ref={attachViewport}
           onScroll={() => {
-            if (viewport.current && restored.current)
+            if (viewport.current && opened.current)
               onScrollPosition(viewport.current.scrollTop);
           }}
         >
@@ -258,22 +399,16 @@ function ScrollContent({
 /** Key this component by conversation so each provider has one scroll owner. */
 export function ChatScroller({
   ready,
-  savedScrollTop,
+  heightCache,
   ...props
 }: {
   ready: boolean;
-  savedScrollTop?: number;
+  heightCache?: Map<string, number>;
   children: ReactNode;
   onScrollPosition: (top: number) => void;
   requestId?: string;
   minimapItems: readonly ChatMinimapItem[];
 }) {
-  // The primitive treats a changed default as a new opening request. Keep it
-  // fixed for this keyed conversation, even after scroll events populate its
-  // in-memory saved position.
-  const openingPosition = useRef<"start" | "end">(
-    savedScrollTop !== undefined ? "start" : "end",
-  );
   if (!ready)
     return (
       <div className="conversation-scroll" aria-label="Loading messages" />
@@ -281,10 +416,12 @@ export function ChatScroller({
   return (
     <MessageScrollerProvider
       autoScroll
-      defaultScrollPosition={openingPosition.current}
+      defaultScrollPosition="end"
       scrollEdgeThreshold={100}
     >
-      <ScrollContent {...props} savedScrollTop={savedScrollTop} />
+      <TranscriptHeightsContext.Provider value={heightCache ?? null}>
+        <ScrollContent {...props} />
+      </TranscriptHeightsContext.Provider>
     </MessageScrollerProvider>
   );
 }

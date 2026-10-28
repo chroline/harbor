@@ -26,6 +26,11 @@ export type Tool = {
   status: string;
   kind: string;
   content: unknown[];
+  name?: string;
+  description?: string;
+  command?: string;
+  locations?: { path: string; line?: number }[];
+  claudeCode?: Record<string, unknown>;
   rawInput: unknown;
   rawOutput: unknown;
   timestamp?: number;
@@ -79,7 +84,19 @@ export type Transcript = {
   messages: Message[];
   tools: Record<string, Tool>;
   terminals: Record<string, ToolTerminalOutput>;
-  replayToolDetails: Record<string, Pick<Tool, "content" | "rawInput">>;
+  replayToolDetails: Record<
+    string,
+    Pick<
+      Tool,
+      | "content"
+      | "rawInput"
+      | "name"
+      | "description"
+      | "command"
+      | "locations"
+      | "claudeCode"
+    >
+  >;
   attachmentMetadata: {
     text: string;
     childId?: string;
@@ -99,6 +116,20 @@ export const record = (v: unknown): Record<string, unknown> =>
   v !== null && typeof v === "object" && !Array.isArray(v)
     ? (v as Record<string, unknown>)
     : {};
+// ACP tool content wraps image blocks; some providers send them directly.
+export function toolImageSource(value: unknown): string | undefined {
+  const block = record(value);
+  const image = block.type === "content" ? record(block.content) : block;
+  if (
+    image.type === "image" &&
+    typeof image.mimeType === "string" &&
+    /^image\/[a-z0-9.+-]+$/i.test(image.mimeType) &&
+    typeof image.data === "string" &&
+    image.data.length > 0
+  ) {
+    return `data:${image.mimeType};base64,${image.data}`;
+  }
+}
 export const str = (v: unknown, fallback = ""): string =>
   typeof v === "string" ? v : fallback;
 export const array = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
@@ -262,20 +293,26 @@ export function reduceEvent(
           ([, tool]) => !!t.children[tool.sessionId],
         ),
       ),
-      // Some providers replay edit receipts without the original input/diff.
-      // Keep bounded details off the timeline until that exact call is replayed.
+      // Providers may replay receipts without original presentation details.
+      // Keep details off the timeline until that exact call is replayed.
       replayToolDetails: Object.fromEntries(
         Object.entries({
           ...t.replayToolDetails,
           ...Object.fromEntries(
-            Object.entries(t.tools)
-              .filter(([, tool]) => tool.kind === "edit")
-              .map(([id, tool]) => [
-                id,
-                { content: tool.content, rawInput: tool.rawInput },
-              ]),
+            Object.entries(t.tools).map(([id, tool]) => [
+              id,
+              {
+                content: tool.content,
+                rawInput: tool.rawInput,
+                name: tool.name,
+                description: tool.description,
+                command: tool.command,
+                locations: tool.locations,
+                claudeCode: tool.claudeCode,
+              },
+            ]),
           ),
-        }).slice(-100),
+        }),
       ),
     };
   if (event.kind === "connected") {
@@ -400,7 +437,7 @@ export function reduceEvent(
       t.messages = [
         ...t.messages,
         {
-          id: `${streamId}:${event.sequence}`,
+          id: `${childId ?? "root"}:${role}:${event.sequence}`,
           streamId,
           sequence: event.sequence,
           role,
@@ -452,7 +489,7 @@ export function reduceEvent(
           childId: targetChild,
           attachments: t.messages.at(-1)!.attachments!,
         },
-      ].slice(-200);
+      ];
     }
   }
   if (event.kind === "parent_relay_chunk" && targetChild)
@@ -510,7 +547,7 @@ export function reduceEvent(
             }
           : {}),
       },
-    ].slice(-200);
+    ];
   }
   if (event.kind === "answered") {
     t.requests = t.requests.filter((request) => request.id !== p.id);
@@ -648,7 +685,13 @@ export function reduceEvent(
         );
       }
       const details = old ?? t.replayToolDetails[id];
+      const boundText = (text: string) => {
+        if (text.length <= 32768) return text;
+        t.trimmed = true;
+        return text.slice(0, 32768) + "\n[… full output saved in transcript …]";
+      };
       const boundValue = (v: unknown) => {
+        if (typeof v === "string") return boundText(v);
         const text = JSON.stringify(v);
         if (text && text.length > 32768) {
           t.trimmed = true;
@@ -672,22 +715,93 @@ export function reduceEvent(
           details?.content.filter((c) => record(c).type === "diff") ?? [];
         if (diffs.length) nextContent = [...array(nextContent), ...diffs];
       }
-      const content = boundValue(nextContent);
+      // Bound text inside its envelope, so truncation never turns protocol JSON
+      // into user-visible text. Images remain intact for the image renderer.
+      const boundResult = (value: unknown): unknown => {
+        if (typeof value === "string") return boundText(value);
+        if (Array.isArray(value)) return value.map(boundResult);
+        if (toolImageSource(value)) return value;
+        const block = record(value);
+        if (block.type === "text" && typeof block.text === "string")
+          return { ...block, text: boundText(block.text) };
+        if (block.type === "content" || Array.isArray(block.content))
+          return { ...block, content: boundResult(block.content) };
+        const bounded = boundValue(value);
+        return typeof bounded === "string"
+          ? {
+              type: "text",
+              text: "Output was truncated. Full output is saved in the transcript.",
+            }
+          : bounded;
+      };
+      const content = boundResult(nextContent);
       t.tools = {
         ...t.tools,
         [id]: {
           id,
           sequence: old?.sequence ?? event.sequence,
           sessionId: wireId,
-          title: str(u.title, old?.title ?? "Working"),
+          title: str(u.title, old?.title ?? ""),
           status: str(u.status, old?.status ?? "in_progress"),
           kind: str(u.kind, old?.kind ?? "other"),
           content:
             typeof content === "string"
               ? [{ type: "content", content: { type: "text", text: content } }]
               : array(content),
-          rawInput: boundValue(u.rawInput ?? details?.rawInput),
-          rawOutput: boundValue(u.rawOutput ?? old?.rawOutput),
+          description: str(record(u.rawInput).description)
+            ? str(boundValue(record(u.rawInput).description))
+            : details?.description,
+          command:
+            str(record(u.rawInput).command) || str(record(u.rawInput).cmd)
+              ? str(
+                  boundValue(
+                    record(u.rawInput).command ?? record(u.rawInput).cmd,
+                  ),
+                )
+              : details?.command,
+          name:
+            str(u.name) ||
+            str(record(meta.claudeCode).toolName) ||
+            details?.name,
+          locations:
+            u.locations === undefined
+              ? details?.locations
+              : array(u.locations).flatMap((value) => {
+                  const location = record(value);
+                  return typeof location.path === "string"
+                    ? [
+                        {
+                          path: location.path,
+                          line:
+                            typeof location.line === "number"
+                              ? location.line
+                              : undefined,
+                        },
+                      ]
+                    : [];
+                }),
+          claudeCode: {
+            toolResponse: Object.fromEntries(
+              ["description", "prompt", "isAsync"].flatMap((key) => {
+                const value =
+                  record(record(meta.claudeCode).toolResponse)[key] ??
+                  record(details?.claudeCode?.toolResponse)[key];
+                return typeof value === "string" || typeof value === "boolean"
+                  ? [[key, boundValue(value)]]
+                  : [];
+              }),
+            ),
+          },
+          rawInput: boundValue(
+            u.rawInput == null
+              ? details?.rawInput
+              : u.rawInput !== null &&
+                  typeof u.rawInput === "object" &&
+                  !Array.isArray(u.rawInput)
+                ? { ...record(details?.rawInput), ...record(u.rawInput) }
+                : u.rawInput,
+          ),
+          rawOutput: boundResult(u.rawOutput ?? old?.rawOutput),
           timestamp: old?.timestamp ?? event.timestamp,
           updatedAt: event.timestamp,
           turn: old?.turn ?? (childId ? (t.childTurns[childId] ?? 0) : t.turn),
@@ -784,42 +898,8 @@ export function reduceEvent(
         );
     }
   }
-  // The complete event log remains in SQLite; this is a bounded rendering window.
-  if (t.messages.length > 200) {
-    t.messages = t.messages.slice(-200);
-    t.trimmed = true;
-  }
-  const last = t.messages.at(-1);
-  if (last && last.text.length > 65536) {
-    const notice = "[… earlier content saved in transcript …]\n";
-    const removed = last.text.length - 60000;
-    t.messages = [
-      ...t.messages.slice(0, -1),
-      {
-        ...last,
-        text: notice + last.text.slice(-60000),
-        ...(last.commandRanges
-          ? {
-              commandRanges: last.commandRanges
-                .filter((range) => range.start >= removed)
-                .map((range) => ({
-                  start: range.start - removed + notice.length,
-                  end: range.end - removed + notice.length,
-                })),
-            }
-          : {}),
-      },
-    ];
-    t.trimmed = true;
-  }
-  if (Object.keys(t.tools).length > 100) {
-    t.tools = Object.fromEntries(Object.entries(t.tools).slice(-100));
-    t.trimmed = true;
-  }
-  if (Object.keys(t.children).length > 256) {
-    t.children = Object.fromEntries(Object.entries(t.children).slice(-256));
-    t.trimmed = true;
-  }
+  // Keep the complete logical transcript. The UI virtualizes offscreen turns
+  // instead of deleting old messages, tools, or workers from the data model.
   return t;
 }
 export const statusLabel = (s: string) =>

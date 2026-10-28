@@ -21,6 +21,57 @@ const event = (kind: string, payload: unknown): SessionEvent => ({
 const update = (u: unknown, id = "root") =>
   event("session/update", { sessionId: id, update: u });
 
+it("keeps recent message IDs stable when older turns are filled in", () => {
+  const older = [
+    event("user_message", { text: "Older" }),
+    event("turn_complete", {}),
+  ];
+  const recent = [
+    event("user_message", { text: "Recent" }),
+    update({
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: "Reply" },
+    }),
+  ];
+  const preview = recent.reduce(reduceEvent, emptyTranscript());
+  const full = [...older, ...recent].reduce(reduceEvent, emptyTranscript());
+  expect(full.messages.slice(-2).map((m) => m.id)).toEqual(
+    preview.messages.map((m) => m.id),
+  );
+});
+
+it("retains older tool calls and worker identities in a full conversation", () => {
+  let t = emptyTranscript();
+  for (let i = 0; i < 150; i++) {
+    t = reduceEvent(
+      t,
+      update({
+        sessionUpdate: "tool_call",
+        toolCallId: `tool-${i}`,
+        title: `Read ${i}`,
+        status: "completed",
+        kind: "read",
+        content: [],
+      }),
+    );
+  }
+  for (let i = 0; i < 300; i++) {
+    t = reduceEvent(
+      t,
+      update({
+        sessionUpdate: "subagent_update",
+        sessionId: `worker-${i}`,
+        title: `Worker ${i}`,
+        state: { type: "completed" },
+      }),
+    );
+  }
+  expect(Object.keys(t.tools)).toHaveLength(150);
+  expect(t.tools["root:tool-0"].title).toBe("Read 0");
+  expect(Object.keys(t.children)).toHaveLength(300);
+  expect(t.children["worker-0"].title).toBe("Worker 0");
+});
+
 it("bounds terminal output while retaining the trailing error", () => {
   const t = reduceEvent(
     emptyTranscript(),
@@ -553,7 +604,7 @@ describe("ACP transcript routing", () => {
       expect(t.tools["root:write"].sequence).toBe(start.sequence);
     }
   });
-  it("bounds large histories while retaining the most recent response", () => {
+  it("retains the entire history for the virtualized transcript", () => {
     let t = emptyTranscript();
     for (let i = 0; i < 1000; i++) {
       t = reduceEvent(t, event("user_message", { text: `message ${i}` }));
@@ -565,8 +616,10 @@ describe("ACP transcript routing", () => {
         }),
       );
     }
-    expect(t.messages.length).toBe(200);
-    expect(t.trimmed).toBe(true);
+    expect(t.messages.length).toBe(2000);
+    expect(t.messages[0].text).toBe("message 0");
+    expect(t.messages[1000].text).toBe("message 500");
+    expect(t.trimmed).toBe(false);
     expect(t.messages.at(-1)?.text).toBe("reply");
   });
   it("assembles user history chunks and separates worker tools", () => {
@@ -961,7 +1014,7 @@ it("replaces command catalogs, isolates workers, and preserves sent highlighting
   expect(t.childCommands.child).toEqual([]);
 });
 
-it("keeps invocation ranges aligned when a long user message is trimmed for display", () => {
+it("preserves a complete long user message and its invocation ranges", () => {
   let t = reduceEvent(
     emptyTranscript(),
     update({
@@ -977,12 +1030,13 @@ it("keeps invocation ranges aligned when a long user message is trimmed for disp
     event("user_message", { text: "/review " + "x".repeat(70000) + " $build" }),
   );
   const message = t.messages[0];
-  expect(t.trimmed).toBe(true);
+  expect(t.trimmed).toBe(false);
+  expect(message.text).toBe("/review " + "x".repeat(70000) + " $build");
   expect(
     message.commandRanges?.map((range) =>
       message.text.slice(range.start, range.end),
     ),
-  ).toEqual(["$build"]);
+  ).toEqual(["/review", "$build"]);
 });
 
 it("classifies sidebar loading and attention, with attention winning a mixed summary", () => {
@@ -1082,4 +1136,152 @@ it("keeps native async questions answerable after final output and history repla
   );
   expect(t.requests).toHaveLength(0);
   expect(t.interactions.at(-1)?.status).toBe("answered");
+});
+
+it("preserves large image read results while bounding accompanying text", () => {
+  const image = {
+    type: "image",
+    mimeType: "image/png",
+    data: "a".repeat(40000),
+  };
+  const t = reduceEvent(
+    emptyTranscript(),
+    update({
+      sessionUpdate: "tool_call",
+      toolCallId: "image-read",
+      kind: "read",
+      content: [
+        { type: "content", content: image },
+        { type: "content", content: { type: "text", text: "x".repeat(40000) } },
+      ],
+    }),
+  );
+  const content = t.tools["root:image-read"].content;
+  expect(content[0]).toEqual({ type: "content", content: image });
+  expect(JSON.stringify(content[1]).length).toBeLessThan(33000);
+  expect(t.trimmed).toBe(true);
+});
+
+it("retains tool identity, locations, descriptions and curated worker metadata across updates and replay", () => {
+  let t = reduceEvent(
+    emptyTranscript(),
+    update({
+      sessionUpdate: "tool_call",
+      toolCallId: "metadata",
+      title: "Read File",
+      rawInput: { file_path: "src/a.ts", description: "Read workflow" },
+      locations: [{ path: "src/a.ts", line: 20 }],
+      _meta: {
+        claudeCode: {
+          toolName: "Read",
+          toolResponse: {
+            description: "Map workflow",
+            prompt: "Inspect the flow",
+            isAsync: true,
+            agentId: "do-not-retain",
+          },
+        },
+      },
+    }),
+  );
+  t = reduceEvent(
+    t,
+    update({
+      sessionUpdate: "tool_call_update",
+      toolCallId: "metadata",
+      rawInput: { limit: 8 },
+      _meta: { claudeCode: { toolResponse: { isAsync: false } } },
+    }),
+  );
+  const saved = t.tools["root:metadata"];
+  expect(saved.name).toBe("Read");
+  expect(saved.rawInput).toMatchObject({
+    file_path: "src/a.ts",
+    description: "Read workflow",
+    limit: 8,
+  });
+  expect(saved.claudeCode).toEqual({
+    toolResponse: {
+      description: "Map workflow",
+      prompt: "Inspect the flow",
+      isAsync: false,
+    },
+  });
+  t = reduceEvent(t, event("history_reset", {}));
+  t = reduceEvent(
+    t,
+    update({
+      sessionUpdate: "tool_call",
+      toolCallId: "metadata",
+      title: "Read File",
+      status: "completed",
+      rawInput: null,
+    }),
+  );
+  expect(t.tools["root:metadata"]).toMatchObject({
+    name: "Read",
+    locations: saved.locations,
+    rawInput: saved.rawInput,
+    claudeCode: saved.claudeCode,
+  });
+});
+
+it("preserves command descriptions even when the input payload exceeds the display limit", () => {
+  const t = reduceEvent(
+    emptyTranscript(),
+    update({
+      sessionUpdate: "tool_call",
+      toolCallId: "large-command",
+      title: "Terminal",
+      kind: "execute",
+      rawInput: {
+        command: "x".repeat(40000),
+        description: "Rebuild the pipeline visualization",
+      },
+      _meta: { claudeCode: { toolName: "Bash" } },
+    }),
+  );
+  expect(t.trimmed).toBe(true);
+  expect(t.tools["root:large-command"].description).toBe(
+    "Rebuild the pipeline visualization",
+  );
+  expect(t.tools["root:large-command"].command).toContain(
+    "full output saved in transcript",
+  );
+});
+
+it("bounds large text results without exposing serialized ACP envelopes", () => {
+  const t = reduceEvent(
+    emptyTranscript(),
+    update({
+      sessionUpdate: "tool_call",
+      toolCallId: "large-result",
+      kind: "execute",
+      content: [
+        {
+          type: "content",
+          content: { type: "text", text: "Readable output\n".repeat(4000) },
+        },
+      ],
+    }),
+  );
+  const block = t.tools["root:large-result"].content[0] as {
+    content: { text: string };
+  };
+  expect(block.content.text.startsWith("Readable output\n")).toBe(true);
+  expect(block.content.text).toContain("full output saved in transcript");
+  expect(t.trimmed).toBe(true);
+});
+
+it("does not invent a tool title when only the provider tool name is available", () => {
+  const t = reduceEvent(
+    emptyTranscript(),
+    update({
+      sessionUpdate: "tool_call",
+      toolCallId: "provider-name",
+      _meta: { claudeCode: { toolName: "SubagentHandback" } },
+    }),
+  );
+  expect(t.tools["root:provider-name"].title).toBe("");
+  expect(t.tools["root:provider-name"].name).toBe("SubagentHandback");
 });
