@@ -40,7 +40,7 @@ Harbor is built in that spirit: a place to work with coding agents, follow an id
 
 ## install
 
-Harbor runs on Apple silicon Macs with macOS 12 or later. Once a release is published, download the DMG from [GitHub Releases](https://github.com/chroline/harbor/releases/latest), open it, and drag Harbor into Applications. Open Harbor from Applications, then install and authenticate your preferred agent separately.
+Harbor runs on Apple silicon Macs with macOS 12 or later. Download the latest published DMG from [GitHub Releases](https://github.com/chroline/harbor/releases), open it, and drag Harbor into Applications. Open Harbor from Applications, then install and authenticate your preferred agent separately. Release builds are signed with Developer ID and notarized by Apple.
 
 To build from source instead, install Node 22+, Rust, and the Xcode command-line tools, then run from the project folder:
 
@@ -54,7 +54,7 @@ The local build uses a development signing certificate. See [development](docs/d
 
 ## get started
 
-for local development on Apple silicon with macOS 12 or later, install Node 22+, Rust, and the Xcode command-line tools, then run:
+to run Harbor with a development server, install Node 22+, Rust, and the Xcode command-line tools, then run from the project folder:
 
 ```sh
 npm ci

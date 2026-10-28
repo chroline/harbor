@@ -4,7 +4,7 @@
 
 ## open Harbor
 
-open **Harbor.app** if you have a local build, or follow the [development guide](development.md#run-from-source) to build it. the current macOS target is Apple silicon with macOS 12 or later. local macOS bundles use a persistent self-signed certificate stored in your user keychain. distribution with Developer ID signing and notarization requires your Apple credentials. agent CLIs, their ACP adapters, authentication, and Worktrunk are separate dependencies. Harbor does not install global tools or manage provider credentials.
+on an Apple silicon Mac with macOS 12 or later, download the latest published DMG from [GitHub Releases](https://github.com/chroline/harbor/releases), open it, and drag **Harbor.app** to Applications. open Harbor from Applications. release builds are signed and notarized; building locally is also supported through the [development guide](development.md#run-from-source). agent CLIs, their ACP adapters, authentication, and Worktrunk are separate dependencies. Harbor does not install global tools or manage provider credentials.
 
 ## workspaces and conversations
 

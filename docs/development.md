@@ -15,7 +15,7 @@ npm run desktop
 
 ### folder access across rebuilds
 
-packaged builds automatically reuse the **Harbor Local Development** signing certificate in your user keychain, creating it once if needed. the bundle keeps the identifier `dev.harbor.desktop`. this gives macOS a stable app identity so existing folder approvals survive rebuilds. the former ad-hoc signature identified each executable by its changing code hash; see [Apple's explanation of designated requirements](https://developer.apple.com/documentation/technotes/tn3127-inside-code-signing-requirements).
+local packaged builds automatically reuse the **Harbor Local Development** signing certificate in your user keychain, creating it once if needed. the bundle keeps the identifier `dev.harbor.desktop`. this gives macOS a stable app identity so existing folder approvals survive rebuilds. the former ad-hoc signature identified each executable by its changing code hash; see [Apple's explanation of designated requirements](https://developer.apple.com/documentation/technotes/tn3127-inside-code-signing-requirements). published releases use a separate Developer ID signing identity.
 
 when moving from the old ad-hoc build, macOS may ask once more for each protected folder. after approving the signed build, rebuild with `npm run desktop:build`, quit Harbor, and reopen the same `Harbor.app`. keep the certificate and its private key in your keychain: replacing them changes the app's identity again. the setup grants only `/usr/bin/codesign` access to the new key and deletes the temporary key files after import. it does not change macOS privacy settings or certificate trust settings.
 
@@ -31,7 +31,7 @@ The `macOS release` GitHub Actions workflow builds an Apple silicon DMG, signs i
 - `APPLE_ID`, `APPLE_PASSWORD`, and `APPLE_TEAM_ID`: Apple account email, app-specific password, and developer team ID for notarization.
 - `KEYCHAIN_PASSWORD`: a password for the temporary CI keychain.
 
-See [Tauri's macOS signing guide](https://v2.tauri.app/distribute/sign/macos/) for certificate export and notarization setup. Keep the certificate and credentials private. Set the version in `package.json` and `src-tauri/tauri.conf.json` to the same stable version, then push a matching tag such as `v0.1.0`. The workflow can also be manually dispatched against an existing version tag. Review the draft release and its DMG, then publish it for users. A release is not available until that publication step is complete.
+See [Tauri's macOS signing guide](https://v2.tauri.app/distribute/sign/macos/) for certificate export and notarization setup. Keep the certificate and credentials private. Set the same stable version in `package.json`, `package-lock.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and `src-tauri/Cargo.lock`, then push a matching tag such as `v0.1.2`. The workflow can also be manually dispatched against an existing version tag. It mounts the DMG and checks the app's signature, notarization ticket, and Gatekeeper assessment. Review and test the draft release and its DMG, then publish it for users on [GitHub Releases](https://github.com/chroline/harbor/releases).
 
 ## background rendering
 
