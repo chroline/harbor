@@ -38,7 +38,7 @@ import { skylineCity } from "./lib/skyline-city";
 import { skylineTimeOfDay } from "./lib/skyline-period";
 import { WorkspacePicker } from "./components/WorkspacePicker";
 import { WorktreePicker } from "./components/WorktreePicker";
-import { Banner, BannerDescription } from "./components/ui/banner";
+import { AppNotifications } from "./components/AppNotifications";
 import {
   DropdownMenu,
   DropdownTrigger,
@@ -54,7 +54,6 @@ import {
 } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
-  GitBranch,
   Settings2,
   Plus,
   SquarePen,
@@ -111,6 +110,7 @@ import { useShellLayout, WINDOW_GUTTER } from "./lib/shell-layout";
 import { NO_WORKSPACE_ID, useSidebarOrder } from "./lib/sidebar-order";
 import { usePinnedChats } from "./lib/pinned-chats";
 import { useUnseenTurns } from "./lib/unseen-turns";
+import { transitionPage } from "./lib/page-transition";
 import { SidebarKeyboardShortcut } from "./components/SidebarKeyboardShortcut";
 import {
   ChromeSidebarDivider,
@@ -118,11 +118,8 @@ import {
 } from "./components/ChromeSidebarTrack";
 import { TopbarHistory } from "./components/TopbarHistory";
 import { SidebarRowMenu } from "./components/SidebarRowMenu";
-import { ProjectDialog } from "./components/ProjectDialog";
-import { projectGlyph } from "./components/ProjectIcon";
 import { open as openFolder } from "@tauri-apps/plugin-dialog";
 import type { Workspace } from "./lib/bindings/Workspace";
-import type { Project } from "./lib/bindings/Project";
 export default function App() {
   const { data, ready, refresh, error, setError, updateSession } = useStore();
   const [history, setHistory] = useState(restoreHistory);
@@ -163,23 +160,18 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [deleting, setDeleting] = useState<SessionRecord | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
-  const [projectDialog, setProjectDialog] = useState<Project | "new" | null>(
-    null,
-  );
+  const archivePending = useRef(false);
   const [notifications, setNotifications] = useState(false);
   const [tabDividerVisible, setTabDividerVisible] = useState(false);
   const [chatTabsTarget, setChatTabsTarget] = useState<HTMLDivElement | null>(
     null,
   );
   const sessions = data.sessions.filter((s) => !s.archived);
+  const sessionsRef = useRef(sessions);
+  sessionsRef.current = sessions;
   const savedSessionIds = useMemo(() => ready ? new Set(data.sessions.map((s) => s.id)) : undefined, [ready, data.sessions]);
   const { pinnedChatIds, togglePinnedChat } = usePinnedChats(savedSessionIds);
   const sidebarOrder = useSidebarOrder(savedSessionIds);
-  const sidebarProjects = sidebarOrder.sort(
-    "projects",
-    data.projects,
-    (p) => p.id,
-  );
   const sidebarWorkspaces = sidebarOrder.sort(
     "workspaces",
     [{ id: null, name: "No workspace", path: undefined }, ...data.workspaces],
@@ -198,9 +190,11 @@ export default function App() {
     typeof view === "object"
       ? sessions.find((s) => s.id === view.session)
       : undefined;
+  const activeIdRef = useRef(active?.id);
+  activeIdRef.current = active?.id;
   const unseen = useUnseenTurns(sessions, active?.id);
   const go = (next: View) => {
-    setHistory((current) => visit(current, next));
+    transitionPage(() => setHistory((current) => visit(current, next)));
     setSearch(false);
     setNotifications(false);
   };
@@ -253,10 +247,12 @@ export default function App() {
       if (failed) setDraftFiles(`${session.id}:root`, pendingFiles);
       setBranch("");
       // Keep the chat the user opened while this worktree/agent was starting.
-      setHistory((current) =>
-        current.entries[current.index] === "home"
-          ? visit(current, { session: session.id })
-          : current,
+      transitionPage(() =>
+        setHistory((current) =>
+          current.entries[current.index] === "home"
+            ? visit(current, { session: session.id })
+            : current,
+        ),
       );
       if (!failed) {
         void call("send_prompt", {
@@ -277,12 +273,12 @@ export default function App() {
     }
   };
   const goBack = () => {
-    setHistory((current) => travel(current, -1));
+    transitionPage(() => setHistory((current) => travel(current, -1)));
     setSearch(false);
     setNotifications(false);
   };
   const goForward = () => {
-    setHistory((current) => travel(current, 1));
+    transitionPage(() => setHistory((current) => travel(current, 1)));
     setSearch(false);
     setNotifications(false);
   };
@@ -389,20 +385,48 @@ export default function App() {
       setAddingWorkspace(false);
     }
   };
-  const addProject = async () => {
-    setProjectDialog("new");
+  const archiveChat = async (session: SessionRecord) => {
+    await call("delete_session", { sessionId: session.id });
+    setDeleting(null);
+    if (activeIdRef.current === session.id) go("home");
+    await refresh();
   };
-  const deleteChat = async () => {
-    if (!deleting) return;
+  const requestArchive = async (session: SessionRecord) => {
+    if (archivePending.current || deleting) return;
+    archivePending.current = true;
     setDeleteBusy(true);
     try {
-      await call("delete_session", { sessionId: deleting.id });
-      setDeleting(null);
-      if (active?.id === deleting.id) go("home");
-      await refresh();
+      const isActive = (candidate: SessionRecord) =>
+        ["working", "connecting", "needs_input"].includes(candidate.status);
+      if (isActive(session)) {
+        setDeleting(session);
+        return;
+      }
+      const dirty = session.worktreeId
+        ? await call<boolean>("session_has_uncommitted_changes", {
+            sessionId: session.id,
+          })
+        : false;
+      const latest = sessionsRef.current.find((s) => s.id === session.id) ?? session;
+      if (dirty || isActive(latest)) setDeleting(latest);
+      else await archiveChat(latest);
     } catch (e) {
       setError(String(e));
     } finally {
+      archivePending.current = false;
+      setDeleteBusy(false);
+    }
+  };
+  const deleteChat = async () => {
+    if (!deleting || archivePending.current) return;
+    archivePending.current = true;
+    setDeleteBusy(true);
+    try {
+      await archiveChat(deleting);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      archivePending.current = false;
       setDeleteBusy(false);
     }
   };
@@ -459,7 +483,7 @@ export default function App() {
               {
                 label: "Archive conversation…",
                 icon: Archive,
-                onSelect: () => setDeleting(s),
+                onSelect: () => void requestArchive(s),
                 destructive: true,
               },
             ]}
@@ -626,15 +650,6 @@ export default function App() {
                     Search<kbd className="ml-auto">⌘ K</kbd>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    icon={GitBranch}
-                    isActive={view === "worktrees"}
-                    onClick={() => go("worktrees")}
-                  >
-                    Worktrees
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
               </SidebarMenu>
             </SidebarGroup>
             {pinnedChats.length > 0 && (
@@ -645,63 +660,6 @@ export default function App() {
                 </SidebarMenu>
               </SidebarGroup>
             )}
-            <SidebarGroup collapsible role="region" aria-label="Projects">
-              <SidebarGroupLabel>Projects</SidebarGroupLabel>
-              <SidebarGroupAction
-                aria-label="Create project"
-                title="Create project"
-                onClick={() => void addProject()}
-              >
-                <Plus />
-              </SidebarGroupAction>
-              <SidebarMenu>
-                {sidebarProjects.map((p) => {
-                  const workspace = data.workspaces.find(
-                    (w) => w.id === p.workspaceId,
-                  );
-                  return (
-                    <SidebarMenuItem key={p.id}>
-                      <SidebarRowMenu
-                        label={p.name}
-                        reorder={sidebarOrder.row(
-                          "projects",
-                          p.id,
-                          p.name,
-                          sidebarProjects.map((item) => item.id),
-                        )}
-                        actions={[
-                          {
-                            label: "Edit project…",
-                            icon: SquarePen,
-                            onSelect: () => setProjectDialog(p),
-                          },
-                        ]}
-                      >
-                        <SidebarMenuButton
-                          icon={projectGlyph(p)}
-                          aria-label={p.name}
-                          title={
-                            workspace
-                              ? `${workspace.name} · ${workspace.path}`
-                              : p.name
-                          }
-                          isActive={false}
-                          onClick={() => {
-                            setWorkspace(p.workspaceId);
-                            newTask();
-                          }}
-                        >
-                          {p.name}
-                        </SidebarMenuButton>
-                      </SidebarRowMenu>
-                    </SidebarMenuItem>
-                  );
-                })}
-              </SidebarMenu>
-              {!data.projects.length && (
-                <p className="sidebar-empty">No projects added</p>
-              )}
-            </SidebarGroup>
             <SidebarGroup collapsible role="region" aria-label="Workspaces">
               <SidebarGroupLabel>Workspaces</SidebarGroupLabel>
               <SidebarGroupAction
@@ -1014,35 +972,14 @@ export default function App() {
           </div>
         </DialogContent>
       </Dialog>
-      {projectDialog && (
-        <ProjectDialog
-          key={projectDialog === "new" ? "new" : projectDialog.id}
-          project={projectDialog === "new" ? undefined : projectDialog}
-          workspaces={data.workspaces}
-          onClose={() => setProjectDialog(null)}
-          onSaved={async (saved) => {
-            await refresh();
-            if (projectDialog === "new") {
-              setWorkspace(saved.workspaceId);
-              newTask();
-            }
-          }}
-        />
-      )}
-      {error && (
-        <div className="app-notification">
-          <Banner
-            key={error}
-            className="app-error-banner"
-            size="compact"
-            status="error"
-            dismissible
-            onDismiss={() => setError(null)}
-          >
-            <BannerDescription>{error}</BannerDescription>
-          </Banner>
-        </div>
-      )}
+      <AppNotifications
+        error={error}
+        onDismissError={() => setError(null)}
+        sessions={data.sessions}
+        ready={ready}
+        activeSessionId={active?.id}
+        onOpenSession={(id) => go({ session: id })}
+      />
     </SidebarProvider>
   );
 }

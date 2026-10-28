@@ -10,36 +10,54 @@ await page.cdp("Emulation.setEmulatedMedia", {
   features: [{ name: "prefers-reduced-motion", value: "no-preference" }],
 });
 await page.goto("http://127.0.0.1:1420/tests/ui.html");
-await page.waitForSelector('textarea[aria-label="Describe a new task"]');
-await page.evaluate(() => {
-  window.__pageEntrances = [];
-  document.addEventListener("animationstart", (event) => {
-    if (event.animationName === "page-in")
-      window.__pageEntrances.push(event.target.className);
-  });
+await page.waitForSelector('[role="textbox"][aria-label="Describe a new task"]');
+if (!(await page.evaluate(() => document.querySelector("#harbor-sidebar")?.getBoundingClientRect().width > 0)))
+  await page.click('button[aria-label="Toggle Sidebar"]');
+// Use the page's main world so the wrapper observes calls from the app.
+const main = async (fn) => (await page.cdp("Runtime.evaluate", {
+  expression: `(${fn.toString()})()`, returnByValue: true, awaitPromise: true,
+})).result.value;
+await main(() => {
+  window.__pageTransitions = [];
+  const start = document.startViewTransition.bind(document);
+  document.startViewTransition = (update) => {
+    const transition = start(update);
+    transition.ready.then(() => {
+      const animations = document.getAnimations().filter((animation) =>
+        ["page-blur-in", "page-blur-out"].includes(animation.animationName),
+      );
+      for (const animation of animations) {
+        animation.pause();
+        animation.currentTime = 210;
+      }
+      const sample = (side) => {
+        const style = getComputedStyle(document.documentElement, `::view-transition-${side}(harbor-page)`);
+        return { opacity: Number(style.opacity), filter: style.filter, duration: style.animationDuration };
+      };
+      window.__pageTransitions.push({ old: sample("old"), new: sample("new"), count: animations.length });
+      document.documentElement.dataset.blurSampled = "true";
+    }).catch((error) => { window.__pageTransitions.push({ error: String(error) }); document.documentElement.dataset.blurSampled = "true"; });
+    return transition;
+  };
 });
 const entrance = async (selector, action) => {
-  await page.evaluate(() => {
-    window.__pageEntrances = [];
-  });
+  await main(() => { window.__pageTransitions = []; delete document.documentElement.dataset.blurSampled; });
   await action();
   await page.waitForSelector(selector);
-  assert.equal(
-    await page.evaluate(
-      (selector) =>
-        getComputedStyle(document.querySelector(selector)).animationName,
-      selector,
-    ),
-    "page-in",
-    `${selector} should use the shared page entrance`,
-  );
-  await page.waitForFunction(
-    (selector) =>
-      window.__pageEntrances.includes(
-        document.querySelector(selector)?.className,
-      ),
-    selector,
-  );
+  await page.waitForFunction(() => document.documentElement.dataset.blurSampled === "true");
+  const result = await main(() => window.__pageTransitions.at(-1));
+  assert.equal(result.count, 2, "both page snapshots should animate");
+  for (const side of [result.old, result.new]) {
+    assert.equal(side.duration, "0.42s");
+    assert(side.opacity > 0 && side.opacity < 1, "both views should overlap");
+    assert(parseFloat(side.filter.replace("blur(", "")) > 2, "both views should visibly blur");
+  }
+  await main(async () => {
+    document.getAnimations().filter((animation) =>
+      ["page-blur-in", "page-blur-out"].includes(animation.animationName),
+    ).forEach((animation) => animation.finish());
+    await new Promise(requestAnimationFrame);
+  });
 };
 const newTask = () =>
   page.click(
@@ -50,7 +68,7 @@ const openChat = (title) =>
     `#harbor-sidebar [data-sidebar="menu-sub-button"]:has-text("${title}")`,
   );
 const createChat = async (title) => {
-  await page.fill('textarea[aria-label="Describe a new task"]', title);
+  await page.fill('[role="textbox"][aria-label="Describe a new task"]', title);
   await entrance(".chat-layout", () =>
     page.click('button[aria-label="Start task"]'),
   );
@@ -71,22 +89,15 @@ await entrance(".home-page", () =>
 await page.cdp("Emulation.setEmulatedMedia", {
   features: [{ name: "prefers-reduced-motion", value: "reduce" }],
 });
+const transitionCount = await main(() => window.__pageTransitions.length);
 for (const [selector, action] of [
   [".chat-layout", () => openChat("First transition chat")],
   [".home-page", newTask],
 ]) {
   await action();
   await page.waitForSelector(selector);
-  assert.equal(
-    await page.evaluate(
-      (selector) =>
-        getComputedStyle(document.querySelector(selector)).animationName,
-      selector,
-    ),
-    "none",
-  );
+  assert.equal(await main(() => window.__pageTransitions.length), transitionCount,
+    "reduced motion should bypass snapshot animations");
 }
-console.log(
-  "Passed: task creation, New Task ↔ chat, chat switching, back/forward, and reduced motion.",
-);
+console.log("Passed: overlapping blur in both directions, task creation, chat switching, back/forward, and reduced motion.");
 if (!globalThis.HARBOR_QA_SPACE) await task.finish({ keep: [] });

@@ -547,7 +547,7 @@ it.each([null, "repo"])(
   "deletes a sidebar chat in project %s without switching away from another chat",
   async (projectId) => {
     mocks.initialSessions = [
-      { ...session, projectId, workspaceId: projectId ? "workspace" : null },
+      { ...session, status: "working", projectId, workspaceId: projectId ? "workspace" : null },
       {
         ...session,
         id: "other-chat",
@@ -558,7 +558,7 @@ it.each([null, "repo"])(
     ];
     render(<App />);
     fireEvent.click(screen.getByRole("button", { name: "Another task" }));
-    const chatRow = screen.getByRole("button", { name: session.title });
+    const chatRow = screen.getByRole("button", { name: `${session.title}, Working` });
     await selectSidebarAction(chatRow, "Archive conversation…");
     expect(
       screen.getByRole("dialog", { name: `Archive “${session.title}”?` }),
@@ -583,6 +583,108 @@ it.each([null, "repo"])(
     );
   },
 );
+
+it.each([null, "workspace"])(
+  "archives an inactive ordinary chat in workspace %s without checking Git or confirming",
+  async (workspaceId) => {
+    mocks.initialSessions = [{ ...session, workspaceId }];
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: session.title }));
+    await selectSidebarAction(screen.getByRole("button", { name: session.title }), "Archive conversation…");
+    await waitFor(() => expect(mocks.refresh).toHaveBeenCalledOnce());
+    expect(mocks.call).toHaveBeenCalledExactlyOnceWith("delete_session", { sessionId: session.id });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByLabelText("Active chat")).toBeNull();
+  },
+);
+
+it.each(["working", "connecting", "needs_input"].flatMap((status) =>
+  [null, "tree"].map((worktreeId) => ({ status, worktreeId })),
+))(
+  "requires confirmation for a $status agent with worktree $worktreeId",
+  async ({ status, worktreeId }) => {
+    mocks.initialSessions = [{ ...session, status, worktreeId }];
+    render(<App />);
+    await selectSidebarAction(screen.getByRole("button", { name: new RegExp(`^${session.title}`) }), "Archive conversation…");
+    expect(await screen.findByRole("dialog")).toBeTruthy();
+    expect(mocks.call).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Keep chat" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(mocks.call).not.toHaveBeenCalled();
+  },
+);
+
+it.each([false, true])("checks a worktree's changes before archiving (dirty=%s)", async (dirty) => {
+  mocks.initialSessions = [{ ...session, worktreeId: "tree" }, { ...session, id: "other", title: "Another task" }];
+  mocks.call.mockImplementation((command) => Promise.resolve(command === "session_has_uncommitted_changes" ? dirty : undefined));
+  render(<App />);
+  fireEvent.click(screen.getByRole("button", { name: "Another task" }));
+  const row = screen.getByRole("button", { name: session.title });
+  await selectSidebarAction(row, "Archive conversation…");
+  await waitFor(() => expect(mocks.call).toHaveBeenCalledWith("session_has_uncommitted_changes", { sessionId: session.id }));
+  if (dirty) {
+    expect(await screen.findByRole("dialog")).toBeTruthy();
+    expect(mocks.call).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Keep chat" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(mocks.call).toHaveBeenCalledTimes(1);
+    await selectSidebarAction(row, "Archive conversation…");
+    fireEvent.click(await screen.findByRole("button", { name: "Archive and delete" }));
+  }
+  await waitFor(() => expect(mocks.refresh).toHaveBeenCalledOnce());
+  expect(mocks.call).toHaveBeenCalledWith("delete_session", { sessionId: session.id });
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(screen.getByLabelText("Active chat").textContent).toBe("Another task");
+});
+
+it("keeps the chat and reports a failed worktree status check", async () => {
+  mocks.initialSessions = [{ ...session, worktreeId: "tree" }];
+  mocks.call.mockRejectedValue(new Error("Git status failed"));
+  render(<App />);
+  await selectSidebarAction(screen.getByRole("button", { name: session.title }), "Archive conversation…");
+  await waitFor(() => expect(mocks.setError).toHaveBeenCalledWith("Error: Git status failed"));
+  expect(mocks.call).toHaveBeenCalledExactlyOnceWith("session_has_uncommitted_changes", { sessionId: session.id });
+  expect(mocks.refresh).not.toHaveBeenCalled();
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+it("ignores duplicate archive requests while checking Git and deleting", async () => {
+  let finishCheck!: (dirty: boolean) => void;
+  let finishDelete!: () => void;
+  mocks.initialSessions = [{ ...session, worktreeId: "tree" }];
+  mocks.call.mockImplementation((command) => command === "session_has_uncommitted_changes"
+    ? new Promise<boolean>((resolve) => { finishCheck = resolve; })
+    : new Promise<void>((resolve) => { finishDelete = resolve; }));
+  render(<App />);
+  const row = screen.getByRole("button", { name: session.title });
+  await selectSidebarAction(row, "Archive conversation…");
+  await waitFor(() => expect(mocks.call).toHaveBeenCalledTimes(1));
+  await selectSidebarAction(row, "Archive conversation…");
+  expect(mocks.call).toHaveBeenCalledTimes(1);
+  finishCheck(false);
+  await waitFor(() => expect(mocks.call).toHaveBeenCalledTimes(2));
+  await selectSidebarAction(row, "Archive conversation…");
+  expect(mocks.call).toHaveBeenCalledTimes(2);
+  finishDelete();
+  await waitFor(() => expect(mocks.refresh).toHaveBeenCalledOnce());
+});
+
+it("preserves navigation made while the worktree status check is pending", async () => {
+  let finishCheck!: (dirty: boolean) => void;
+  mocks.initialSessions = [{ ...session, worktreeId: "tree" }, { ...session, id: "other", title: "Another task" }];
+  mocks.call.mockImplementation((command) => command === "session_has_uncommitted_changes"
+    ? new Promise<boolean>((resolve) => { finishCheck = resolve; })
+    : Promise.resolve());
+  render(<App />);
+  const row = screen.getByRole("button", { name: session.title });
+  fireEvent.click(row);
+  await selectSidebarAction(row, "Archive conversation…");
+  await waitFor(() => expect(mocks.call).toHaveBeenCalledTimes(1));
+  fireEvent.click(screen.getByRole("button", { name: "Another task" }));
+  finishCheck(false);
+  await waitFor(() => expect(mocks.refresh).toHaveBeenCalledOnce());
+  expect(screen.getByLabelText("Active chat").textContent).toBe("Another task");
+});
 
 it("creates and sends directly from Home once, using the selected model configuration", async () => {
   let finish!: (value: SessionRecord) => void;

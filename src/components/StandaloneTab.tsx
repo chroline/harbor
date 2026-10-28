@@ -8,6 +8,7 @@ import { rem } from "../lib/units";
 import { setDraftFiles } from "../lib/attachments";
 import { NativeTerminal, type TerminalStatus } from "./NativeTerminal";
 import { Chat } from "./Chat";
+import { AppNotifications } from "./AppNotifications";
 import type { PromptAttachment } from "../lib/bindings/PromptAttachment";
 
 type DetachedTab = {
@@ -101,11 +102,6 @@ export function StandaloneTab() {
         </span>
       </header>
       <main className="workspace-frame main-shell standalone-content">
-        {error && (
-          <div role="alert" className="standalone-error">
-            {error}
-          </div>
-        )}
         {tab?.tabId.startsWith("shell:") ? (
           <>
             <NativeTerminal
@@ -130,6 +126,13 @@ export function StandaloneTab() {
           </div>
         ) : null}
       </main>
+      <AppNotifications
+        error={error}
+        onDismissError={() => setError(null)}
+        sessions={[]}
+        ready={ready}
+        activeSessionId={tab?.sessionId}
+      />
     </div>
   );
 }
