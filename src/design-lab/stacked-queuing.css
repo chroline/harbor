@@ -1,0 +1,221 @@
+/* Each study keeps the production stacked-row structure and behavior. */
+.stacked-lab .ql-mini-queue b {
+  height: 6px;
+}
+.stacked-lab .ql-mini-connected .ql-mini-queue {
+  gap: 0;
+  border: 1px solid var(--ql-line);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.stacked-lab .ql-mini-connected .ql-mini-queue b {
+  border: 0;
+  border-bottom: 1px solid var(--ql-line);
+  border-radius: 0;
+}
+.stacked-lab .ql-mini-bubbles .ql-mini-queue b {
+  background: var(--ql-surface);
+  border: 0;
+  border-radius: 5px;
+}
+.stacked-lab .ql-mini-order .ql-mini-queue {
+  border-left: 1px solid var(--ql-accent);
+  padding-left: 7px;
+}
+.stacked-lab .ql-mini-order .ql-mini-queue b {
+  border: 0;
+  border-bottom: 1px solid var(--ql-line);
+  border-radius: 0;
+}
+.stacked-lab .ql-mini-next .ql-mini-queue b:first-child {
+  height: 9px;
+  background: var(--ql-surface);
+  border-color: var(--ql-accent);
+}
+.stacked-lab .ql-mini-next .ql-mini-queue b:not(:first-child) {
+  border: 0;
+  border-bottom: 1px solid var(--ql-line);
+}
+.stacked-lab .ql-mini-minimal .ql-mini-queue {
+  gap: 0;
+}
+.stacked-lab .ql-mini-minimal .ql-mini-queue b {
+  border: 0;
+  border-bottom: 1px solid var(--ql-line);
+  border-radius: 0;
+}
+.stacked-lab .ql-queue {
+  margin-bottom: 10px;
+}
+.stacked-lab .prompt-queue {
+  margin: 0;
+  color: var(--ql-muted);
+}
+.stacked-lab .prompt-queue-heading {
+  min-height: 30px;
+  padding-inline: 10px;
+  font-size: 10px;
+  letter-spacing: 0.01em;
+}
+.stacked-lab .prompt-queue ol {
+  gap: 5px;
+}
+.stacked-lab .prompt-queue-row {
+  min-height: 39px;
+  padding: 6px 10px;
+  gap: 10px;
+  background: transparent;
+  border-color: var(--ql-line);
+  color: var(--ql-muted);
+}
+.stacked-lab .prompt-queue-copy > span {
+  color: var(--ql-text);
+  font-size: 11px;
+}
+.stacked-lab .prompt-queue-copy small {
+  color: var(--ql-muted);
+  font-size: 9px;
+}
+.stacked-lab .prompt-queue-index {
+  font-size: 10px;
+}
+.stacked-lab .prompt-queue-error {
+  color: #c98270;
+}
+.light .stacked-lab .prompt-queue-error {
+  color: #95402d;
+}
+/* 01: light, spacious outlines. */
+.stacked-study-quiet .prompt-queue-row {
+  border-radius: 6px;
+}
+/* 02: rows share a single shell; dividers preserve their independent actions. */
+.stacked-study-connected .prompt-queue ol {
+  gap: 0;
+  border: 1px solid var(--ql-line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--ql-surface), var(--ql-panel) 55%);
+}
+.stacked-study-connected .prompt-queue-row {
+  border: 0;
+  border-radius: 0;
+  padding-block: 8px;
+}
+.stacked-study-connected .prompt-queue-row + .prompt-queue-row {
+  border-top: 1px solid var(--ql-line);
+}
+.stacked-study-connected .prompt-queue-index {
+  display: grid;
+  place-items: center;
+  border-radius: 5px;
+  background: var(--ql-surface);
+  width: 22px;
+  height: 22px;
+  opacity: 1;
+}
+/* 03: individual rounded surfaces with a softer rhythm. */
+.stacked-study-bubbles .prompt-queue ol {
+  gap: 7px;
+}
+.stacked-study-bubbles .prompt-queue-row {
+  border: 0;
+  background: var(--ql-surface);
+  border-radius: 12px;
+  padding: 9px 12px;
+}
+.stacked-study-bubbles .prompt-queue-index {
+  width: 19px;
+  height: 19px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--ql-line);
+  border-radius: 50%;
+}
+/* 04: the queue reads top to bottom along an unobtrusive guide. */
+.stacked-study-order .prompt-queue ol {
+  position: relative;
+  gap: 0;
+  padding-left: 4px;
+}
+.stacked-study-order .prompt-queue ol::before {
+  content: "";
+  position: absolute;
+  left: 15px;
+  top: 20px;
+  bottom: 20px;
+  width: 1px;
+  background: var(--ql-line);
+}
+.stacked-study-order .prompt-queue-row {
+  position: relative;
+  border: 0;
+  border-radius: 0;
+  padding: 8px 6px 8px 1px;
+}
+.stacked-study-order .prompt-queue-row + .prompt-queue-row .prompt-queue-copy {
+  border-top: 1px solid var(--ql-line);
+  padding-top: 10px;
+}
+.stacked-study-order .prompt-queue-index {
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 21px;
+  height: 21px;
+  border: 1px solid var(--ql-line);
+  border-radius: 50%;
+  background: var(--ql-panel);
+  opacity: 1;
+}
+/* 05: the next message is accented; following rows use a lighter treatment. */
+.stacked-study-next .prompt-queue-row {
+  border: 0;
+  border-radius: 0;
+  border-bottom: 1px solid var(--ql-line);
+  padding-inline: 10px;
+}
+.stacked-study-next .prompt-queue-row:first-child {
+  border: 1px solid color-mix(in srgb, var(--ql-accent), var(--ql-line) 45%);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ql-accent), var(--ql-panel) 93%);
+  padding: 10px;
+}
+.stacked-study-next .prompt-queue-row:first-child .prompt-queue-index {
+  color: var(--ql-accent);
+  opacity: 1;
+  font-weight: 600;
+}
+.stacked-study-next .prompt-queue-row:first-child .prompt-queue-copy::before {
+  content: "UP NEXT";
+  display: block;
+  color: var(--ql-accent);
+  letter-spacing: 0.1em;
+  font-size: 8px;
+  margin-bottom: 4px;
+}
+/* 06: very little chrome, with the numbering aligned in a single column. */
+.stacked-study-minimal .prompt-queue-heading {
+  padding-inline: 3px;
+  border-bottom: 1px solid var(--ql-line);
+}
+.stacked-study-minimal .prompt-queue ol {
+  gap: 0;
+}
+.stacked-study-minimal .prompt-queue-row {
+  border: 0;
+  border-bottom: 1px solid var(--ql-line);
+  border-radius: 0;
+  padding: 9px 3px;
+}
+.stacked-study-minimal .prompt-queue-index {
+  width: 18px;
+}
+.stacked-lab .ql-footer a {
+  color: var(--ql-accent);
+  text-decoration: none;
+  margin-left: 12px;
+}
+.stacked-lab .ql-footer a:hover {
+  text-decoration: underline;
+}
