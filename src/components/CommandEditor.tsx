@@ -386,11 +386,7 @@ function Editor({
                 <CommandMenuList
                   aria-label="Commands and skills"
                   renderItem={(item) => (
-                    <CommandMenuItem
-                      value={item.value}
-                      aria-label={`${item.label} ${item.value}`}
-                      aria-description={item.description}
-                      title={[
+                    <CommandMenuItem title={[
                         item.value,
                         item.description,
                         matches.find(
@@ -399,6 +395,9 @@ function Editor({
                       ]
                         .filter(Boolean)
                         .join(" — ")}
+                      value={item.value}
+                      aria-label={`${item.label} ${item.value}`}
+                      aria-description={item.description}
                     />
                   )}
                 >

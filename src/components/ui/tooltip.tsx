@@ -128,7 +128,12 @@ function getSlideOffset(side: TooltipSide) {
 // Tooltip
 // ---------------------------------------------------------------------------
 
-function Tooltip({
+function Tooltip(props: TooltipProps) {
+  if (props.content == null || props.content === "") return props.children;
+  return <TooltipContent {...props} />;
+}
+
+function TooltipContent({
   content,
   children,
   side = "top",

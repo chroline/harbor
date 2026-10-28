@@ -49,14 +49,13 @@ export function WorkspacePicker({
     >
       <DropdownTrigger
         render={
-          <Button
+          <Button title={selected?.path}
             variant="ghost"
             className="workspace-picker-trigger"
             leadingIcon={Folder}
             trailingIcon={ChevronDown}
             disabled={disabled}
             aria-label={label}
-            title={selected?.path}
           >
             <span className="block truncate">
               {selected?.name ?? "No workspace"}
@@ -76,12 +75,10 @@ export function WorkspacePicker({
         />
         <DropdownLabel>Recents</DropdownLabel>
         {recent.map((workspace, index) => (
-          <MenuItem
-            key={workspace.id}
+          <MenuItem title={workspace.path} key={workspace.id}
             index={index}
             icon={Folder}
             label={`${workspace.name}${workspace.available ? "" : " · Unavailable"}`}
-            title={workspace.path}
             checked={workspace.id === value}
             onSelect={() => onValueChange(workspace.id)}
           />

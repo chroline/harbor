@@ -1,3 +1,4 @@
+import { Tooltip } from "./ui/tooltip";
 import {
   useEffect,
   useLayoutEffect,
@@ -190,13 +191,12 @@ export function BaseBranchPicker({
     >
       <DropdownTrigger
         render={
-          <Button
+          <Button title={value || "HEAD"}
             type="button"
             variant="ghost"
             className="w-full justify-start px-2.5 min-w-0 [&>.relative]:w-full [&>.relative]:min-w-0 [&>.relative]:justify-between [&>.relative>span]:min-w-0 [&>.relative>span]:overflow-hidden"
             trailingIcon={ChevronDown}
             aria-label="Base branch or commit"
-            title={value || "HEAD"}
             disabled={disabled}
           >
             <span className="block min-w-0 truncate">{value || "HEAD"}</span>
@@ -226,13 +226,12 @@ export function BaseBranchPicker({
         )}
         {current?.error && (
           <div className="px-2 py-1">
-            <span
+            <Tooltip content={current.error}><span
               role="alert"
               className="text-[length:var(--fs-body-compact)] text-muted-foreground"
-              title={current.error}
             >
               Couldn’t load branches.
-            </span>
+            </span></Tooltip>
             <Button
               type="button"
               variant="ghost"

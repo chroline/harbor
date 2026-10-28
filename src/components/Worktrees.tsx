@@ -1,3 +1,4 @@
+import { Tooltip } from "./ui/tooltip";
 import { rem } from "@/lib/units";
 import {
   Table,
@@ -235,28 +236,26 @@ export function Worktrees({
         >
           {archives.map((a) => (
             <div className="archive-row" role="listitem" key={a.id}>
-              <span
+              <Tooltip content={"Working files, ignored files, index, and Git history preserved"}><span
                 className="archive-icon"
-                title="Working files, ignored files, index, and Git history preserved"
               >
                 <Archive size={rem(16)} aria-hidden="true" />
-              </span>
+              </span></Tooltip>
               <div className="archive-details">
-                <strong
-                  title={
+                <Tooltip content={
                     data.sessions.find((s) => s.id === a.sessionId)?.title ??
                     a.worktree.branch
-                  }
+                  }><strong
                 >
                   {data.sessions.find((s) => s.id === a.sessionId)?.title ??
                     a.worktree.branch}
-                </strong>
+                </strong></Tooltip>
                 <p className="archive-meta">
                   <span>Worktree</span>
-                  <span className="archive-context" title={a.worktree.branch}>
+                  <Tooltip content={a.worktree.branch}><span className="archive-context">
                     {projectLabel(a.worktree.projectId, a.worktree.repo)} /{" "}
                     {a.worktree.branch}
-                  </span>
+                  </span></Tooltip>
                   <span className="archive-date">
                     Archived {elapsed(a.createdAt)} ago
                   </span>
@@ -281,12 +280,12 @@ export function Worktrees({
                 <Folder size={rem(16)} aria-hidden="true" />
               </span>
               <div className="archive-details">
-                <strong title={s.title}>{s.title}</strong>
+                <Tooltip content={s.title}><strong>{s.title}</strong></Tooltip>
                 <p className="archive-meta">
                   <span>Conversation</span>
-                  <span className="archive-context" title={s.cwd}>
+                  <Tooltip content={s.cwd}><span className="archive-context">
                     {projectLabel(s.projectId, s.cwd)}
-                  </span>
+                  </span></Tooltip>
                 </p>
               </div>
               <Button

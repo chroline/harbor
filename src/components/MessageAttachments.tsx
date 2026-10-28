@@ -56,7 +56,7 @@ function AttachmentCard({
         ? `${Math.ceil(file.size / 1024)} KB`
         : `${(file.size / (1024 * 1024)).toFixed(1)} MB`;
   return (
-    <Attachment className="w-54 border-border" title={file.name}>
+    <Attachment title={file.name} className="w-54 border-border">
       <AttachmentMedia variant={image ? "image" : "icon"}>
         {image ? (
           <LightboxPhoto

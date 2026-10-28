@@ -76,12 +76,10 @@ export function ModePicker({
           Mode <kbd>Shift+Tab</kbd>
         </DropdownLabel>
         {mode.choices.map((choice, index) => (
-          <MenuItem
-            key={choice.value}
+          <MenuItem title={choice.description} key={choice.value}
             index={index}
             label={choice.name}
             checked={choice.value === value}
-            title={choice.description}
             onSelect={() => onChange(choice.value)}
           />
         ))}

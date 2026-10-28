@@ -147,11 +147,10 @@ export function MermaidBlock({ text }: { text: string }) {
             >
               −
             </Button>
-            <Button
+            <Button title={"Fit diagram to view"}
               variant="ghost"
               size="sm"
               aria-label="Reset diagram zoom"
-              title="Fit diagram to view"
               onClick={() => setZoom(1)}
             >
               {Math.round(zoom * 100)}%

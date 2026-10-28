@@ -1,3 +1,4 @@
+import { Tooltip } from "./ui/tooltip";
 import { findAdapter } from "../adapters";
 import { ComposerPickerSurface } from "./composer-picker";
 import { ProviderConnectionButton } from "./ProviderConnectionButton";
@@ -233,9 +234,9 @@ export function ModelMenu({
                           <span className="model-menu-summary-content">
                             <ProviderIcon id={provider} size={rem(18)} />
                             <span className="model-menu-summary-label">
-                              <strong title={current?.name ?? providerName}>
+                              <Tooltip content={current?.name ?? providerName}><strong>
                                 {current?.name ?? providerName}
-                              </strong>
+                              </strong></Tooltip>
                               <span>{providerName}</span>
                             </span>
                             <ChevronRight size={rem(14)} />

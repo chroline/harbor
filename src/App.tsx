@@ -1,3 +1,4 @@
+import { Tooltip } from "./components/ui/tooltip";
 import { supportedProviderId, defaultProvider } from "./lib/providers";
 import {
   prepareAttachments,
@@ -569,9 +570,9 @@ export default function App() {
           {active && typeof view === "object" ? (
             <div ref={setChatTabsTarget} className="topbar-task-tabs" />
           ) : (
-            <span className="topbar-title" title={title}>
+            <Tooltip content={title}><span className="topbar-title">
               {title}
-            </span>
+            </span></Tooltip>
           )}
         </div>
         <div className="topbar-right">
@@ -662,9 +663,8 @@ export default function App() {
             )}
             <SidebarGroup collapsible role="region" aria-label="Workspaces">
               <SidebarGroupLabel>Workspaces</SidebarGroupLabel>
-              <SidebarGroupAction
+              <SidebarGroupAction title={"Add workspace"}
                 aria-label="Add workspace"
-                title="Add workspace"
                 aria-disabled={addingWorkspace}
                 onClick={() => void addWorkspace()}
               >

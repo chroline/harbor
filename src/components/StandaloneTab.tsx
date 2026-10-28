@@ -1,3 +1,4 @@
+import { Tooltip } from "./ui/tooltip";
 import { useEffect, useState, type CSSProperties } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { call } from "../lib/api";
@@ -97,9 +98,9 @@ export function StandaloneTab() {
       style={{ "--window-gutter": rem(WINDOW_GUTTER) } as CSSProperties}
     >
       <header className="topbar standalone-titlebar" data-tauri-drag-region>
-        <span className="standalone-title" title={title}>
+        <Tooltip content={title}><span className="standalone-title">
           {title}
-        </span>
+        </span></Tooltip>
       </header>
       <main className="workspace-frame main-shell standalone-content">
         {tab?.tabId.startsWith("shell:") ? (

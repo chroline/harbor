@@ -340,8 +340,7 @@ export function ChatTranscript({
             align={message.role === "user" ? "end" : "start"}
             variant={message.role === "user" ? "muted" : "ghost"}
           >
-            <BubbleContent
-              title={message.role === "user" ? message.text : undefined}
+            <BubbleContent title={message.role === "user" ? message.text : undefined}
               {...(message.role === "user"
                 ? {
                     role: "button",

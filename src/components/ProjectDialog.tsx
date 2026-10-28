@@ -292,14 +292,13 @@ export function ProjectDialog({
                   >
                     <DropdownTrigger
                       render={
-                        <Button
+                        <Button title={path || undefined}
                           type="button"
                           variant="ghost"
                           ref={workspaceTrigger}
                           trailingIcon={ChevronDown}
                           disabled={busy || browsing}
                           aria-label="Choose workspace"
-                          title={path || undefined}
                         >
                           {browsing
                             ? "Choosing folder…"
@@ -319,13 +318,11 @@ export function ProjectDialog({
                       />
                       <DropdownLabel>Recent workspaces</DropdownLabel>
                       {filtered.map((w, index) => (
-                        <MenuItem
-                          key={w.id}
+                        <MenuItem title={w.path} key={w.id}
                           index={index}
                           icon={Folder}
                           label={`${w.name} — ${w.path}${w.available ? "" : " · Unavailable"}`}
                           checked={path === w.path}
-                          title={w.path}
                           onSelect={() => setPath(w.path)}
                         />
                       ))}

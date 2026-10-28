@@ -1,4 +1,5 @@
 "use client";
+import { Tooltip } from "./tooltip";
 import { pixelsToRem, rem, scaledSize } from "@/lib/units";
 
 import {
@@ -1016,11 +1017,10 @@ function MenuRowMark({
   const isAttention = !isLoading && !!attentionLabel;
   const tone = attentionTone === "danger" ? "danger" : "warning";
   return (
-    <span
+    <Tooltip content={label}><span
       data-sidebar="menu-status"
       data-state={isLoading ? "loading" : isAttention ? "attention" : "unseen"}
       data-tone={isLoading ? undefined : isAttention ? tone : "info"}
-      title={label}
       className="ml-auto flex size-4 shrink-0 items-center justify-center"
     >
       <span className="sr-only">, {label}</span>
@@ -1045,7 +1045,7 @@ function MenuRowMark({
           )}
         />
       )}
-    </span>
+    </span></Tooltip>
   );
 }
 
