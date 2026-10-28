@@ -2,7 +2,9 @@ import { rem } from "@/lib/units";
 import { ActionList } from "./fluid";
 import { TabsSubtle, TabsSubtleItem } from "./ui/tabs-subtle";
 import { ScrollArea } from "./ui/scroll-area";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
+import { filePatches } from "@/lib/file-diff";
+import { FileChange, FilePatchDiff } from "./FileDiff";
 import {
   RefreshCw,
   FileCode2,
@@ -12,7 +14,7 @@ import {
   X,
 } from "@/lib/icons";
 import { call } from "../lib/api";
-import { CodeBlock, IconButton } from "./shared";
+import { IconButton } from "./shared";
 import { useStore } from "../lib/store";
 type ReviewData = { diff: string; files: string[]; status: string };
 export function Review({
@@ -40,9 +42,13 @@ export function Review({
   }, []);
   const [data, setData] = useState<ReviewData | null>(null);
   const [file, setFile] = useState("");
-  const [text, setText] = useState("");
+  const [text, setText] = useState<string | null>(null);
+  const [previewError, setPreviewError] = useState("");
   const [split, setSplit] = useState(false);
   const [busy, setBusy] = useState(false);
+  const patches = useMemo(() => filePatches(data?.diff ?? ""), [data?.diff]);
+  const selectedPatch = patches.find((patch) => patch.filename === file);
+  const selectedFile = useRef("");
   const refresh = async () => {
     setBusy(true);
     try {
@@ -57,11 +63,16 @@ export function Review({
     void refresh();
   }, [sessionId]);
   const select = async (path: string) => {
+    selectedFile.current = path;
     setFile(path);
+    setText(null);
+    setPreviewError("");
+    if (patches.some((patch) => patch.filename === path)) return;
     try {
-      setText(await call<string>("read_file", { sessionId, path }));
+      const contents = await call<string>("read_file", { sessionId, path });
+      if (selectedFile.current === path) setText(contents);
     } catch (e) {
-      setText(String(e));
+      if (selectedFile.current === path) setPreviewError(String(e));
     }
   };
   return (
@@ -133,14 +144,38 @@ export function Review({
               <ExternalLink size={rem(14)} />
             </IconButton>
           </div>
-          <CodeBlock text={text} language={language(file)} />
+          {selectedPatch ? (
+            <FilePatchDiff patch={selectedPatch} split={split} />
+          ) : previewError ? (
+            <p className="file-change-note" role="status">
+              {previewError}
+            </p>
+          ) : text !== null ? (
+            <FileChange
+              filename={file}
+              before={
+                data?.status.split(/[\0\n]/).includes(`?? ${file}`)
+                  ? null
+                  : undefined
+              }
+              after={text}
+            />
+          ) : (
+            <p className="file-change-note" role="status">
+              Loading file…
+            </p>
+          )}
         </div>
       ) : data?.diff ? (
         <div className="diff-view">
-          {split ? (
-            <SplitDiff text={data.diff} />
+          {patches.length ? (
+            patches.map((patch) => (
+              <FilePatchDiff key={patch.filename} patch={patch} split={split} />
+            ))
           ) : (
-            <CodeBlock text={data.diff} language="diff" />
+            <pre className="review-diff-source" dir="ltr" tabIndex={0}>
+              {data.diff}
+            </pre>
           )}
         </div>
       ) : (
@@ -159,77 +194,5 @@ export function Review({
         </div>
       )}
     </aside>
-  );
-}
-function language(path: string) {
-  const ext = path.split(".").at(-1);
-  return (
-    (
-      {
-        ts: "typescript",
-        tsx: "typescript",
-        js: "javascript",
-        jsx: "javascript",
-        rs: "rust",
-        py: "python",
-        json: "json",
-        css: "css",
-        html: "xml",
-        md: "markdown",
-        sh: "bash",
-        toml: "ini",
-      } as Record<string, string>
-    )[ext ?? ""] ?? "text"
-  );
-}
-function SplitDiff({ text }: { text: string }) {
-  const rows: { left: string; right: string; kind: string }[] = [];
-  const lines = text.split("\n");
-  for (let i = 0; i < lines.length; i++) {
-    const l = lines[i];
-    if (l.startsWith("-") && !l.startsWith("---")) {
-      const removed: string[] = [];
-      const added: string[] = [];
-      while (
-        i < lines.length &&
-        lines[i].startsWith("-") &&
-        !lines[i].startsWith("---")
-      )
-        removed.push(lines[i++].slice(1));
-      while (
-        i < lines.length &&
-        lines[i].startsWith("+") &&
-        !lines[i].startsWith("+++")
-      )
-        added.push(lines[i++].slice(1));
-      i--;
-      for (let j = 0; j < Math.max(removed.length, added.length); j++)
-        rows.push({
-          left: removed[j] ?? "",
-          right: added[j] ?? "",
-          kind: "change",
-        });
-    } else if (l.startsWith("+") && !l.startsWith("+++"))
-      rows.push({ left: "", right: l.slice(1), kind: "change" });
-    else
-      rows.push({
-        left: l,
-        right: l,
-        kind: l.startsWith("@@") ? "hunk" : "context",
-      });
-  }
-  return (
-    <div className="split-diff">
-      <div className="split-title">
-        <span>Before</span>
-        <span>After</span>
-      </div>
-      {rows.map((r, i) => (
-        <div className={`split-line ${r.kind}`} key={i}>
-          <code>{r.left || " "}</code>
-          <code>{r.right || " "}</code>
-        </div>
-      ))}
-    </div>
   );
 }
