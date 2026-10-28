@@ -22,7 +22,14 @@ export function PromptQueue({ queue, onRemove, onEdit, onSteer, editing, onResum
     const rows = [...list.querySelectorAll<HTMLLIElement>(".prompt-queue-row")];
     const update = () => {
       const heights = rows.map(row => row.querySelector<HTMLElement>(".transcript-message")?.offsetHeight ?? 0);
-      const front = (heights[0] ?? 0) * .95;
+      const firstBubble = rows[0]?.querySelector<HTMLElement>('[data-slot="bubble-content"]');
+      const firstBody = rows[0]?.querySelector<HTMLElement>(".typeset");
+      const rootSize = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+      const firstInset = firstBubble ? parseFloat(getComputedStyle(firstBubble).paddingTop) || 0 : 0;
+      const firstLine = firstBody ? (parseFloat(getComputedStyle(firstBody).getPropertyValue("--lh-body")) || 1.25) * rootSize : 0;
+      // The row extends eight pixels behind the composer. Reserve only enough
+      // space for its first line; the rest stays on the same card behind it.
+      const front = (firstInset + firstLine) * .95 + 10;
       let collapsed = 0;
       let expanded = 0;
       rows.forEach((row, index) => {
@@ -31,7 +38,7 @@ export function PromptQueue({ queue, onRemove, onEdit, onSteer, editing, onResum
         const body = row.querySelector<HTMLElement>(".typeset");
         if (index && bubble && body) {
           const inset = parseFloat(getComputedStyle(bubble).paddingTop) || 0;
-          const line = (parseFloat(getComputedStyle(body).getPropertyValue("--lh-body")) || 1.25) * parseFloat(getComputedStyle(document.documentElement).fontSize);
+          const line = (parseFloat(getComputedStyle(body).getPropertyValue("--lh-body")) || 1.25) * rootSize;
           collapsed += (inset + line) * scale + 2;
         }
         row.style.setProperty("--stack-y", `${collapsed + front - heights[index] * scale}px`);

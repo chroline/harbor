@@ -23,3 +23,22 @@ it("exposes edit and steer actions and identifies the message being edited", () 
   expect(screen.getByText(/notes\.md/)).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Edit queued message: Second" })).toBeNull();
 });
+
+it("positions a long front message so only its first line peeks above the composer", () => {
+  const height = vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(100);
+  const styles = vi.spyOn(window, "getComputedStyle").mockImplementation(() => ({
+    paddingTop: "12px", fontSize: "16px", getPropertyValue: () => "1.25rem",
+  }) as unknown as CSSStyleDeclaration);
+  try {
+    const { container } = render(<PromptQueue queue={{ ...queue, items: [queue.items[0]] }} onRemove={() => {}} />);
+    const row = container.querySelector<HTMLElement>(".prompt-queue-row")!;
+    const list = container.querySelector<HTMLOListElement>("ol")!;
+    // The full-height message must slide behind the composer rather than
+    // allocating its entire height above it.
+    expect(parseFloat(row.style.getPropertyValue("--stack-y"))).toBeLessThan(-40);
+    expect(parseFloat(list.style.height)).toBeLessThan(40);
+  } finally {
+    height.mockRestore();
+    styles.mockRestore();
+  }
+});
