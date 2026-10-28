@@ -26,7 +26,7 @@ type TaskComposerProps = Pick<
   modelMenu: ReactNode;
   modePicker?: ModePickerProps;
   configurationAction?: ReactNode;
-  onSubmit: () => void;
+  onSubmit: (intent?: "send" | "steer") => void;
   actionLabel: string;
   actionDisabled?: boolean;
   busy?: boolean;
@@ -50,7 +50,9 @@ export function TaskComposer({
   ...input
 }: TaskComposerProps) {
   const [fileError, setFileError] = useState<string | null>(null);
-  const label = onStop ? "Stop response" : actionLabel;
+  const showStopOnly =
+    !!onStop && ((!input.value.trim() && !files?.length) || !!actionDisabled);
+  const label = showStopOnly ? "Stop response" : actionLabel;
   return (
     <div className="task-composer-layout" aria-busy={busy || undefined}>
       <SizeProvider size="compact">
@@ -85,15 +87,14 @@ export function TaskComposer({
           <CommandEditor
             {...input}
             catalog={catalog}
-            onSubmit={() => {
+            onSubmit={(intent) => {
               if (
                 !input.disabled &&
                 !input.textareaProps?.readOnly &&
                 !actionDisabled &&
-                !busy &&
-                !onStop
+                !busy
               )
-                onSubmit();
+                onSubmit(intent);
             }}
           />
         }
@@ -126,8 +127,7 @@ export function TaskComposer({
           }
         }}
         onSend={() => {
-          if (!input.disabled && !actionDisabled && !busy && !onStop)
-            onSubmit();
+          if (!input.disabled && !actionDisabled && !busy) onSubmit();
         }}
         leftSlot={({ openFilePicker }) => (
           <SizeProvider size="compact">
@@ -154,23 +154,45 @@ export function TaskComposer({
           </SizeProvider>
         )}
         sendControl={
-          <Tooltip content={label}>
-            <Button
-              className="task-composer-action"
-              size="icon-compact"
-              aria-label={label}
-              aria-busy={busy || undefined}
-              disabled={
-                onStop
-                  ? input.disabled
-                  : input.disabled || actionDisabled || busy
-              }
-              loading={busy}
-              onClick={onStop ?? onSubmit}
-            >
-              {onStop ? <Square size={rem(12)} /> : <ArrowUp size={rem(14)} />}
-            </Button>
-          </Tooltip>
+          <div className="task-composer-actions">
+            {onStop && !showStopOnly && (
+              <>
+                <span className="task-composer-steer-hint">⌘↵ to steer</span>
+                <Tooltip content="Stop response and pause queue">
+                  <Button
+                    size="icon-compact"
+                    variant="ghost"
+                    aria-label="Stop response"
+                    disabled={input.disabled}
+                    onClick={onStop}
+                  >
+                    <Square size={rem(12)} />
+                  </Button>
+                </Tooltip>
+              </>
+            )}
+            <Tooltip content={label}>
+              <Button
+                className="task-composer-action"
+                size="icon-compact"
+                aria-label={label}
+                aria-busy={busy || undefined}
+                disabled={
+                  showStopOnly
+                    ? input.disabled
+                    : input.disabled || actionDisabled || busy
+                }
+                loading={busy}
+                onClick={() => (showStopOnly ? onStop?.() : onSubmit("send"))}
+              >
+                {showStopOnly ? (
+                  <Square size={rem(12)} />
+                ) : (
+                  <ArrowUp size={rem(14)} />
+                )}
+              </Button>
+            </Tooltip>
+          </div>
         }
       />
       {fileError && (

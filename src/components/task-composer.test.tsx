@@ -63,9 +63,7 @@ it("lets mouse clicks select effort in a portalled composer menu", async () => {
       }
     />,
   );
-  await user.click(
-    screen.getByRole("button", { name: "Effort: Low. Change" }),
-  );
+  await user.click(screen.getByRole("button", { name: "Effort: Low. Change" }));
   const high = screen.getByRole("menuitemradio", { name: "High" });
   // Cancelling mousedown to refocus the editor dismisses the native menu
   // before mouseup can deliver the selection's click in WebKit.
@@ -380,4 +378,46 @@ it("preserves backward tab navigation when mode switching is unavailable", () =>
     }),
   ).toBe(true);
   expect(change).not.toHaveBeenCalled();
+});
+
+it("queues with Enter and steers with Cmd+Enter while retaining Stop", () => {
+  const submit = vi.fn();
+  const stop = vi.fn();
+  render(
+    <TaskComposer
+      {...defaults}
+      value="Change course"
+      onSubmit={submit}
+      onStop={stop}
+      actionLabel="Queue message"
+    />,
+  );
+  const input = screen.getByRole("textbox");
+  expect(input.getAttribute("contenteditable")).toBe("true");
+  fireEvent.keyDown(input, { key: "Enter" });
+  expect(submit).toHaveBeenLastCalledWith("send");
+  fireEvent.keyDown(input, { key: "Enter", metaKey: true });
+  expect(submit).toHaveBeenLastCalledWith("steer");
+  fireEvent.click(screen.getByRole("button", { name: "Queue message" }));
+  expect(submit).toHaveBeenLastCalledWith("send");
+  fireEvent.click(screen.getByRole("button", { name: "Stop response" }));
+  expect(stop).toHaveBeenCalledOnce();
+});
+
+it("accepts attachments while a response is running", () => {
+  const files = vi.fn();
+  render(
+    <TaskComposer
+      {...defaults}
+      files={[]}
+      onFilesChange={files}
+      onStop={vi.fn()}
+      onSubmit={vi.fn()}
+    />,
+  );
+  const file = new File(["notes"], "steering.md", { type: "text/markdown" });
+  fireEvent.drop(screen.getByRole("textbox"), {
+    dataTransfer: { types: ["Files"], files: [file] },
+  });
+  expect(files).toHaveBeenCalledWith([file]);
 });

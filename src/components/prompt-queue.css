@@ -1,0 +1,21 @@
+.prompt-composer-stack { position: relative; isolation: isolate; }
+.prompt-composer-stack > .task-composer-layout { position: relative; z-index: 2; }
+.prompt-composer-stack .prompt-queue-stack { position: relative; z-index: 1; margin: 0; overflow: visible; }
+.prompt-composer-stack .prompt-queue-stack::before { content: ""; position: absolute; inset: auto 0 0; height: var(--expanded-height, 0px); pointer-events: none; }
+.prompt-composer-stack .prompt-queue-stack:hover::before, .prompt-composer-stack .prompt-queue-stack:focus-within::before { pointer-events: auto; }
+.prompt-composer-stack .prompt-queue-stack ol { display: block; position: relative; padding: 0; margin: 0; overflow: visible; }
+.prompt-composer-stack .prompt-queue-stack .prompt-queue-row { position: absolute; display: block; bottom: -8px; left: 0; right: 0; width: 100%; min-width: 0; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; transform-origin: 50% 100%; transform: translateY(calc(-1 * var(--stack-y, 0px))) scale(var(--stack-scale, .95)); transition: transform 440ms cubic-bezier(.22,1,.36,1), bottom 380ms cubic-bezier(.22,1,.36,1); }
+.prompt-composer-stack .prompt-queue-stack:hover .prompt-queue-row, .prompt-composer-stack .prompt-queue-stack:focus-within .prompt-queue-row { bottom: 10px; transform: translateY(calc(-1 * var(--expanded-y, 0px))) scale(1); }
+.prompt-composer-stack .prompt-queue-row .transcript-user [data-slot="bubble-content"] { cursor: default; border-bottom-left-radius: 0; border-bottom-right-radius: 0; transition: border-radius 380ms cubic-bezier(.22,1,.36,1); }
+.prompt-composer-stack .prompt-queue-stack:hover .prompt-queue-row [data-slot="bubble-content"], .prompt-composer-stack .prompt-queue-stack:focus-within .prompt-queue-row [data-slot="bubble-content"] { border-bottom-left-radius: var(--radius-xl); border-bottom-right-radius: var(--radius-xl); }
+.prompt-composer-stack .prompt-queue-row .typeset { padding-right: 170px; }
+.prompt-composer-stack .prompt-queue-attachments { display: flex; align-items: center; gap: 6px; margin-top: 6px; color: var(--muted-foreground); font-size: .75rem; overflow-wrap: anywhere; }
+.prompt-composer-stack .prompt-queue-actions, .prompt-composer-stack .prompt-queue-editing { position: absolute; z-index: 2; right: 5px; top: 5px; display: flex; align-items: center; }
+.prompt-composer-stack .prompt-queue-actions { opacity: 0; pointer-events: none; transition: opacity 160ms ease; }
+.prompt-composer-stack .prompt-queue-stack:hover .prompt-queue-actions, .prompt-composer-stack .prompt-queue-stack:focus-within .prompt-queue-actions { opacity: 1; pointer-events: auto; }
+.prompt-composer-stack .prompt-queue-editing { top: 11px; right: 12px; gap: 4px; color: var(--muted-foreground); font-size: .6875rem; line-height: 1.25rem; }
+.prompt-composer-stack .prompt-queue-row.is-editing [data-slot="bubble-content"] { animation: prompt-editing-pulse 2s ease-in-out infinite; }
+@keyframes prompt-editing-pulse { 0%,100% { box-shadow: var(--shadow-3), 0 0 0 1px color-mix(in srgb,var(--foreground) 18%,transparent); } 50% { box-shadow: var(--shadow-3), 0 0 0 1px color-mix(in srgb,var(--foreground) 48%,transparent); } }
+.prompt-queue-status { display: flex; align-items: center; justify-content: space-between; gap: .5rem; color: var(--muted-foreground); font-size: .75rem; }
+.prompt-queue-status [role="alert"] { color: var(--destructive); }
+@media (prefers-reduced-motion: reduce) { .prompt-composer-stack .prompt-queue-row, .prompt-composer-stack .prompt-queue-row [data-slot="bubble-content"], .prompt-composer-stack .prompt-queue-actions { transition: none; } .prompt-composer-stack .prompt-queue-row.is-editing [data-slot="bubble-content"] { animation: none; box-shadow: var(--shadow-3), 0 0 0 1px color-mix(in srgb,var(--foreground) 35%,transparent); } }

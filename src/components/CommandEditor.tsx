@@ -97,7 +97,7 @@ type Props = {
     "value" | "onChange" | "onKeyDown" | "disabled" | "placeholder"
   >;
   catalog?: CommandCatalog;
-  onSubmit: () => void;
+  onSubmit: (intent?: "send" | "steer") => void;
 };
 function replaceText(editor: LexicalEditor, text: string, caret?: number) {
   editor.update(
@@ -278,7 +278,11 @@ function Editor({
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       event.stopPropagation();
-      onSubmit();
+      onSubmit(
+        event.metaKey || (event.ctrlKey && !/Mac/.test(navigator.platform))
+          ? "steer"
+          : "send",
+      );
     }
   }
   return (
