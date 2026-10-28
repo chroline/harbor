@@ -41,6 +41,8 @@ import { useTaskTabs, orderTaskTabs } from "../hooks/use-task-tabs";
 import {
   readTaskTabSelection,
   saveTaskTabSelection,
+  readNativeTerminalDismissed,
+  saveNativeTerminalDismissed,
 } from "../lib/task-tab-selection";
 import { TaskComposer } from "./TaskComposer";
 import * as Tabs from "@radix-ui/react-tabs";
@@ -132,6 +134,9 @@ export function Chat({
   const [nativeTerminal, setNativeTerminal] = useState(
     session.mode === "terminal",
   );
+  const [nativeTerminalDismissed, setNativeTerminalDismissed] = useState(
+    () => readNativeTerminalDismissed(session.id),
+  );
   const historyLoaded = loadedTranscripts.has(session.id);
   const conversation = useMemo(
     () =>
@@ -194,6 +199,7 @@ export function Chat({
   const preparingRef = useRef(false);
   const activeDraft = child ? (childDrafts[child] ?? "") : draft;
   const [busy, setBusy] = useState(false);
+  const nativeHandoffPending = useRef(false);
   const modePicker = useSessionMode(session, !!child);
   const conversationHeights = useRef<Record<string, Map<string, number>>>({});
   const composer = useRef<HTMLDivElement>(null);
@@ -429,21 +435,48 @@ export function Chat({
         await call<SessionRecord>("reconnect", { sessionId: session.id }),
       );
       await loadTranscript(session.id);
+      return true;
     } catch (e) {
       setError(String(e));
+      return false;
     } finally {
       setBusy(false);
     }
+  };
+  const enterNativeTerminal = async () => {
+    if (nativeHandoffPending.current) return;
+    const root = session.id;
+    nativeHandoffPending.current = true;
+    setBusy(true);
+    try {
+      if (session.mode !== "terminal")
+        await call("enter_terminal", { sessionId: root });
+      if (activeSession.current !== root) return;
+      terminals.setActive(null);
+      setChild(null);
+      setNativeTerminalDismissed(false);
+      saveNativeTerminalDismissed(root, false);
+      setNativeTerminal(true);
+    } catch (error) {
+      if (activeSession.current === root) setError(String(error));
+    } finally {
+      nativeHandoffPending.current = false;
+      if (activeSession.current === root) setBusy(false);
+    }
+  };
+  const closeNativeTerminal = async () => {
+    if (nativeHandoffPending.current || busy) return;
+    if (session.mode === "terminal" && !(await reconnect())) return;
+    setNativeTerminal(false);
+    setNativeTerminalDismissed(true);
+    saveNativeTerminalDismissed(session.id, true);
   };
   const toggleTerminal = () => {
     if (nativeTerminal) {
       setNativeTerminal(false);
       void reconnect();
     } else if (session.capabilities.nativeHandoff) {
-      setNativeTerminal(true);
-      void call("enter_terminal", { sessionId: session.id }).catch((e) =>
-        setError(String(e)),
-      );
+      void enterNativeTerminal();
     }
   };
   useEffect(() => {
@@ -549,7 +582,9 @@ export function Chat({
         ),
         shellId: "",
       })),
-      ...(session.capabilities.nativeHandoff || session.mode === "terminal"
+      ...((session.capabilities.nativeHandoff && !nativeTerminalDismissed) ||
+      nativeTerminal ||
+      session.mode === "terminal"
         ? [
             {
               id: "terminal",
@@ -693,6 +728,7 @@ export function Chat({
   return (
     <Tabs.Root
       asChild
+      activationMode="manual"
       value={activeTab}
       onValueChange={(value) => {
         if (taskTabs.detached.includes(value)) {
@@ -703,15 +739,10 @@ export function Chat({
           terminals.setActive(value.slice("shell:".length));
           return;
         }
-        terminals.setActive(null);
         if (value === "terminal") {
-          setChild(null);
-          setNativeTerminal(true);
-          if (session.mode !== "terminal" || busy)
-            void call("enter_terminal", { sessionId: session.id }).catch((e) =>
-              setError(String(e)),
-            );
+          void enterNativeTerminal();
         } else {
+          terminals.setActive(null);
           setNativeTerminal(false);
           setChild(value === "parent" ? null : value.slice("worker:".length));
           if (session.mode === "terminal" || nativeTerminal) void reconnect();
@@ -771,12 +802,15 @@ export function Chat({
                           )}
                         </Button>
                       </Tabs.Trigger>
-                      {!!tab.shellId && !detached && (
+                      {(!!tab.shellId || tab.id === "terminal") && !detached && (
                         <IconButton
                           label={`Close ${tab.title}`}
                           size="icon-compact"
                           className="terminal-tab-close"
-                          onClick={() => void terminals.close(tab.shellId)}
+                          disabled={tab.id === "terminal" && busy}
+                          onClick={() => void (tab.id === "terminal"
+                            ? closeNativeTerminal()
+                            : terminals.close(tab.shellId))}
                         >
                           <X size={rem(12)} />
                         </IconButton>

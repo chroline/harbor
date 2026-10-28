@@ -4,7 +4,7 @@ import { readSavedView } from "./navigation";
 export function reconcileStorage(storage: Storage, sessions: ReadonlySet<string>) {
   const keys = Array.from({ length: storage.length }, (_, i) => storage.key(i)!);
   for (const key of keys) {
-    for (const prefix of ["harbor.task-tabs.", "harbor.task-tab-selection.", "harbor.worker-drafts.", "harbor.root-draft."]) {
+    for (const prefix of ["harbor.task-tabs.", "harbor.task-tab-selection.", "harbor.worker-drafts.", "harbor.root-draft.", "harbor.native-terminal-dismissed."]) {
       if (key.startsWith(prefix) && !sessions.has(key.slice(prefix.length))) storage.removeItem(key);
     }
   }

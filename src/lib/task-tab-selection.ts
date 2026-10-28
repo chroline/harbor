@@ -13,3 +13,13 @@ export function saveTaskTabSelection(session: string, tab: string) {
     localStorage.setItem(key(session), tab);
   } catch {}
 }
+
+const nativeDismissedKey = (session: string) => `harbor.native-terminal-dismissed.${session}`;
+export function readNativeTerminalDismissed(session: string): boolean {
+  try { return localStorage.getItem(nativeDismissedKey(session)) === "true"; }
+  catch { return false; }
+}
+export function saveNativeTerminalDismissed(session: string, dismissed: boolean) {
+  try { localStorage.setItem(nativeDismissedKey(session), String(dismissed)); }
+  catch { /* The current tab still closes when storage is unavailable. */ }
+}

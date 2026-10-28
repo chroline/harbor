@@ -115,6 +115,7 @@ afterEach(() => {
   localStorage.removeItem("harbor.task-tab-selection.chat");
   localStorage.removeItem("harbor.root-draft.chat");
   localStorage.removeItem("harbor.worker-drafts.chat");
+  localStorage.removeItem("harbor.native-terminal-dismissed.chat");
   document.querySelectorAll(".test-chat-actions").forEach((el) => el.remove());
   vi.clearAllMocks();
 });
@@ -514,6 +515,57 @@ it("uses the first tab in the reordered strip for divider visibility", () => {
   localStorage.removeItem("harbor.task-tabs.chat");
 });
 
+it("does not start native handoff when its tab only receives focus", () => {
+  const tabsTarget = document.createElement("div");
+  tabsTarget.className = "test-chat-actions";
+  document.body.appendChild(tabsTarget);
+  render(<Chat session={{ ...session, capabilities: { nativeHandoff: true } as SessionRecord["capabilities"] }} tabsTarget={tabsTarget} />);
+  fireEvent.focus(screen.getByRole("tab", { name: "Native terminal" }));
+  expect(mock.call).not.toHaveBeenCalledWith("enter_terminal", expect.anything());
+  expect(screen.getByRole("textbox", { name: "Message your agent" })).toBeTruthy();
+});
+
+it.each(["tab", "shortcut"])("keeps the worker conversation visible when native handoff from %s fails", async (trigger) => {
+  const tabsTarget = document.createElement("div");
+  tabsTarget.className = "test-chat-actions";
+  document.body.appendChild(tabsTarget);
+  mock.children = { worker: { sessionId: "worker", parentId: "root", title: "Worker", description: null, state: { type: "idle" }, capabilities: { harborConnected: true } } };
+  localStorage.setItem("harbor.task-tab-selection.chat", "worker:worker");
+  const previousCall = mock.call.getMockImplementation()!;
+  mock.call.mockImplementation((command, args) => command === "enter_terminal" ? Promise.reject(new Error("Finish or stop the current turn and answer pending requests first")) : previousCall(command, args));
+  render(<Chat session={{ ...session, status: "working", capabilities: { nativeHandoff: true } as SessionRecord["capabilities"] }} tabsTarget={tabsTarget} />);
+  const input = screen.getByRole("textbox", { name: "Message Worker" });
+  fillEditor(input, "Keep my worker draft");
+  if (trigger === "tab") fireEvent.mouseDown(screen.getByRole("tab", { name: "Native terminal" }), { button: 0, ctrlKey: false });
+  else fireEvent.keyDown(window, { key: "T", metaKey: true, shiftKey: true });
+  await waitFor(() => expect(mock.call).toHaveBeenCalledWith("enter_terminal", { sessionId: "chat" }));
+  await act(async () => {});
+  expect(screen.getByRole("tab", { name: "Worker" }).getAttribute("aria-selected")).toBe("true");
+  expect(screen.getByRole("textbox", { name: "Message Worker" }).textContent).toBe("Keep my worker draft");
+  expect(localStorage.getItem("harbor.task-tab-selection.chat")).toBe("worker:worker");
+});
+
+it("dismisses an unused native terminal tab without a handoff, remembers it, and allows reopening", async () => {
+  const tabsTarget = document.createElement("div");
+  tabsTarget.className = "test-chat-actions";
+  document.body.appendChild(tabsTarget);
+  const props = {
+    session: { ...session, status: "working", capabilities: { nativeHandoff: true } as SessionRecord["capabilities"] },
+    tabsTarget,
+  };
+  const first = render(<Chat {...props} />);
+  fireEvent.click(screen.getByRole("button", { name: "Close Native terminal" }));
+  expect(screen.queryByRole("tab", { name: "Native terminal" })).toBeNull();
+  expect(screen.getByRole("textbox", { name: "Message your agent" })).toBeTruthy();
+  expect(mock.call).not.toHaveBeenCalledWith("enter_terminal", expect.anything());
+  expect(mock.call).not.toHaveBeenCalledWith("reconnect", expect.anything());
+  first.unmount();
+  render(<Chat {...props} />);
+  expect(screen.queryByRole("tab", { name: "Native terminal" })).toBeNull();
+  fireEvent.keyDown(window, { key: "T", metaKey: true, shiftKey: true });
+  await waitFor(() => expect(screen.getByRole("tab", { name: "Native terminal" }).getAttribute("aria-selected")).toBe("true"));
+});
+
 it("keeps native terminal handoff available as a task tab", async () => {
   const tabsTarget = document.createElement("div");
   tabsTarget.className = "test-chat-actions";
@@ -533,11 +585,11 @@ it("keeps native terminal handoff available as a task tab", async () => {
   expect(mock.call).toHaveBeenCalledWith("enter_terminal", {
     sessionId: "chat",
   });
-  expect(
+  await waitFor(() => expect(
     screen
       .getByRole("tab", { name: "Native terminal" })
       .getAttribute("aria-selected"),
-  ).toBe("true");
+  ).toBe("true"));
   rerender(
     <Chat {...props} session={{ ...props.session, mode: "terminal" }} />,
   );
