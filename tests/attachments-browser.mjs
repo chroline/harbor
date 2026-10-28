@@ -96,7 +96,7 @@ await page.click('loc=role:button[name="Start task"]', {
   label: "send attachment-only task",
 });
 await page.waitForSelector('loc=role:textbox[name="Message your agent"]');
-await page.waitForSelector('loc=css:[aria-label="Attachments"]');
+await page.waitForSelector('loc=css:[aria-label="Attachments"] img[alt="preview.png"]');
 assert.equal(
   await page.evaluate(
     () =>
@@ -138,6 +138,22 @@ console.log(
 console.log(
   "Passed: file input, image previews, drag overlay, drop on rich editor, removal, attachment-only task launch, transcript filenames, chat follow-up attachments, and narrow layout.",
 );
+// Other fixture capabilities can report a toast over the first attachment.
+if (await page.evaluate(() => !!document.querySelector('.harbor-toaster .ui-tsc__toast:not([data-removing]) button[aria-label="Dismiss notification"]'))) {
+  await page.click('.harbor-toaster .ui-tsc__toast:not([data-removing]) button[aria-label="Dismiss notification"]');
+}
+await page.click('[aria-label="Attachments"] button[data-slot="lightbox-photo"]');
+await page.waitForSelector('[role="dialog"]');
+await page.waitForSelector('[data-slot="lightbox-zoom"] img');
+assert.equal(await page.evaluate(() => document.querySelector('[role="dialog"] img').alt), "preview.png");
+await page.keyboard.press("Escape");
+await page.waitForSelector('[role="dialog"]', { state: "detached" });
+assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("data-slot")), "lightbox-photo");
+await page.click('[aria-label="Attachments"] button[data-slot="lightbox-photo"]');
+await page.waitForSelector('[role="dialog"]');
+await page.click('loc=role:button[name="Close"]');
+await page.waitForSelector('[role="dialog"]', { state: "detached" });
+console.log("Passed: Kobra lightbox open, image identity, Escape dismissal, focus return, reopen and close control.");
 await task.finish({ keep: [] });
 
 await fs.rm(fixtureDir, { recursive: true, force: true });

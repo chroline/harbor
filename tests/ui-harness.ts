@@ -314,7 +314,10 @@ mockIPC(
         await changed(s!);
         await event(s!, "user_message", {
           text: args.text,
-          attachments: (args.attachments ?? []).map(
+          // Images arrive below through the provider replay; keep document metadata here.
+          attachments: (args.attachments ?? []).filter(
+            (file: { mimeType: string }) => !file.mimeType.startsWith("image/"),
+          ).map(
             (file: { name: string; mimeType: string; data: string }) => ({
               name: file.name,
               mimeType: file.mimeType,
@@ -322,6 +325,17 @@ mockIPC(
             }),
           ),
         });
+        // Mirror the provider's image echo so replay hydrates attachment previews.
+        for (const file of args.attachments ?? []) {
+          if (!file.mimeType.startsWith("image/")) continue;
+          await event(s!, "session/update", {
+            sessionId: "wire-root",
+            update: {
+              sessionUpdate: "user_message_chunk",
+              content: { type: "text", text: `${args.text ?? ""}\n[${file.name}](data:${file.mimeType};base64,${file.data})` },
+            },
+          });
+        }
         await event(s!, "session/update", {
           sessionId: "wire-root",
           update: {
@@ -363,6 +377,12 @@ mockIPC(
         s!.status = "idle";
         await changed(s!);
         return structuredClone(s);
+      case "get_recent_events": {
+        const all = events.filter((e) => e.sessionId === args.sessionId);
+        const users = all.filter((e) => e.kind === "user_message");
+        const start = users.length >= 3 ? users.at(-3)!.sequence : 0;
+        return { events: all.filter((e) => e.sequence >= start), hasEarlier: all.some((e) => e.sequence < start) };
+      }
       case "get_events":
         return events.filter(
           (e) => e.sessionId === args.sessionId && e.sequence > args.after,

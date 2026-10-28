@@ -10,7 +10,7 @@ Harbor vendors the Radix registry components from [Fluid Functionalism](https://
 | Home and composers              | InputMessage, Dialog, Button, Card                                                                    |
 | Launch and settings             | Combobox, Select, InputGroup, RadioGroup, Switch, InputCopy                                           |
 | Questions and permissions       | Fluid AskUserQuestions with shared plan/question card surfaces                                       |
-| Conversations                   | shadcn Message, Bubble, Trace, Code Block, Message Scroller, Marker; Fluid AskUserQuestions |
+| Conversations                   | shadcn Message, Bubble, Trace, Message Scroller, Marker; Kobra File Diff; Fluid AskUserQuestions |
 | Errors and ownership            | Banner, Badge                                                                                         |
 | Worktrees and archives          | Table, Tabs, Card, InputCopy                                                                          |
 | Conversation and diff modes     | TabsSubtle                                                                                            |
@@ -52,7 +52,7 @@ Harbor-specific composition lives in `components/fluid.tsx` and screen component
 
 ## Functional exceptions
 
-- Markdown, Highlight.js/lowlight syntax highlighting, the review pane’s unified/split diffs, and xterm remain specialized implementations. Chat fences and tool output share the new Code Block composition; surrounding controls use Fluid.
+- Markdown, Kobra file diffs, Mermaid diagrams, and xterm remain specialized implementations. Markdown fences and tool output use plain preformatted text; surrounding controls use Fluid.
 - Provider argument editing uses a multiline textarea inside InputGroup because InputField is single-line.
 - Review and child-session action rows use shared Fluid hover behavior with native buttons to retain arbitrary content and hierarchical indentation.
 - Sidebar slot buttons are native elements composed inside Fluid SidebarMenu components, not independent stock controls.
@@ -65,6 +65,12 @@ Harbor-specific composition lives in `components/fluid.tsx` and screen component
 The deterministic `tests/ui.html` fixture exercises the actual React application through simulated IPC. Ego-browser checks included dark/light themes, 1380×900 and 900×620 layouts, keyboard search and focus restoration, Cmd+B, model-dependent effort options, child transcripts, approvals, cancellation cleanup, split review, portal menus, and a 240-message transcript (200 rendered-message bound). Drafts survive navigation. Narrow review uses the content frame instead of compressing both columns. These UI fixtures do not certify additional provider versions or native terminal handoffs.
 
 ## October 14, 2026: AI Elements chat integration
+
+The Code Block integration described in this historical section was removed
+on October 27, 2026. File changes now use Kobra File Diff. Markdown snippets
+and tool output use native preformatted text, and Mermaid retains its own
+diagram frame, source toggle, and lightbox. The CodeBlock components, registry
+snapshot, styles, and Highlight.js/lowlight dependencies have been deleted.
 
 The chat now composes the actual Radix `radix-rhea` registry implementations of Trace, Code Block, Message, Bubble, Message Scroller, Marker, Questionnaire, and Collapsible. Original registry responses and their SHA-256 digests are saved in [`vendor/ai-elements`](vendor/ai-elements/provenance.json). `@shadcn/react` supplies the Message Scroller and Questionnaire headless behavior; `package-lock.json` records the installed version. AI Elements is copied composition code, with no AI SDK transport or credential dependency.
 

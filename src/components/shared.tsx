@@ -1,3 +1,5 @@
+import { isTauri } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { remarkCommandReferences } from "../lib/command-markdown";
 import type { CommandRange } from "../lib/commands";
 import { rem } from "@/lib/units";
@@ -20,8 +22,8 @@ import { StreamingText } from "./ui/streaming-text";
 import { Terminal, Copy, Check, LoaderCircle, ChevronDown } from "@/lib/icons";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { MarkdownCodeBlock } from "./CodeBlock";
-export { CodeBlock } from "./CodeBlock";
+import { MermaidBlock } from "./MermaidBlock";
+import type { RootContent } from "hast";
 import { Button } from "./ui/button";
 import { Tooltip } from "./ui/tooltip";
 import { call } from "../lib/api";
@@ -155,9 +157,16 @@ export function CopyButton({ text }: { text: string | (() => string) }) {
     </IconButton>
   );
 }
-// React uses these functions as component identities. Keep them stable so a
-// composer update or streamed token doesn't remount code blocks and reset wrap.
+// Keep Markdown renderers stable across composer updates and streamed tokens.
 const MarkdownStreaming = createContext(false);
+
+function markdownText(node: RootContent): string {
+  return node.type === "text"
+    ? node.value
+    : "children" in node
+      ? node.children.map(markdownText).join("")
+      : "";
+}
 
 function streamLeaves(children: ReactNode, streaming: boolean) {
   if (!streaming) return children;
@@ -197,18 +206,48 @@ function streamed(
   };
 }
 
+export function ChatLink({ href, children }: { href?: string; children: ReactNode }) {
+  const { setError } = useStore();
+  return (
+    <a href={href} target="_blank" rel="noreferrer" onClick={(event) => {
+      if (isTauri() && href && /^(https?:|mailto:)/i.test(href)) {
+        event.preventDefault();
+        void openUrl(href).catch((error) => setError(`Could not open link: ${String(error)}`));
+      }
+    }}>
+      {children}
+    </a>
+  );
+}
+
 const markdownComponents: Components = {
   a: ({ children, href }) => {
     const streaming = useContext(MarkdownStreaming);
+    return <ChatLink href={href}>{streamLeaves(children, streaming)}</ChatLink>;
+  },
+  pre: ({ node, children, ...props }) => {
+    const code = node?.children.find(
+      (child) => child.type === "element" && child.tagName === "code",
+    );
+    if (code?.type === "element") {
+      const classes = code.properties.className;
+      const className = Array.isArray(classes)
+        ? classes.join(" ")
+        : String(classes ?? "");
+      if (/(?:^|\s)language-mermaid(?:\s|$)/i.test(className)) {
+        return (
+          <MermaidBlock
+            text={code.children.map(markdownText).join("").replace(/\n$/, "")}
+          />
+        );
+      }
+    }
     return (
-      <a href={href} target="_blank" rel="noreferrer">
-        {streamLeaves(children, streaming)}
-      </a>
+      <pre {...props} dir="ltr" tabIndex={0}>
+        {children}
+      </pre>
     );
   },
-  pre: ({ node, children }) => (
-    <MarkdownCodeBlock node={node}>{children}</MarkdownCodeBlock>
-  ),
   p: streamed("p"),
   li: streamed("li"),
   em: streamed("em"),

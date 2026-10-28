@@ -53,6 +53,9 @@ await page.evaluate(async () => {
     },
   });
 });
+await page.click('button[aria-label="View details"]', {
+  label: "Inspect failed command output",
+});
 await page.waitForFunction(() =>
   document
     .querySelector(".tool-detail pre")
@@ -89,7 +92,7 @@ for (const width of [1400, 650]) {
     singleLine: true,
     clipped: true,
     error: true,
-    exitCode: true,
+    exitCode: false,
     rawTerminalJson: false,
   });
   console.log({ width, ...result });

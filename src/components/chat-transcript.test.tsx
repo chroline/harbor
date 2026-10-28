@@ -83,7 +83,8 @@ it("renders a replayed image as an image without exposing its data as message te
   );
   expect(
     screen.getByRole("img", { name: "screen.png" }).getAttribute("src"),
-  ).toBe("blob:attachment-preview");
+  ).toBe(src);
+  expect(screen.getByRole("button", { name: "Open screen.png" }).getAttribute("aria-haspopup")).toBe("dialog");
   expect(screen.getByTitle("screen.png")).toBeTruthy();
   expect(
     screen.queryByRole("button", { name: "Remove screen.png" }),
@@ -224,7 +225,7 @@ it("collapses completed work and lets the user expand it", () => {
   );
 });
 
-it("opens running work, preserves an explicit collapse on updates, and labels failure", () => {
+it("opens running work and preserves an explicit collapse after a tool fails", () => {
   const view = render(
     <ChatTranscript
       entries={[tool(1, "in_progress")]}
@@ -251,19 +252,47 @@ it("opens running work, preserves an explicit collapse on updates, and labels fa
       renderTool={renderTool}
     />,
   );
-  expect(screen.getByRole("button", { name: "Needs attention" })).toBeTruthy();
-});
-
-it("opens failed work by default", () => {
-  render(
-    <ChatTranscript entries={[tool(1, "failed")]} renderTool={renderTool} />,
-  );
+  expect(screen.queryByRole("button", { name: "Needs attention" })).toBeNull();
   expect(
     screen
-      .getByRole("button", { name: "Needs attention" })
+      .getByRole("button", { name: "Worked" })
       .getAttribute("aria-expanded"),
-  ).toBe("true");
+  ).toBe("false");
 });
+
+it.each(["failed", "interrupted"])(
+  "keeps %s status on the individual tool rather than the work group",
+  (status) => {
+    const { container } = render(
+      <ChatTranscript entries={[tool(1, status)]} renderTool={renderTool} />,
+    );
+    const toggle = screen.getByRole("button", { name: "Worked" });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(
+      toggle
+        .querySelector('[data-slot="trace-line"]')
+        ?.getAttribute("data-status"),
+    ).not.toBe("error");
+    expect(screen.queryByText("Needs attention")).toBeNull();
+    fireEvent.click(toggle);
+    const toolToggle = screen.getByRole("button", { name: "View details" });
+    expect(toolToggle.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(toolToggle);
+    expect(toolToggle.getAttribute("aria-expanded")).toBe("true");
+    if (status === "failed") {
+      expect(screen.queryByText("Failed")).toBeNull();
+      expect(
+        container.querySelector('.activity-step[data-status="error"] .sr-only')
+          ?.textContent,
+      ).toBe("error");
+    } else {
+      expect(screen.getByText("Interrupted")).toBeTruthy();
+    }
+    expect(
+      container.querySelectorAll('.activity-step[data-status="error"]'),
+    ).toHaveLength(1);
+  },
+);
 
 it("keeps thinking between tool calls until the response finishes", () => {
   const view = render(
@@ -287,7 +316,7 @@ it("keeps thinking between tool calls until the response finishes", () => {
       .getAttribute("aria-expanded"),
   ).toBe("false");
   fireEvent.click(screen.getByRole("button", { name: "Worked" }));
-  expect(screen.getByText("Done")).toBeTruthy();
+  expect(screen.queryByText("Done")).toBeNull();
 });
 
 it("uses Trace before the first tool and while reasoning streams", () => {
@@ -468,4 +497,66 @@ it("does not stream an earlier reply once a tool is the active step", () => {
     />,
   );
   expect(document.querySelector("[data-slot='streaming-text']")).toBeNull();
+});
+
+it("uses the same readable tool presentation in activity rows", () => {
+  const entry = tool(1);
+  if (entry.type !== "tool") throw new Error("Expected tool");
+  entry.tool = {
+    ...entry.tool,
+    name: "Bash",
+    kind: "execute",
+    title: "cat wiki.md",
+    rawInput: { command: "cat wiki.md", description: "Read wiki quickstart" },
+  };
+  render(<ChatTranscript entries={[entry]} renderTool={renderTool} working />);
+  expect(screen.getByText("Read wiki quickstart")).toBeTruthy();
+});
+
+it("renders scheduling receipts with delay inside an expandable body", () => {
+  const entry = tool(1);
+  if (entry.type !== "tool") throw new Error("Expected tool");
+  entry.tool = {
+    ...entry.tool,
+    name: "ScheduleWakeup",
+    title: "ScheduleWakeup",
+    kind: "other",
+    rawInput: { delaySeconds: 1200 },
+    rawOutput:
+      "Next wakeup scheduled for 12:06:00. Internal harness instructions.",
+  };
+  render(<ChatTranscript entries={[entry]} renderTool={renderTool} working />);
+  expect(screen.getByText("Wakeup scheduled for 12:06:00")).toBeTruthy();
+  const toggle = screen.getByRole("button", { name: "View details" });
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  expect(toggle.textContent).not.toContain("20 min delay");
+  fireEvent.click(toggle);
+  expect(screen.getByText("20 min delay")).toBeTruthy();
+  expect(screen.queryByText(/Internal harness/)).toBeNull();
+});
+
+it("does not open a tool when it fails during active work", () => {
+  const view = render(
+    <ChatTranscript
+      entries={[tool(1, "in_progress")]}
+      renderTool={renderTool}
+      working
+    />,
+  );
+  expect(
+    screen
+      .getByRole("button", { name: "View details" })
+      .getAttribute("aria-expanded"),
+  ).toBe("false");
+  view.rerender(
+    <ChatTranscript
+      entries={[tool(1, "failed")]}
+      renderTool={renderTool}
+      working
+    />,
+  );
+  const toggle = screen.getByRole("button", { name: "View details" });
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(toggle);
+  expect(toggle.getAttribute("aria-expanded")).toBe("true");
 });

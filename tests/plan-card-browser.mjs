@@ -144,7 +144,7 @@ await p.keyboard.press("Escape");
 await p.waitForSelector('[data-slot="sheet-content"]', { state: "hidden" });
 await p.click('[data-slot="plan-card"][data-state="pending"] button:has-text("Implement plan")');
 await p.waitForSelector('[data-slot="plan-card"][data-state="pending"]', { state: "hidden" });
-await p.click(".app-error-banner button");
+await p.click(".harbor-toaster .ui-tsc__toast[data-type=error]:not([data-removing]) .ui-tsc__close");
 await show("codex");
 await p.waitForSelector('[data-slot="plan-card"][data-state="pending"]', { state: "visible" });
 await p.click('#harbor-sidebar button:has-text("Settings")');

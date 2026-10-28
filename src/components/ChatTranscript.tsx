@@ -1,8 +1,9 @@
-import { Fragment, useMemo, useRef, useState, type ReactNode } from "react";
-import { Brain, Check, Paperclip } from "@/lib/icons";
+import { WakeupTool } from "./WakeupTool";
+import { Fragment, useRef, useState, type ReactNode } from "react";
+import { Brain } from "@/lib/icons";
 import { Message, MessageContent } from "./ui/message";
 import { Bubble, BubbleContent } from "./ui/bubble";
-import { FilePreviewTile } from "./ui/input-message";
+import { MessageAttachments } from "./MessageAttachments";
 import { ThinkingIndicatorGlyph } from "./ui/thinking-indicator";
 import { RichText } from "./shared";
 import {
@@ -15,28 +16,14 @@ import {
   TraceTitle,
 } from "./ui/trace";
 import { TraceStep, ToolGlyph, traceStatus } from "./AgentTrace";
-import { TranscriptRow, useTranscriptScroller } from "./ChatScroller";
+import {
+  TranscriptRow,
+  VirtualTranscriptTurn,
+  useTranscriptScroller,
+} from "./ChatScroller";
 import type { TimelineEntry, Tool, RecordedInteraction } from "../lib/protocol";
 import "./chat-transcript.css";
-
-function ImageAttachment({
-  name,
-  mimeType,
-  previewUrl,
-}: {
-  name: string;
-  mimeType: string;
-  previewUrl: string;
-}) {
-  const file = useMemo(() => {
-    const bytes = Uint8Array.from(
-      atob(previewUrl.slice(previewUrl.indexOf(",") + 1)),
-      (c) => c.charCodeAt(0),
-    );
-    return new File([bytes], name, { type: mimeType, lastModified: 0 });
-  }, [name, mimeType, previewUrl]);
-  return <FilePreviewTile file={file} size={80} />;
-}
+import { toolActivityKind, toolPresentation } from "../lib/tool-presentation";
 
 type ActivityEntry =
   | Extract<TimelineEntry, { type: "tool" }>
@@ -72,12 +59,16 @@ function Activity({
   active = false,
   endedBefore,
   streamingId,
+  expanded: savedExpanded,
+  onExpandedChange,
 }: {
   entries: ActivityEntry[];
   renderTool: (tool: Tool) => ReactNode;
   active?: boolean;
   endedBefore?: number;
   streamingId?: string;
+  expanded?: boolean;
+  onExpandedChange?: (open: boolean) => void;
 }) {
   const [expanded, setExpanded] = useState<boolean | null>(null);
   const tools = entries.flatMap((entry) =>
@@ -89,26 +80,21 @@ function Activity({
       tool.workCompletedAt === undefined,
   );
   const running = active || toolsRunning;
-  const failed = tools.some((tool) =>
-    ["failed", "interrupted"].includes(tool.status),
-  );
-  const open = expanded ?? (running || failed);
+  const open = savedExpanded ?? expanded ?? running;
   const duration = activityDuration(entries, endedBefore);
   const heading = running
     ? "Working..."
-    : failed
-      ? "Needs attention"
-      : duration === null
-        ? "Worked"
-        : `Worked for ${formatWorkDuration(duration)}`;
+    : duration === null
+      ? "Worked"
+      : `Worked for ${formatWorkDuration(duration)}`;
   return (
     <TraceCollapsible
       className="transcript-activity"
       open={open}
-      onOpenChange={setExpanded}
+      onOpenChange={onExpandedChange ?? setExpanded}
     >
       <TraceCollapsibleTrigger aria-label={heading}>
-        <TraceLine status={running ? "running" : failed ? "error" : undefined}>
+        <TraceLine status={running ? "running" : undefined}>
           {running && (
             <TraceIcon>
               <ThinkingIndicatorGlyph />
@@ -121,28 +107,32 @@ function Activity({
         <Trace>
           {entries.map((entry) =>
             entry.type === "tool" ? (
-              <TraceStep
-                key={entry.tool.id}
-                label={entry.tool.title.replaceAll("_", " ")}
-                icon={<ToolGlyph kind={entry.tool.kind} />}
-                status={traceStatus(
-                  entry.tool.status,
-                  entry.tool.workCompletedAt !== undefined,
-                )}
-                description={
-                  ["failed", "interrupted"].includes(entry.tool.status)
-                    ? entry.tool.status === "failed"
-                      ? "Failed"
-                      : "Interrupted"
-                    : undefined
-                }
-                detailLabel="View details"
-                defaultOpen={["failed", "interrupted"].includes(
-                  entry.tool.status,
-                )}
-              >
-                {renderTool(entry.tool)}
-              </TraceStep>
+              toolPresentation(entry.tool).wakeup ? (
+                <WakeupTool key={entry.tool.id} tool={entry.tool} />
+              ) : (
+                <TraceStep
+                  key={entry.tool.id}
+                  label={toolPresentation(entry.tool).title}
+                  icon={
+                    <ToolGlyph
+                      kind={toolActivityKind(entry.tool)}
+                      name={entry.tool.name || entry.tool.title}
+                    />
+                  }
+                  status={traceStatus(
+                    entry.tool.status,
+                    entry.tool.workCompletedAt !== undefined,
+                  )}
+                  description={
+                    entry.tool.status === "interrupted"
+                      ? "Interrupted"
+                      : undefined
+                  }
+                  detailLabel="View details"
+                >
+                  {renderTool(entry.tool)}
+                </TraceStep>
+              )
             ) : (
               <TraceStep
                 key={entry.message.id}
@@ -172,7 +162,6 @@ function Activity({
               icon={<ThinkingIndicatorGlyph />}
             />
           )}
-          {!running && !failed && <TraceStep label="Done" icon={<Check />} />}
         </Trace>
       </TraceCollapsibleContent>
     </TraceCollapsible>
@@ -231,22 +220,24 @@ function activeStreamId(entries: TimelineEntry[], working: boolean) {
 function TranscriptTurn({
   id,
   anchor,
+  live,
   header,
   children,
 }: {
   id: string;
   anchor: boolean;
+  live: boolean;
   header: ReactNode;
   children: ReactNode;
 }) {
   return (
-    <TranscriptRow id={id} anchor={anchor} user>
+    <VirtualTranscriptTurn id={id} anchor={anchor} live={live} user>
       <div className="transcript-prompt-header">
         <div className="transcript-prompt-backdrop" aria-hidden="true" />
         {header}
       </div>
       <div className="transcript-responses">{children}</div>
-    </TranscriptRow>
+    </VirtualTranscriptTurn>
   );
 }
 
@@ -267,6 +258,9 @@ export function ChatTranscript({
   const [expandedMessages, setExpandedMessages] = useState<Set<string>>(
     () => new Set(),
   );
+  const [expandedActivities, setExpandedActivities] = useState<
+    Record<string, boolean>
+  >({});
   const toggleMessage = (id: string) => {
     setExpandedMessages((previous) => {
       const next = new Set(previous);
@@ -276,9 +270,9 @@ export function ChatTranscript({
     });
   };
   // The scroller considers an unhandled anchor a newly submitted turn, even
-  // when an old row merely survives eviction from our bounded transcript.
-  // Keep automatic anchoring on the latest live user turn; saved history opens
-  // at its restored position and all rows retain stable message IDs.
+  // when a historical row remounts after scrolling back into view.
+  // Keep automatic anchoring on the latest live user turn; history opens
+  // at the bottom and all rows retain stable message IDs.
   const historyUsers = useRef(
     new Set(
       entries.flatMap((entry) =>
@@ -304,6 +298,13 @@ export function ChatTranscript({
             renderTool={renderTool}
             active={working && index === groups.length - 1}
             streamingId={streamingId}
+            expanded={expandedActivities[group.id]}
+            onExpandedChange={(open) =>
+              setExpandedActivities((previous) => ({
+                ...previous,
+                [group.id]: open,
+              }))
+            }
             endedBefore={
               next?.type === "message"
                 ? next.entry.message.timestamp
@@ -380,30 +381,7 @@ export function ChatTranscript({
                 </small>
               )}
               {!!message.attachments?.length && (
-                <div
-                  className="flex flex-wrap gap-2 mb-2"
-                  aria-label="Attachments"
-                >
-                  {message.attachments.map((file, index) =>
-                    file.previewUrl && file.mimeType.startsWith("image/") ? (
-                      <ImageAttachment
-                        key={index}
-                        name={file.name}
-                        mimeType={file.mimeType}
-                        previewUrl={file.previewUrl}
-                      />
-                    ) : (
-                      <span
-                        key={index}
-                        className="inline-flex max-w-full items-center gap-1 rounded-md bg-accent px-2 py-1 text-xs"
-                        title={`${file.name} (${Math.ceil(file.size / 1024)} KB)`}
-                      >
-                        <Paperclip className="size-3 shrink-0" />
-                        <span className="truncate">{file.name}</span>
-                      </span>
-                    ),
-                  )}
-                </div>
+                <MessageAttachments files={message.attachments} />
               )}
               <RichText
                 text={message.text}
@@ -467,6 +445,7 @@ export function ChatTranscript({
           <TranscriptTurn
             key={turn.id}
             id={turn.id}
+            live={index === turns.length - 1}
             header={turn.rows[0]}
             anchor={
               latestUser?.type === "message" &&
@@ -478,7 +457,13 @@ export function ChatTranscript({
             {index === turns.length - 1 && trailing}
           </TranscriptTurn>
         ) : (
-          <Fragment key={turn.id}>{content}</Fragment>
+          <VirtualTranscriptTurn
+            key={turn.id}
+            id={turn.id}
+            live={index === turns.length - 1}
+          >
+            {content}
+          </VirtualTranscriptTurn>
         );
       })}
       {!turns.length && trailing}

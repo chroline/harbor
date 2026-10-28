@@ -97,8 +97,8 @@ for (const provider of ["codex", "claude", "grok"]) {
     (provider) => window.__harborFixture.showQuestion(provider),
     provider,
   );
-  if (await page.evaluate(() => !!document.querySelector(".app-error-banner")))
-    await page.click('.app-error-banner button[aria-label="Dismiss"]');
+  if (await page.evaluate(() => !!document.querySelector('.harbor-toaster .ui-tsc__toast[data-type="error"]:not([data-removing])')))
+    await page.click('.harbor-toaster .ui-tsc__toast[data-type="error"]:not([data-removing]) .ui-tsc__close');
   await page.waitForSelector('[data-slot="question-card"]');
   assert.equal(
     await page.evaluate(
@@ -249,8 +249,8 @@ await page.evaluate(() =>
   ),
 );
 await page.waitForSelector('[data-slot="question-progress"]');
-if (await page.evaluate(() => !!document.querySelector(".app-error-banner")))
-  await page.click('.app-error-banner button[aria-label="Dismiss"]');
+if (await page.evaluate(() => !!document.querySelector('.harbor-toaster .ui-tsc__toast[data-type="error"]:not([data-removing])')))
+  await page.click('.harbor-toaster .ui-tsc__toast[data-type="error"]:not([data-removing]) .ui-tsc__close');
 await page.press('[role="checkbox"][aria-label="Unit checks"]', "1");
 await page.press('[role="checkbox"][aria-label="Unit checks"]', "2");
 await page.click('[data-slot="question-submit"]');

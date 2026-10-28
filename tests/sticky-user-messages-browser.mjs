@@ -21,8 +21,8 @@ await page.evaluate(async () =>
 await page.waitForFunction(
   () =>
     document.querySelectorAll(
-      '[data-slot="message-scroller-viewport"] .transcript-user',
-    ).length === 100,
+      '[data-slot="message-scroller-viewport"] .transcript-turn',
+    ).length === 121,
 );
 // Leave follow-output mode through the public navigation control.
 await page.click('button[aria-label="Jump to: Review case 30"]');

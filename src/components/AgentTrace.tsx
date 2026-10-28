@@ -1,15 +1,21 @@
 import { useState, type ReactNode } from "react";
 import {
   Brain,
+  BookOpen,
   Check,
   CircleAlert,
   Circle,
-  Folder,
+  FileCode2,
+  FilePlus,
+  Clock,
+  CornerDownLeft,
   Globe,
   Network,
   Pencil,
   Play,
   Search,
+  Trash2,
+  MessageSquare,
 } from "@/lib/icons";
 import {
   Trace,
@@ -33,19 +39,42 @@ export function traceStatus(status: string, ended = false): TraceStatus {
   if (status === "pending") return "pending";
   return undefined;
 }
-export function ToolGlyph({ kind }: { kind: string }) {
+export function ToolGlyph({ kind, name }: { kind: string; name?: string }) {
+  const namedIcon = (
+    {
+      write: FilePlus,
+      edit: Pencil,
+      multiedit: Pencil,
+      skill: BookOpen,
+      agent: Network,
+      task: Network,
+      subagenthandback: CornerDownLeft,
+      taskoutput: CornerDownLeft,
+      toolsearch: Search,
+      schedulewakeup: Clock,
+      spawn_agent: Network,
+      send_message: MessageSquare,
+      followup_task: MessageSquare,
+      wait_agent: Clock,
+      wait: Clock,
+    } as Record<string, typeof Circle>
+  )[name?.toLowerCase() ?? ""];
   const Icon =
+    namedIcon ??
     (
       {
-        read: Folder,
+        read: FileCode2,
+        skill: BookOpen,
+        write: FilePlus,
         edit: Pencil,
-        delete: Pencil,
+        delete: Trash2,
         search: Search,
         fetch: Globe,
         execute: Play,
         think: Brain,
       } as Record<string, typeof Circle>
-    )[kind] ?? Circle;
+    )[kind] ??
+    Circle;
   return <Icon />;
 }
 

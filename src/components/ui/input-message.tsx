@@ -26,7 +26,7 @@ import {
 import { cn } from "@/lib/utils";
 import { fontWeights } from "@/lib/font-weight";
 import { spring } from "@/lib/springs";
-import { nestedRadius, useShape } from "@/lib/shape-context";
+import { useShape } from "@/lib/shape-context";
 import {
   SizeProvider,
   useSize,
@@ -40,7 +40,7 @@ import {
   useFluidHover,
   useRegisterFluidHoverItem,
 } from "@/hooks/use-fluid-hover";
-import { FileThumbnail } from "@/components/ui/file-thumbnail";
+import { DraftAttachment } from "../MessageAttachments";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { FluidHoverHighlight } from "@/components/fluid-hover-highlight";
@@ -233,79 +233,8 @@ interface FilePreviewTileProps {
   size: number;
 }
 
-function FilePreviewTile({ file, onRemove, size }: FilePreviewTileProps) {
-  const icons = useIcons();
-  const XIcon = icons.x;
-  const shape = useShape();
-  const isImage = file.type.startsWith("image/");
-  // The tile sits 0.5rem inside the composer's container edge. Derive its curve
-  // from that actual inset instead of reusing the popup-specific 0.25rem pair.
-  const radius = nestedRadius(shape.containerRadius, 8);
-  const displayName = file.type.startsWith("image/") && /^(?:no name|untitled)(?:\.[^.]+)?$/i.test(file.name)
-    ? "Pasted image" : file.name;
-  const fileType = file.type.startsWith("image/") ? "Image"
-    : file.type === "application/pdf" ? "PDF"
-    : file.name.split(".").length > 1 ? file.name.split(".").at(-1)!.toUpperCase() : "File";
-  const fileSize = file.size < 1024 ? `${file.size} B`
-    : file.size < 1024 * 1024 ? `${Math.ceil(file.size / 1024)} KB`
-    : `${(file.size / (1024 * 1024)).toFixed(1)} MB`;
-
-  return (
-    <motion.div
-      // `layout` animates sibling tiles into the gap when one is removed.
-      // Enter: spring.fast (0.08s) — the small-state-flip tier per motion-guidelines.md.
-      // Exit: 0.06s linear — "exits should be slightly faster than enter",
-      // matches CheckboxGroup's hover-bg pattern.
-      layout
-      initial={{ opacity: 0, scale: 0.9 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.9, transition: spring.fast.exit }}
-      transition={spring.fast}
-      // `cursor-default` opts out of the parent's `cursor-text` so hovering
-      // a preview tile doesn't look like it'll land in the textarea.
-      data-slot="composer-attachment"
-      className={cn(
-        "relative shrink-0 cursor-default",
-        isImage
-          ? "w-fit"
-          : "flex w-64 max-w-full items-center gap-2 rounded-lg border border-border/60 bg-background/30 p-1.5 pr-1",
-      )}
-      title={file.name}
-    >
-      <FileThumbnail file={file} size={isImage ? size : Math.min(size, 40)} radius={isImage ? 4 : radius} />
-      {!isImage && <div className="min-w-0 flex-1">
-        <div className="truncate text-xs leading-4 text-foreground">{displayName}</div>
-        <div className="truncate text-[0.6875rem] leading-4 text-muted-foreground">{fileType} · {fileSize}</div>
-      </div>}
-      {onRemove && (isImage ? (
-        <button
-          type="button"
-          aria-label={`Remove ${file.name}`}
-          onClick={(event) => {
-            event.stopPropagation();
-            onRemove();
-          }}
-          className="absolute -right-1.5 -top-1.5 z-10 flex size-6 cursor-pointer items-center justify-center rounded-full border-2 border-surface-2 bg-neutral-600 text-white transition-colors hover:bg-neutral-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-        >
-          <XIcon size={rem(14)} strokeWidth={1.5} />
-        </button>
-      ) : <Tooltip content="Remove" side="top">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-compact"
-          onClick={(e) => {
-            e.stopPropagation();
-            onRemove();
-          }}
-          aria-label={`Remove ${file.name}`}
-          className="shrink-0 text-muted-foreground hover:text-foreground"
-        >
-          <XIcon size={rem(12)} strokeWidth={2.5} />
-        </Button>
-      </Tooltip>)}
-    </motion.div>
-  );
+function FilePreviewTile({ file, onRemove }: FilePreviewTileProps) {
+  return <DraftAttachment file={file} onRemove={onRemove} />;
 }
 
 // ─── Queued message row ───────────────────────────────────────────────────

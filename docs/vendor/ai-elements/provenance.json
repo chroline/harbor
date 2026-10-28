@@ -5,11 +5,6 @@
     "sha256": "3e930218095d3357a5e196016fcaaaa772c75228023b15a463bd66ffb9414273"
   },
   {
-    "name": "code-block",
-    "url": "https://ui.shadcn.com/r/styles/radix-rhea/code-block.json",
-    "sha256": "c76f4c0546712c2c9cbad2941d27f131e4aa371ee42f439936f35b537e40a497"
-  },
-  {
     "name": "message",
     "url": "https://ui.shadcn.com/r/styles/radix-rhea/message.json",
     "sha256": "540d819876bc916c3b8501db254f962a0b58c8a22c56afae56c4c170ec8ed722"

@@ -24,7 +24,6 @@ export default defineConfig({
             return "motion";
           if (id.includes("/@base-ui/")) return "base-ui";
           if (id.includes("/@xterm/")) return "terminal";
-          if (id.includes("/highlight.js/")) return "syntax";
           if (id.includes("/radix-ui/") || id.includes("/@radix-ui/"))
             return "primitives";
         },

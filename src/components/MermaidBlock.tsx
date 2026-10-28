@@ -3,13 +3,6 @@ import { Code, Scaling } from "@/lib/icons";
 import { renderMermaid } from "@/lib/mermaid";
 import { Button } from "./ui/button";
 import {
-  CodeBlock,
-  CodeBlockActions,
-  CodeBlockContent,
-  CodeBlockHeader,
-  CodeBlockTitle,
-} from "./ui/code-block";
-import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -80,10 +73,10 @@ export function MermaidBlock({ text }: { text: string }) {
         setZoom(1);
       }}
     >
-      <CodeBlock className="harbor-code-block harbor-mermaid-block">
-        <CodeBlockHeader>
-          <CodeBlockTitle>mermaid</CodeBlockTitle>
-          <CodeBlockActions>
+      <figure className="harbor-mermaid-block">
+        <figcaption className="mermaid-block-header">
+          <span>mermaid</span>
+          <div className="mermaid-block-actions">
             <Button
               variant="ghost"
               size="icon-compact"
@@ -104,8 +97,8 @@ export function MermaidBlock({ text }: { text: string }) {
               </Button>
             </DialogTrigger>
             <CopyButton text={text} />
-          </CodeBlockActions>
-        </CodeBlockHeader>
+          </div>
+        </figcaption>
         {source || current?.failed ? (
           <>
             {current?.failed && (
@@ -113,7 +106,9 @@ export function MermaidBlock({ text }: { text: string }) {
                 Diagram preview unavailable. Showing source.
               </p>
             )}
-            <CodeBlockContent>{text}</CodeBlockContent>
+            <pre className="mermaid-source" dir="ltr" tabIndex={0}>
+              {text}
+            </pre>
           </>
         ) : image ? (
           <button
@@ -132,7 +127,7 @@ export function MermaidBlock({ text }: { text: string }) {
             Rendering diagram…
           </p>
         )}
-      </CodeBlock>
+      </figure>
       <DialogContent className="mermaid-lightbox" size="xl">
         <div className="mermaid-lightbox-toolbar">
           <DialogTitle>Mermaid diagram</DialogTitle>

@@ -19,8 +19,8 @@ await page.evaluate(async () => {
 await page.waitForFunction(
   () =>
     document.querySelectorAll(
-      '[data-slot="message-scroller-viewport"] [data-slot="message"]',
-    ).length === 200,
+      '[data-slot="message-scroller-viewport"] .transcript-turn',
+    ).length === 121,
 );
 const settled = () => {
   const v = document.querySelector('[data-slot="message-scroller-viewport"]');
@@ -76,7 +76,7 @@ await page.evaluate(async () => {
 await page.waitForFunction(() =>
   document.body.textContent.includes("STREAMED_RESPONSE_739"),
 );
-// One older row can be evicted by the existing 200-message bound. Continue the
+// One older row can be evicted by the existing complete virtualized history. Continue the
 // same stream for the strict position check, so no additional row is removed.
 await page.waitForFunction(settled);
 await page.waitForFunction(
@@ -226,46 +226,29 @@ await page.evaluate(() => {
   document.querySelector('[data-slot="message-scroller-viewport"]').scrollTop =
     400;
 });
-// Switch immediately, before the browser is guaranteed to emit a scroll event.
+// Switching conversations always opens at the bottom, even after reading history.
+const atBottom = () => {
+  const v = document.querySelector('[data-slot="message-scroller-viewport"]');
+  return v && Math.abs(v.scrollHeight - v.clientHeight - v.scrollTop) < 2;
+};
 await page.click('loc=css:[role="tab"][title="Parent conversation"]');
 await page.waitForSelector('loc=css:[aria-label="Message your agent"]');
-await page.waitForFunction(
-  () =>
-    Math.abs(
-      document.querySelector('[data-slot="message-scroller-viewport"]')
-        .scrollTop - 2000,
-    ) < 2,
-);
+await page.waitForFunction(atBottom);
 await page.click('loc=role:tab[name="Lighthouse"]');
 await page.waitForSelector('loc=css:[aria-label="Message Lighthouse"]');
-await page.waitForFunction(
-  () =>
-    Math.abs(
-      document.querySelector('[data-slot="message-scroller-viewport"]')
-        .scrollTop - 400,
-    ) < 2,
-);
+await page.waitForFunction(atBottom);
 await page.click('loc=css:[role="tab"][title="Parent conversation"]');
 await page.waitForSelector('loc=css:[aria-label="Message your agent"]');
-// Saved-position restoration has its own frame after the primitive opens.
-await page.waitForFunction(
-  () =>
-    document.querySelector('[data-slot="message-scroller-viewport"]')
-      .scrollTop === 2000,
-);
-await page.evaluate(() => {
-  document.querySelector('[data-slot="message-scroller-viewport"]').scrollTop =
-    0;
-});
+await page.waitForFunction(atBottom);
+await page.press('loc=css:[data-slot="message-scroller-viewport"]', "Home");
+await page.waitForFunction(() => document.querySelector('[data-slot="message-scroller-viewport"]').scrollTop === 0);
 await page.click('loc=role:tab[name="Lighthouse"]');
 await page.waitForSelector('loc=css:[aria-label="Message Lighthouse"]');
 await page.click('loc=css:[role="tab"][title="Parent conversation"]');
 await page.waitForSelector('loc=css:[aria-label="Message your agent"]');
-await page.waitForFunction(
-  () =>
-    document.querySelector('[data-slot="message-scroller-viewport"]')
-      .scrollTop === 0,
-);
+await page.waitForFunction(atBottom);
+await page.press('loc=css:[data-slot="message-scroller-viewport"]', "Home");
+await page.waitForFunction(() => document.querySelector('[data-slot="message-scroller-viewport"]').scrollTop === 0);
 
 await page.click('loc=role:button[name="Scroll to latest"]');
 await page.waitForFunction(() => {
@@ -278,7 +261,7 @@ assert.equal(
   false,
 );
 console.log(
-  "Passed: 200-message bound, paused streaming, request routing, independent parent/worker positions, exact-top restoration, and jump to latest.",
+  "Passed: complete virtualized history, paused streaming, request routing, parent/worker tabs opening at the bottom, and jump to latest.",
 );
 
 if (!globalThis.HARBOR_QA_SPACE) await task.finish({ keep: [] });

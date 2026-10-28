@@ -1,6 +1,18 @@
+import { PromptQueue } from "./PromptQueue";
+import { usePromptQueue } from "../lib/prompt-queue";
+import type { QueueSnapshot } from "../lib/bindings/QueueSnapshot";
+import type { PromptAttachment } from "../lib/bindings/PromptAttachment";
+import { WakeupTool } from "./WakeupTool";
+import { ToolResult } from "./ToolResult";
+import { ToolCode, ToolJson } from "./ToolJson";
+import { toolActivityKind, toolPresentation } from "../lib/tool-presentation";
 import type { SupportedProviderId } from "../lib/bindings/SupportedProviderId";
 import { PlanReview } from "./PlanReview";
-import { planReview, planReviewEntries, planReviewStatus } from "../lib/plan-review";
+import {
+  planReview,
+  planReviewEntries,
+  planReviewStatus,
+} from "../lib/plan-review";
 import { readRootDraft, useRootDraft } from "../lib/root-draft";
 import { useWorkerDrafts } from "../lib/worker-drafts";
 import { ElicitationForm } from "./ElicitationForm";
@@ -8,7 +20,6 @@ import { SkylineScene } from "./SkylineBackground";
 import { skylineCity } from "@/lib/skyline-city";
 import {
   prepareAttachments,
-  restoreDraftFiles,
   useDraftFiles,
   getDraftFiles,
   setDraftFiles,
@@ -17,9 +28,10 @@ import { normalizeCommandAliases } from "../lib/commands";
 import { rem } from "@/lib/units";
 import { SessionModelMenu } from "./ModelMenu";
 import { ChatScroller, TranscriptRow } from "./ChatScroller";
-import { PlanTrace } from "./AgentTrace";
+import { ChatLoadingSkeleton } from "./ChatLoadingSkeleton";
+import { PlanTrace, ToolGlyph } from "./AgentTrace";
 import { Marker, MarkerContent } from "./ui/marker";
-import { codeLanguage } from "./CodeBlock";
+import { FileChange, FileRead } from "./FileDiff";
 import { chatMinimapItems } from "./chat-minimap";
 import { ChatTranscript } from "./ChatTranscript";
 import { useSessionMode } from "./ModePicker";
@@ -56,12 +68,13 @@ import {
   ExternalLink,
 } from "@/lib/icons";
 import { Button } from "./ui/button";
-import { RichText, CodeBlock, IconButton } from "./shared";
+import { RichText, IconButton, ChatLink } from "./shared";
 import { Review } from "./Review";
 import { NativeTerminal } from "./NativeTerminal";
 import { useStore } from "../lib/store";
 import { call, json } from "../lib/api";
 import {
+  toolImageSource,
   emptyTranscript,
   timeline,
   record,
@@ -106,7 +119,10 @@ export function Chat({
       : null,
   );
   const transcript = transcripts[session.id] ?? emptyTranscript();
-  const [draft, setDraft] = useRootDraft(session.id, initialDraft ?? session.draft);
+  const [draft, setDraft] = useRootDraft(
+    session.id,
+    initialDraft ?? session.draft,
+  );
   const [review, setReview] = useState(session.reviewOpen);
   const initialChild = initialTab.startsWith("worker:")
     ? initialTab.slice(7)
@@ -138,7 +154,12 @@ export function Chat({
   const deferredConversation = useDeferredValue(conversation, null);
   const conversationReady =
     !!conversation && deferredConversation === conversation;
-  const [childDrafts, setChildDraft] = useWorkerDrafts(session.id, initialChild && initialDraft !== undefined ? { [initialChild]: initialDraft } : undefined);
+  const [childDrafts, setChildDraft] = useWorkerDrafts(
+    session.id,
+    initialChild && initialDraft !== undefined
+      ? { [initialChild]: initialDraft }
+      : undefined,
+  );
   const [childOpeningState, setChildOpeningState] = useState<
     Record<string, boolean>
   >({});
@@ -152,6 +173,8 @@ export function Chat({
   const childError = child ? childErrors[child] : null;
   const activeSession = useRef(session.id);
   activeSession.current = session.id;
+  const activeTarget = useRef(child);
+  activeTarget.current = child;
   const worker = child ? transcript.children[child] : undefined;
   const workerConnected = record(worker?.capabilities).harborConnected === true;
   const workerViaParent = record(worker?.capabilities).harborViaParent === true;
@@ -171,7 +194,7 @@ export function Chat({
   const activeDraft = child ? (childDrafts[child] ?? "") : draft;
   const [busy, setBusy] = useState(false);
   const modePicker = useSessionMode(session, !!child);
-  const conversationPositions = useRef<Record<string, number>>({});
+  const conversationHeights = useRef<Record<string, Map<string, number>>>({});
   const composer = useRef<HTMLDivElement>(null);
   const draftRef = useRef(draft);
   const reviewRef = useRef(review);
@@ -217,7 +240,8 @@ export function Chat({
   ownsParentRef.current = ownsParent;
   const parentWasDetached = useRef(false);
   useEffect(() => {
-    if (!ownsParent && !standaloneTab) setDraft(readRootDraft(session.id) ?? session.draft);
+    if (!ownsParent && !standaloneTab)
+      setDraft(readRootDraft(session.id) ?? session.draft);
   }, [session.draft, ownsParent, standaloneTab]);
   useEffect(() => {
     if (
@@ -297,23 +321,76 @@ export function Chat({
     // The backend reuses an existing attachment and checks its live process.
     void openWorker(child);
   }, [child, connected, session.id]);
-  const send = async () => {
+  const promptQueue = usePromptQueue(session.id, child, setError);
+  const [queuedEdit, setQueuedEdit] = useState<{ sessionId: string; childId: string | null; id: string; text: string; files: File[] } | null>(null);
+  const editRef = useRef(queuedEdit);
+  editRef.current = queuedEdit;
+  const edit = queuedEdit?.sessionId === session.id && queuedEdit.childId === child ? queuedEdit : null;
+  const composerText = edit ? edit.text : activeDraft;
+  const composerFiles = edit ? edit.files : files;
+  useEffect(() => {
+    setQueuedEdit(previous => previous && (previous.sessionId !== session.id || previous.childId !== child) ? null : previous);
+  }, [session.id, child]);
+  useEffect(() => {
+    const root = session.id, targetChild = child;
+    return () => {
+      const current = editRef.current;
+      if (current?.sessionId === root && current.childId === targetChild) {
+        editRef.current = null;
+        void call("end_queued_edit", { sessionId: root, childId: targetChild, id: current.id, text: null, attachments: null, steer: false }).catch(() => {});
+      }
+    };
+  }, [session.id, child]);
+  const beginQueuedEdit = async (id: string) => {
+    if (preparingRef.current || edit) return;
+    const root = session.id, targetChild = child;
+    preparingRef.current = true; setPreparing(true);
+    let reserved = false;
+    try {
+      const result = await call<{text: string; attachments: PromptAttachment[]}>("begin_queued_edit", { sessionId: root, childId: targetChild, id });
+      reserved = true;
+      const loadedFiles = result.attachments.map((attachment) => {
+        const bytes = Uint8Array.from(atob(attachment.data), (c) => c.charCodeAt(0));
+        return new File([bytes], attachment.name, { type: attachment.mimeType });
+      });
+      if (activeSession.current !== root || activeTarget.current !== targetChild) {
+        await call("end_queued_edit", { sessionId: root, childId: targetChild, id, text: null, attachments: null, steer: false });
+        reserved = false;
+        return;
+      }
+      const next = { sessionId: root, childId: targetChild, id, text: result.text, files: loadedFiles };
+      editRef.current = next; setQueuedEdit(next);
+      requestAnimationFrame(() => composer.current?.querySelector<HTMLElement>('[role="textbox"]')?.focus());
+    } catch (error) {
+      if (reserved) void call("end_queued_edit", { sessionId: root, childId: targetChild, id, text: null, attachments: null, steer: false }).catch(() => {});
+      setError(String(error));
+    }
+    finally { preparingRef.current = false; setPreparing(false); }
+  };
+  const cancelQueuedEdit = async () => {
+    if (!edit || preparingRef.current) return;
+    preparingRef.current = true; setPreparing(true);
+    try {
+      const result = await call<QueueSnapshot>("end_queued_edit", { sessionId: edit.sessionId, childId: edit.childId, id: edit.id, text: null, attachments: null, steer: false });
+      promptQueue.accept(result); editRef.current = null; setQueuedEdit(null);
+    } catch (error) { setError(String(error)); }
+    finally { preparingRef.current = false; setPreparing(false); }
+  };
+  const send = async (intent: "send" | "steer" = "send") => {
     if (
       preparingRef.current ||
-      (!activeDraft.trim() && !files.length) ||
+      (!composerText.trim() && !composerFiles.length) ||
       !connected ||
       (child
         ? !workerConnected ||
-          (workerViaParent && working) ||
-          workerWorking ||
           childOpening
-        : working)
+        : false)
     )
       return;
     const root = session.id;
     const id = child;
-    const text = activeDraft;
-    const pendingFiles = files;
+    const text = composerText;
+    const pendingFiles = composerFiles;
     const restoreFiles = setFiles;
     preparingRef.current = true;
     setPreparing(true);
@@ -322,47 +399,20 @@ export function Chat({
         ? await prepareAttachments(pendingFiles)
         : [];
       if (activeSession.current !== root) return;
-      if (id) {
-        setChildDraft(id, "");
-        setChildSendingState((previous) => ({ ...previous, [id]: true }));
-        setChildErrors((previous) => ({ ...previous, [id]: null }));
-      } else setDraft("");
+      const textToSend = normalizeCommandAliases(text, id ? workerViaParent ? [] : (transcript.childCommands[id] ?? []) : transcript.commands);
+      if (edit) {
+        const accepted = await call<QueueSnapshot>("end_queued_edit", { sessionId: root, childId: id, id: edit.id, text: textToSend, attachments, steer: intent === "steer" });
+        promptQueue.accept(accepted);
+        editRef.current = null; setQueuedEdit(null);
+        return;
+      }
+      const accepted = await call<QueueSnapshot>("submit_prompt", {
+        sessionId: root, childId: id, text: textToSend, attachments, intent,
+      });
+      promptQueue.accept(accepted);
+      if (id) setChildDraft(id, previous => previous === text ? "" : previous);
+      else setDraft(previous => previous === text ? "" : previous);
       restoreFiles([]);
-      const request = id
-        ? call("send_subagent_prompt", {
-            sessionId: root,
-            childId: id,
-            text: normalizeCommandAliases(
-              text,
-              workerViaParent ? [] : (transcript.childCommands[id] ?? []),
-            ),
-            ...(attachments.length ? { attachments } : {}),
-          })
-        : call("send_prompt", {
-            sessionId: root,
-            text: normalizeCommandAliases(text, transcript.commands),
-            ...(attachments.length ? { attachments } : {}),
-          });
-      // The command resolves when the agent's turn finishes; unlock preparation now.
-      void request
-        .catch((error) => {
-          restoreDraftFiles(fileKey, pendingFiles);
-          if (activeSession.current !== root) return;
-          if (id) {
-            setChildErrors((previous) => ({
-              ...previous,
-              [id]: String(error),
-            }));
-            setChildDraft(id, (previous) => previous || text);
-          } else {
-            setError(String(error));
-            setDraft((previous) => previous || text);
-          }
-        })
-        .finally(() => {
-          if (id && activeSession.current === root)
-            setChildSendingState((previous) => ({ ...previous, [id]: false }));
-        });
     } catch (error) {
       setError(String(error));
     } finally {
@@ -439,7 +489,14 @@ export function Chat({
     [transcript, child, conversationReady],
   );
   const entries = useMemo(
-    () => (conversationReady ? planReviewEntries(timeline(transcript, child), transcript.interactions, child) : []),
+    () =>
+      conversationReady
+        ? planReviewEntries(
+            timeline(transcript, child),
+            transcript.interactions,
+            child,
+          )
+        : [],
     [transcript, child, conversationReady],
   );
   const minimapItems = useMemo(() => chatMinimapItems(entries), [entries]);
@@ -551,9 +608,29 @@ export function Chat({
     () => (
       <ChatTranscript
         entries={entries}
-        renderPlan={(interaction) => interaction.status === "pending" && connected && transcript.requests.some(request=>request.id === interaction.id)
-          ? <RequestCard request={interaction} sessionId={session.id} childName={transcript.children[str(interaction.params.sessionId)]?.title} />
-          : <div className="request-card request-card-plan"><PlanReview review={planReview(interaction)!} busy={false} status={planReviewStatus(interaction)} /></div>}
+        renderPlan={(interaction) =>
+          interaction.status === "pending" &&
+          connected &&
+          transcript.requests.some(
+            (request) => request.id === interaction.id,
+          ) ? (
+            <RequestCard
+              request={interaction}
+              sessionId={session.id}
+              childName={
+                transcript.children[str(interaction.params.sessionId)]?.title
+              }
+            />
+          ) : (
+            <div className="request-card request-card-plan">
+              <PlanReview
+                review={planReview(interaction)!}
+                busy={false}
+                status={planReviewStatus(interaction)}
+              />
+            </div>
+          )
+        }
         renderTool={(tool) => (
           <ToolCard tool={tool} terminals={transcript.terminals} detailsOnly />
         )}
@@ -568,15 +645,27 @@ export function Chat({
           </TranscriptRow>
         )}
         {connected &&
-          transcript.requests.filter(r=>!entries.some(entry=>entry.type === "message" && entry.message.planReview?.status === "pending" && entry.message.planReview.id === r.id)).map((r) => (
-            <TranscriptRow key={String(r.id)} id={`request:${r.id}`}>
-              <RequestCard
-                request={r}
-                sessionId={session.id}
-                childName={transcript.children[str(r.params.sessionId)]?.title}
-              />
-            </TranscriptRow>
-          ))}
+          transcript.requests
+            .filter(
+              (r) =>
+                !entries.some(
+                  (entry) =>
+                    entry.type === "message" &&
+                    entry.message.planReview?.status === "pending" &&
+                    entry.message.planReview.id === r.id,
+                ),
+            )
+            .map((r) => (
+              <TranscriptRow key={String(r.id)} id={`request:${r.id}`}>
+                <RequestCard
+                  request={r}
+                  sessionId={session.id}
+                  childName={
+                    transcript.children[str(r.params.sessionId)]?.title
+                  }
+                />
+              </TranscriptRow>
+            ))}
         {session.status === "needs_input" && !transcript.requests.length && (
           <TranscriptRow id="waiting-for-response">
             <Marker>
@@ -743,24 +832,20 @@ export function Chat({
                 conversation to restore the conversation.
               </div>
             )}
+            {!conversationReady && !nativeTerminal && !terminals.active &&
+              !detachedActive && session.mode === "gui" && <ChatLoadingSkeleton />}
             {conversationReady && (
               <>
                 <ChatScroller
-                  key={`${session.id}:${child ?? "root"}`}
+                  key={`${session.id}:${activeTab}`}
                   ready
-                  minimapItems={minimapItems}
-                  savedScrollTop={
-                    conversationPositions.current[
+                  heightCache={
+                    (conversationHeights.current[
                       `${session.id}:${child ?? "root"}`
-                    ] ??
-                    (!child && session.scrollTop > 0
-                      ? session.scrollTop
-                      : undefined)
+                    ] ??= new Map<string, number>())
                   }
+                  minimapItems={minimapItems}
                   onScrollPosition={(top) => {
-                    conversationPositions.current[
-                      `${session.id}:${child ?? "root"}`
-                    ] = top;
                     if (!child) scrollRef.current = top;
                   }}
                   requestId={
@@ -895,6 +980,8 @@ export function Chat({
                       </Button>
                     </div>
                   )}
+                  <div className="prompt-composer-stack">
+                  <PromptQueue queue={promptQueue.snapshot} onRemove={promptQueue.remove} editing={!!edit || preparing} onEdit={(id) => void beginQueuedEdit(id)} onSteer={(id) => void call<QueueSnapshot>("steer_queued_prompt", { sessionId: session.id, childId: child, id }).then(promptQueue.accept).catch((error) => setError(String(error)))}/>
                   <TaskComposer
                     key={`${session.id}:${child ?? "root"}`}
                     catalog={{
@@ -905,27 +992,23 @@ export function Chat({
                         : transcript.commands,
                       status: "ready",
                     }}
-                    files={files}
-                    onFilesChange={setFiles}
+                    files={composerFiles}
+                    onFilesChange={(value) => edit ? setQueuedEdit(previous => previous ? { ...previous, files: value } : previous) : setFiles(value)}
                     busy={preparing}
-                    value={activeDraft}
+                    value={composerText}
                     onValueChange={(value) =>
-                      child
-                        ? setChildDraft(child, value)
-                        : setDraft(value)
+                      edit ? setQueuedEdit(previous => previous ? { ...previous, text: value } : previous) : child ? setChildDraft(child, value) : setDraft(value)
                     }
-                    onSubmit={() => void send()}
-                    actionLabel="Send message"
+                    onSubmit={(intent) => void send(intent)}
+                    actionLabel={edit ? "Save changes" : (child ? workerWorking || (workerViaParent && working) : working) ? "Queue message" : "Send message"}
                     actionDisabled={
-                      (!activeDraft.trim() && !files.length) ||
+                      (!composerText.trim() && !composerFiles.length) ||
                       preparing ||
                       !connected ||
                       (child
                         ? !workerConnected ||
-                          workerWorking ||
-                          childOpening ||
-                          (workerViaParent && working)
-                        : working)
+                          childOpening
+                        : false)
                     }
                     modePicker={modePicker}
                     placeholder={
@@ -933,21 +1016,21 @@ export function Chat({
                         ? childOpening
                           ? "Opening worker conversation…"
                           : workerWorking
-                            ? "This worker is working…"
+                            ? "Queue a message, or ⌘Enter to steer…"
                             : `Message ${worker?.title ?? "this worker"}…`
                         : session.status === "connecting"
                           ? "Reconnecting to your agent…"
                           : session.status === "needs_input"
                             ? "Answer the question above to continue"
                             : working
-                              ? "Your agent is working…"
+                              ? "Queue a message, or ⌘Enter to steer…"
                               : "Ask a follow-up or describe the next step…"
                     }
                     textareaProps={{
                       "aria-label": child
                         ? `Message ${worker?.title ?? "worker"}`
                         : "Message your agent",
-                      readOnly: preparing || (child ? workerWorking : working),
+                      readOnly: preparing,
                     }}
                     modelMenu={
                       child ? (
@@ -973,6 +1056,9 @@ export function Chat({
                         : undefined
                     }
                   />
+                  </div>
+                  {edit && <div className="prompt-queue-status"><span>Editing queued message</span><Button variant="ghost" size="compact" disabled={preparing} onClick={() => void cancelQueuedEdit()}>Cancel</Button></div>}
+                  {(promptQueue.snapshot.paused || promptQueue.snapshot.error || promptQueue.snapshot.steering) && <div className="prompt-queue-status"><span role={promptQueue.snapshot.error ? "alert" : "status"}>{promptQueue.snapshot.error || (promptQueue.snapshot.steering ? "Stopping to steer…" : "Queue paused")}</span>{promptQueue.snapshot.paused && promptQueue.snapshot.items.length > 0 && <Button variant="ghost" size="compact" onClick={promptQueue.resume}>Resume</Button>}</div>}
                 </div>
               </>
             )}
@@ -1041,139 +1127,159 @@ export function ToolCard({
   detailsOnly?: boolean;
   terminals?: Record<string, ToolTerminalOutput>;
 }) {
+  const presentation = toolPresentation(tool);
+  if (presentation.wakeup) return <WakeupTool tool={tool} />;
+  const hasTerminal = tool.content.some(
+    (block) => record(block).type === "terminal",
+  );
   const diffs = tool.content
     .map(record)
-    .filter((c) => c.type === "diff" && typeof c.newText === "string");
+    .filter(
+      (c) =>
+        c.type === "diff" &&
+        (typeof c.newText === "string" ||
+          typeof c.oldText === "string" ||
+          c.newText === null),
+    );
   const input = record(tool.rawInput);
   const files =
     tool.status !== "completed"
       ? []
       : diffs.length
         ? diffs
-        : tool.title === "write" &&
-            typeof input.path === "string" &&
+        : (tool.name || tool.title).toLowerCase() === "write" &&
+            typeof (input.file_path ?? input.path) === "string" &&
             typeof input.content === "string"
-          ? [{ path: input.path, newText: input.content }]
+          ? [{ path: input.file_path ?? input.path, newText: input.content }]
           : [];
+  const readSnapshot =
+    tool.kind === "read" &&
+    tool.status === "completed" &&
+    presentation.path &&
+    presentation.output.length > 0 &&
+    !tool.content.some(toolImageSource);
   const details = (
     <div className="tool-detail">
+      {presentation.url && (
+        <p>
+          <ChatLink href={presentation.url}>{presentation.url}</ChatLink>
+        </p>
+      )}
+      {presentation.location && !files.length && !readSnapshot && (
+        <p className="tool-location">{presentation.location}</p>
+      )}
+      {presentation.command && !presentation.commandInTitle && (
+        <ToolCode heading="Input" language="sh" text={presentation.command} />
+      )}
+      {presentation.task && <RichText text={presentation.task} />}
+      {presentation.context && (
+        <p className="tool-context">{presentation.context}</p>
+      )}
+      {!!Object.keys(presentation.parameters).filter(
+        (key) => !(files.length && key === "content"),
+      ).length && (
+        <ToolJson
+          heading="Input"
+          value={Object.fromEntries(
+            Object.entries(presentation.parameters).filter(
+              ([key]) => !(files.length && key === "content"),
+            ),
+          )}
+        />
+      )}
+
       {files.length ? (
         files.map((file, i) => (
-          <div key={i}>
-            <CodeBlock
-              text={str(file.newText)}
-              title={str(file.path)}
-              language={codeLanguage(str(file.path))}
-              lineNumbers={codeLanguage(str(file.path)) !== "text"}
-              compact
-              diff={
-                typeof record(file).oldText === "string"
-                  ? {
-                      before: str(record(file).oldText),
-                      after: str(file.newText),
-                    }
-                  : undefined
-              }
-            />
-          </div>
+          <FileChange
+            key={i}
+            filename={str(file.path)}
+            before={
+              typeof file.oldText === "string" || file.oldText === null
+                ? file.oldText
+                : undefined
+            }
+            after={
+              typeof file.newText === "string" || file.newText === null
+                ? file.newText
+                : undefined
+            }
+          />
         ))
       ) : (
         <>
           {tool.content.map((c, i) => {
             const v = record(c);
+            const imageSource = toolImageSource(c);
+            if (imageSource) {
+              return (
+                <img
+                  key={i}
+                  src={imageSource}
+                  alt={tool.title}
+                  className="block h-auto max-h-[32rem] max-w-full rounded-lg object-contain object-left"
+                />
+              );
+            }
             if (v.type === "terminal") {
               const terminal = terminals[str(v.terminalId)];
               return (
-                <div key={i}>
-                  <CodeBlock
-                    text={
-                      terminal?.output ||
-                      (["pending", "in_progress"].includes(tool.status) &&
-                      terminal?.exitCode === undefined
-                        ? "Waiting for terminal output…"
-                        : terminal
-                          ? "No terminal output was recorded."
-                          : "Terminal output was not captured for this call.")
-                    }
-                    title="Output"
-                    compact
-                  />
-                  {terminal?.exitCode !== undefined && (
-                    <p className="text-xs text-muted-foreground">
-                      Exit code {terminal.exitCode}
-                    </p>
-                  )}
-                  {terminal?.truncated && (
-                    <p className="text-xs text-muted-foreground">
-                      Earlier terminal output was truncated.
-                    </p>
-                  )}
-                </div>
-              );
-            }
-            if (v.type === "content") {
-              const content = record(v.content);
-              return tool.kind === "execute" ? (
-                <CodeBlock
+                <ToolResult
                   key={i}
-                  text={str(content.text)}
-                  title="Output"
-                  compact
+                  code
+                  text={
+                    terminal?.output ||
+                    presentation.output.join("\n\n") ||
+                    (["pending", "in_progress"].includes(tool.status) &&
+                    terminal?.exitCode === undefined
+                      ? "Waiting for terminal output…"
+                      : terminal
+                        ? "No terminal output was recorded."
+                        : "Terminal output was not captured for this call.")
+                  }
                 />
-              ) : (
-                <RichText key={i} text={str(content.text)} />
               );
             }
             if (v.type === "diff")
               return (
-                <div key={i}>
-                  <CodeBlock
-                    text={str(v.newText)}
-                    title={str(v.path)}
-                    language={codeLanguage(str(v.path))}
-                    lineNumbers={codeLanguage(str(v.path)) !== "text"}
-                    compact
-                    diff={
-                      typeof v.oldText === "string"
-                        ? { before: v.oldText, after: str(v.newText) }
-                        : undefined
-                    }
-                  />
-                </div>
+                <FileChange
+                  key={i}
+                  filename={str(v.path)}
+                  before={
+                    typeof v.oldText === "string" || v.oldText === null
+                      ? v.oldText
+                      : undefined
+                  }
+                  after={
+                    typeof v.newText === "string" || v.newText === null
+                      ? v.newText
+                      : undefined
+                  }
+                />
               );
-            return (
-              <CodeBlock
-                key={i}
-                text={JSON.stringify(c, null, 2)}
-                language="json"
-                compact
-              />
-            );
+            return null;
           })}
-          {tool.rawInput != null && (
-            <CodeBlock
-              text={
-                typeof tool.rawInput === "string"
-                  ? tool.rawInput
-                  : JSON.stringify(tool.rawInput, null, 2)
-              }
-              language={typeof tool.rawInput === "string" ? "text" : "json"}
-              title="Input"
-              compact
-            />
+          {!!presentation.references.length && (
+            <div className="tool-references">
+              {presentation.references.map((reference) => (
+                <code key={reference}>{reference}</code>
+              ))}
+            </div>
           )}
-          {tool.rawOutput != null && (
-            <CodeBlock
-              text={
-                typeof tool.rawOutput === "string"
-                  ? tool.rawOutput
-                  : JSON.stringify(tool.rawOutput, null, 2)
-              }
-              language={typeof tool.rawOutput === "string" ? "text" : "json"}
-              title="Output"
-              compact
-            />
-          )}
+          {!hasTerminal &&
+            presentation.output.map((text, index) =>
+              readSnapshot ? (
+                <FileRead
+                  key={index}
+                  filename={presentation.path!}
+                  start={presentation.start}
+                  text={text}
+                />
+              ) : tool.kind === "execute" ? (
+                <ToolResult key={index} code text={text} />
+              ) : (
+                <ToolResult key={index} text={text} />
+              ),
+            )}
         </>
       )}
     </div>
@@ -1184,16 +1290,15 @@ export function ToolCard({
       className="agent-tool"
       title={
         <span className="tool-summary" data-status={tool.status}>
-          {tool.status === "completed" ? (
-            <Check size={rem(14)} />
-          ) : tool.status === "in_progress" ? (
+          {tool.status === "in_progress" ? (
             <LoaderCircle className="spin" size={rem(14)} />
           ) : (
-            <TerminalSquare size={rem(14)} />
+            <ToolGlyph
+              kind={toolActivityKind(tool)}
+              name={tool.name || tool.title}
+            />
           )}
-          <span className="tool-summary-title">
-            {tool.title.replaceAll("_", " ")}
-          </span>
+          <span className="tool-summary-title">{presentation.title}</span>
           <span className="tool-summary-status">
             {tool.status.replaceAll("_", " ")}
           </span>
@@ -1239,51 +1344,89 @@ export function RequestCard({
   };
   const review = planReview(request, providerId);
   return (
-    <Card className={`request-card${review ? " request-card-plan" : request.method === "elicitation/create" ? " request-card-question" : ""}`}>
+    <Card
+      className={`request-card${review ? " request-card-plan" : request.method === "elicitation/create" ? " request-card-question" : ""}`}
+    >
       {childName && <p className="request-child-label">{childName}</p>}
-      {review ? <PlanReview review={review} busy={busy} error={answerError} onSelect={(choice) => void answer({outcome:{outcome:"selected",optionId:choice.id}})} /> : <>
-      {request.method !== "elicitation/create" && <div className="request-heading">
-        <ShieldCheck size={rem(16)} />
-        <strong>Your permission is needed</strong>
-      </div>}
-      {request.method === "elicitation/create" ? (
-        <ElicitationForm key={JSON.stringify([request.id, p.toolCallId, p.message, p.requestedSchema])} params={p} busy={busy} error={answerError} onAnswer={(result) => void answer(result)} />
-      ) : request.method === "session/request_permission" ? (
+      {review ? (
+        <PlanReview
+          review={review}
+          busy={busy}
+          error={answerError}
+          onSelect={(choice) =>
+            void answer({
+              outcome: { outcome: "selected", optionId: choice.id },
+            })
+          }
+        />
+      ) : (
         <>
-          <p>
-            {str(
-              record(p.toolCall).title,
-              "The agent would like to run a tool.",
-            )}
-          </p>
-          {record(p.toolCall).kind === "switch_mode" && array(record(p.toolCall).content).map((raw, index) => {
-            const content = record(record(raw).content);
-            return content.type === "text" ? <RichText key={index} text={str(content.text)} /> : null;
-          })}
-          <div className="request-buttons">
-            {array(p.options).map((raw) => {
-              const o = record(raw);
-              return (
-                <Button
-                  variant={
-                    str(o.kind).startsWith("allow") ? "primary" : "secondary"
-                  }
-                  key={str(o.optionId)}
-                  disabled={busy}
-                  onClick={() =>
-                    void answer({
-                      outcome: { outcome: "selected", optionId: o.optionId },
-                    })
-                  }
-                >
-                  {str(o.name)}
-                </Button>
-              );
-            })}
-          </div>
+          {request.method !== "elicitation/create" && (
+            <div className="request-heading">
+              <ShieldCheck size={rem(16)} />
+              <strong>Your permission is needed</strong>
+            </div>
+          )}
+          {request.method === "elicitation/create" ? (
+            <ElicitationForm
+              key={JSON.stringify([
+                request.id,
+                p.toolCallId,
+                p.message,
+                p.requestedSchema,
+              ])}
+              params={p}
+              busy={busy}
+              error={answerError}
+              onAnswer={(result) => void answer(result)}
+            />
+          ) : request.method === "session/request_permission" ? (
+            <>
+              <p>
+                {str(
+                  record(p.toolCall).title,
+                  "The agent would like to run a tool.",
+                )}
+              </p>
+              {record(p.toolCall).kind === "switch_mode" &&
+                array(record(p.toolCall).content).map((raw, index) => {
+                  const content = record(record(raw).content);
+                  return content.type === "text" ? (
+                    <RichText key={index} text={str(content.text)} />
+                  ) : null;
+                })}
+              <div className="request-buttons">
+                {array(p.options).map((raw) => {
+                  const o = record(raw);
+                  return (
+                    <Button
+                      variant={
+                        str(o.kind).startsWith("allow")
+                          ? "primary"
+                          : "secondary"
+                      }
+                      key={str(o.optionId)}
+                      disabled={busy}
+                      onClick={() =>
+                        void answer({
+                          outcome: {
+                            outcome: "selected",
+                            optionId: o.optionId,
+                          },
+                        })
+                      }
+                    >
+                      {str(o.name)}
+                    </Button>
+                  );
+                })}
+              </div>
+            </>
+          ) : (
+            <p>This interaction is not supported by the connected provider.</p>
+          )}
         </>
-      ) : <p>This interaction is not supported by the connected provider.</p>      }
-      </>}
+      )}
     </Card>
   );
 }

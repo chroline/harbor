@@ -41,6 +41,7 @@ import {
   IconExternalLink,
   IconFile,
   IconFileCode2,
+  IconFilePlus,
   IconFlask2,
   IconFolder,
   IconFolderOpen,
@@ -158,6 +159,7 @@ export const Ellipsis = icon("Ellipsis", IconDots);
 export const EllipsisVertical = icon("EllipsisVertical", IconDotsVertical);
 export const ExternalLink = icon("ExternalLink", IconExternalLink);
 export const FileCode2 = icon("FileCode2", IconFileCode2);
+export const FilePlus = icon("FilePlus", IconFilePlus);
 export const FlaskConical = icon("FlaskConical", IconFlask2);
 export const Folder = icon("Folder", IconFolder);
 export const FolderOpen = icon("FolderOpen", IconFolderOpen);

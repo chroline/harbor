@@ -10,7 +10,9 @@
 .dark .chat-transcript {
   --trace-error: #e2827d;
 }
-.chat-transcript .request-heading { color: var(--foreground); }
+.chat-transcript .request-heading {
+  color: var(--foreground);
+}
 .chat-transcript [data-slot="trace-line"][data-status="error"],
 .chat-transcript
   [data-slot="trace-collapsible-trigger"]:has(> [data-status="error"]) {
@@ -20,7 +22,7 @@
   opacity: 1;
 }
 .chat-transcript [data-slot="trace-description"] {
-  color: var(--muted-foreground);
+  color: inherit;
 }
 .conversation-scroll[data-slot="message-scroller"] {
   overflow: hidden;
@@ -33,13 +35,17 @@
 }
 /* While following output, let the scroller move the viewport. Native scroll
    anchoring would jump to each new line before the animation can start. */
-.conversation-scroll [data-slot="message-scroller-viewport"]:not([data-scrollable~="end"]) {
+.conversation-scroll
+  [data-slot="message-scroller-viewport"]:not([data-scrollable~="end"]) {
   overflow-anchor: none;
 }
 @media (prefers-reduced-motion: no-preference) {
   /* The primitive uses auto for follow-output updates. CSS supplies the smooth
      behavior after its immediate opening scroll has finished. */
-  .conversation-scroll [data-slot="message-scroller-viewport"][data-autoscrolling]:not([data-pending-scroll]) {
+  .conversation-scroll
+    [data-slot="message-scroller-viewport"][data-autoscrolling]:not(
+      [data-pending-scroll]
+    ) {
     scroll-behavior: smooth;
   }
 }
@@ -110,7 +116,11 @@
   --lh-body: 1.25rem;
   --fs-caption: 0.75rem;
   --lh-caption: 1rem;
-  --typeset-space-block: 0.75rem;
+  --typeset-space-block: 1rem;
+  --typeset-space-heading: 0.75rem;
+  --typeset-space-section: 2rem;
+  --typeset-space-subsection: 1.5rem;
+  --typeset-space-rule: 1.125rem;
 }
 .chat-transcript .transcript-user [data-slot="bubble-content"] {
   cursor: pointer;
@@ -159,7 +169,8 @@
 }
 :is(.chat-transcript, .agent-plan, .subagent-trace)
   [data-slot="trace-description"] {
-  font-size: 0.75rem;
+  font-size: inherit;
+  line-height: inherit;
 }
 .transcript-activity .tool-detail {
   padding: 0;
@@ -225,4 +236,46 @@
   [data-slot="trace-icon"] {
     transition: none;
   }
+}
+.tool-location {
+  overflow-wrap: anywhere;
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+}
+.tool-detail {
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+}
+.tool-detail .typeset {
+  --fs-body: 0.8125rem;
+  --lh-body: 1.25rem;
+}
+.tool-detail .typeset :is(h1, h2, h3, h4, h5, h6) {
+  font-size: inherit;
+  line-height: inherit;
+  font-weight: 550;
+  margin-block: 0.375rem 0.125rem;
+}
+.tool-references {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin-block: 0.375rem;
+}
+.tool-references code {
+  max-width: 100%;
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+  background: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1rem;
+  overflow-wrap: anywhere;
+}
+.tool-context {
+  margin-block: 0.375rem;
+  font-size: inherit;
+}
+
+.tool-json {
+  margin-block: 0.5rem;
 }

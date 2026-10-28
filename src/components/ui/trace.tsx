@@ -78,7 +78,7 @@ function TraceDescription({
     <span
       data-slot="trace-description"
       className={cn(
-        "shrink-0 text-muted-foreground/70 tabular-nums",
+        "shrink-0 text-inherit opacity-75 tabular-nums",
         className,
       )}
       {...props}

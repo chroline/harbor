@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { fillEditor } from "../test/editor";
 import { Suspense } from "react";
-import { afterEach, beforeAll, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import {
   cleanup,
   act,
@@ -28,6 +28,7 @@ const mock = vi.hoisted(() => ({
   configurationBlocked: false,
 }));
 vi.mock("../lib/api", () => ({
+  desktop: false,
   call: mock.call,
   json: (value: unknown) => value,
 }));
@@ -74,6 +75,7 @@ vi.mock("../lib/store", () => ({
     loadTranscript: mock.load,
     setActiveSession: mock.setActiveSession,
     loadedTranscripts: new Set(mock.loaded ? ["chat"] : []),
+    visibleTranscripts: new Set(["chat"]),
     updateSession: mock.update,
     setError: vi.fn(),
     configuration: {
@@ -99,6 +101,9 @@ beforeAll(() => {
     removeListener() {},
   }));
 });
+beforeEach(() => {
+  mock.call.mockImplementation((command: string, args: {sessionId?: string; childId?: string}) => Promise.resolve(command === "submit_prompt" ? {sessionId: args.sessionId, childId: args.childId ?? null, revision: 1, items: [], paused: false, error: null, steering: false} : undefined));
+});
 afterEach(() => {
   setDraftFiles("chat:root", []);
   mock.children = {};
@@ -120,21 +125,38 @@ it("allows sending while an existing chat's configuration is syncing or failed",
   expect((send as HTMLButtonElement).disabled).toBe(false);
   fireEvent.click(send);
   await waitFor(() =>
-    expect(mock.call).toHaveBeenCalledWith("send_prompt", {
-      sessionId: "chat",
+    expect(mock.call).toHaveBeenCalledWith("submit_prompt", {
+      sessionId: "chat", childId: null, intent: "send", attachments: [],
       text: "Continue with this choice",
     }),
   );
 });
-it("keeps the selected chat blank until its full history has loaded", () => {
+it("shows a skeleton while keeping partial history hidden until the full chat loads", () => {
   mock.loaded = false;
+  mock.messages = [
+    {
+      id: "partial",
+      streamId: "root",
+      sequence: 1,
+      role: "assistant",
+      text: "Partial recent history",
+      timestamp: 1,
+    },
+  ];
   const { rerender } = render(<Chat session={session} />);
   expect(document.querySelector(".chat-main")?.textContent).toBe("");
+  expect(
+    screen.getByRole("status", { name: "Loading conversation" }),
+  ).toBeTruthy();
   expect(screen.queryByRole("textbox")).toBeNull();
+  expect(screen.queryByText("Partial recent history")).toBeNull();
   expect(mock.load).toHaveBeenCalledWith("chat");
 
   mock.loaded = true;
   rerender(<Chat session={session} />);
+  expect(
+    screen.queryByRole("status", { name: "Loading conversation" }),
+  ).toBeNull();
   expect(screen.getByRole("textbox").textContent).toBe(session.draft);
 });
 
@@ -221,8 +243,8 @@ it("sends attachment-only messages with their encoded bytes and clears the compo
   });
   fireEvent.click(screen.getByRole("button", { name: "Send message" }));
   await waitFor(() =>
-    expect(mock.call).toHaveBeenCalledWith("send_prompt", {
-      sessionId: "chat",
+    expect(mock.call).toHaveBeenCalledWith("submit_prompt", {
+      sessionId: "chat", childId: null, intent: "send",
       text: "",
       attachments: [
         { name: "notes.txt", mimeType: "text/plain", data: "aGVsbG8=" },
@@ -238,7 +260,7 @@ it("sends attachment-only messages with their encoded bytes and clears the compo
 
 it("restores attachments and text when sending fails", async () => {
   mock.call.mockImplementation((command: string) =>
-    command === "send_prompt"
+    command === "submit_prompt"
       ? Promise.reject(new Error("Disconnected"))
       : Promise.resolve(),
   );
@@ -251,7 +273,7 @@ it("restores attachments and text when sending fails", async () => {
   });
   fireEvent.click(screen.getByRole("button", { name: "Send message" }));
   await waitFor(() =>
-    expect(mock.call).toHaveBeenCalledWith("send_prompt", expect.anything()),
+    expect(mock.call).toHaveBeenCalledWith("submit_prompt", expect.anything()),
   );
   await waitFor(() =>
     expect(screen.getByRole("textbox").textContent).toBe("Review this"),
@@ -318,9 +340,9 @@ it.each(["codex", "claude", "grok"])(
       ).toBe(false),
     );
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
-    expect(mock.call).toHaveBeenCalledWith("send_subagent_prompt", {
+    expect(mock.call).toHaveBeenCalledWith("submit_prompt", {
       sessionId: "chat",
-      childId: "worker",
+      childId: "worker", intent: "send", attachments: [],
       text: "worker follow-up",
     });
     expect(mock.call).not.toHaveBeenCalledWith(
@@ -567,7 +589,9 @@ it("keeps configuration recovery by the saved draft without duplicate branding o
   expect(
     screen.queryByRole("heading", { name: "Continue your task" }),
   ).toBeNull();
-  expect(screen.queryByRole("heading", { name: "Start a conversation" })).toBeNull();
+  expect(
+    screen.queryByRole("heading", { name: "Start a conversation" }),
+  ).toBeNull();
   expect(screen.queryByRole("heading", { name: "hey!" })).toBeNull();
   expect(screen.queryByText("Ready")).toBeNull();
   expect(screen.queryByText("No messages yet")).toBeNull();
@@ -619,11 +643,36 @@ it("does not offer sign-in for a process failure", () => {
   expect(screen.queryByRole("button", { name: "ChatGPT" })).toBeNull();
 });
 
-
 it("restores a root draft when quit happens before the database save debounce", () => {
-  const first = render(<Chat session={{ ...session, draft: "older database draft" }} />);
+  const first = render(
+    <Chat session={{ ...session, draft: "older database draft" }} />,
+  );
   fillEditor(screen.getByRole("textbox"), "unsent plan revision before quit");
   first.unmount();
   render(<Chat session={{ ...session, draft: "older database draft" }} />);
-  expect(screen.getByRole("textbox").textContent).toBe("unsent plan revision before quit");
+  expect(screen.getByRole("textbox").textContent).toBe(
+    "unsent plan revision before quit",
+  );
+});
+
+it("keeps a working chat editable and submits queue versus steer intent", async () => {
+  render(<Chat session={{...session, status: "working", draft: "", error: null}}/>);
+  const input = screen.getByRole("textbox");
+  expect(input.getAttribute("contenteditable")).toBe("true");
+  fillEditor(input,"Run this next");
+  fireEvent.keyDown(input,{key:"Enter"});
+  await waitFor(() => expect(mock.call).toHaveBeenCalledWith("submit_prompt",expect.objectContaining({sessionId:"chat",childId:null,text:"Run this next",intent:"send"})));
+  await waitFor(() => expect(input.textContent).toBe(""));
+  fillEditor(input,"Change course immediately");
+  fireEvent.keyDown(input,{key:"Enter",metaKey:true});
+  await waitFor(() => expect(mock.call).toHaveBeenCalledWith("submit_prompt",expect.objectContaining({text:"Change course immediately",intent:"steer"})));
+});
+
+it("retains a working chat draft when steering is rejected", async () => {
+  mock.call.mockImplementation((command: string) => command === "submit_prompt" ? Promise.reject(new Error("Another conversation is using this agent")) : Promise.resolve());
+  render(<Chat session={{...session,status:"working",draft:"Keep my instruction",error:null}}/>);
+  const input = screen.getByRole("textbox");
+  fireEvent.keyDown(input,{key:"Enter",metaKey:true});
+  await waitFor(() => expect(mock.call).toHaveBeenCalledWith("submit_prompt",expect.objectContaining({intent:"steer"})));
+  expect(input.textContent).toBe("Keep my instruction");
 });
