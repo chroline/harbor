@@ -114,6 +114,7 @@ afterEach(() => {
   cleanup();
   localStorage.removeItem("harbor.task-tab-selection.chat");
   localStorage.removeItem("harbor.root-draft.chat");
+  localStorage.removeItem("harbor.worker-drafts.chat");
   document.querySelectorAll(".test-chat-actions").forEach((el) => el.remove());
   vi.clearAllMocks();
 });
@@ -281,8 +282,36 @@ it("restores attachments and text when sending fails", async () => {
   expect(screen.getByRole("button", { name: "Remove retry.txt" })).toBeTruthy();
   mock.call.mockResolvedValue(undefined);
 });
+it("stops showing connection progress when the worker connects before the open request settles", async () => {
+  mock.children = {
+    worker: {
+      sessionId: "worker", parentId: "root", title: "Worker", description: null,
+      state: { type: "idle" }, capabilities: {},
+    },
+  };
+  mock.messages = [{
+    id: "saved-worker-message", streamId: "worker", sequence: 1, timestamp: 1,
+    role: "assistant", text: "Saved worker history", childId: "worker",
+  }];
+  let finishOpening!: () => void;
+  const opening = new Promise<void>((resolve) => { finishOpening = resolve; });
+  const previousCall = mock.call.getMockImplementation()!;
+  mock.call.mockImplementation((command, args) => command === "open_subagent" ? opening : previousCall(command, args));
+  const props = { session: { ...session, error: null }, standaloneTab: "worker:worker" };
+  const { rerender } = render(<Chat {...props} />);
+  expect(screen.getByText("Saved worker history")).toBeTruthy();
+  expect(mock.call).toHaveBeenCalledWith("open_subagent", { sessionId: "chat", childId: "worker" });
+  expect(screen.getByText("Connecting to worker…")).toBeTruthy();
+  mock.children = { worker: { ...mock.children.worker, capabilities: { harborConnected: true } } };
+  rerender(<Chat {...props} />);
+  expect(screen.queryByText("Connecting to worker…")).toBeNull();
+  fillEditor(screen.getByRole("textbox"), "Continue");
+  expect((screen.getByRole("button", { name: "Send message" }) as HTMLButtonElement).disabled).toBe(false);
+  await act(async () => finishOpening());
+});
+
 it.each(["codex", "claude", "grok"])(
-  "opens and messages a %s worker without sending to its parent",
+  "messages an attached %s worker without reopening it or sending to its parent",
   async (providerId) => {
     const tabsTarget = document.createElement("div");
     tabsTarget.className = "test-chat-actions";
@@ -322,12 +351,7 @@ it.each(["codex", "claude", "grok"])(
       button: 0,
       ctrlKey: false,
     });
-    await waitFor(() =>
-      expect(mock.call).toHaveBeenCalledWith("open_subagent", {
-        sessionId: "chat",
-        childId: "worker",
-      }),
-    );
+    expect(mock.call).not.toHaveBeenCalledWith("open_subagent", expect.anything());
     const input = screen.getByRole("textbox", { name: "Message Worker" });
     fillEditor(input, "worker follow-up");
     await waitFor(() =>

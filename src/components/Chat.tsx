@@ -170,14 +170,14 @@ export function Chat({
   const [childErrors, setChildErrors] = useState<Record<string, string | null>>(
     {},
   );
-  const childOpening = child ? !!childOpeningState[child] : false;
-  const childError = child ? childErrors[child] : null;
   const activeSession = useRef(session.id);
   activeSession.current = session.id;
   const activeTarget = useRef(child);
   activeTarget.current = child;
   const worker = child ? transcript.children[child] : undefined;
   const workerConnected = record(worker?.capabilities).harborConnected === true;
+  const childOpening = !!child && !workerConnected && !!childOpeningState[child];
+  const childError = child && !workerConnected ? childErrors[child] : null;
   const workerViaParent = record(worker?.capabilities).harborViaParent === true;
   const workerState = str(
     record(worker?.state).type,
@@ -318,10 +318,11 @@ export function Chat({
     }
   };
   useEffect(() => {
-    if (!child || !connected) return;
-    // The backend reuses an existing attachment and checks its live process.
+    // Connection events own readiness. Selecting an attached worker must not
+    // start a redundant request or block its composer waiting for that request.
+    if (!child || !connected || workerConnected) return;
     void openWorker(child);
-  }, [child, connected, session.id]);
+  }, [child, connected, workerConnected, session.id]);
   const promptQueue = usePromptQueue(session.id, child, setError);
   const [queuedEdit, setQueuedEdit] = useState<{ sessionId: string; childId: string | null; id: string; text: string; files: File[] } | null>(null);
   const editRef = useRef(queuedEdit);
@@ -856,40 +857,6 @@ export function Chat({
                       : undefined
                   }
                 >
-                  {child && (
-                    <TranscriptRow id="worker-instructions">
-                      <Marker className="child-instructions">
-                        <MarkerContent>
-                          <p>
-                            {transcript.children[child]?.description ??
-                              "Worker conversation"}
-                          </p>
-                          {workerViaParent && (
-                            <p>
-                              Messages are delivered through the parent agent
-                              using its worker messaging tools.
-                            </p>
-                          )}
-                          {((record(worker?.capabilities).cancel != null &&
-                            record(worker?.capabilities).cancel !== false) ||
-                            (workerConnected && !workerViaParent)) && (
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              onClick={() =>
-                                void call("cancel_turn", {
-                                  sessionId: session.id,
-                                  childId: child,
-                                }).catch((e) => setError(String(e)))
-                              }
-                            >
-                              Stop this worker
-                            </Button>
-                          )}
-                        </MarkerContent>
-                      </Marker>
-                    </TranscriptRow>
-                  )}
                   {!messages.length && child && (
                     <TranscriptRow id="worker-waiting">
                       <Marker className="conversation-waiting">
@@ -1018,7 +985,7 @@ export function Chat({
                     placeholder={
                       child
                         ? childOpening
-                          ? "Opening worker conversation…"
+                          ? "Connecting to worker…"
                           : workerWorking
                             ? "Queue a message, or ⌘Enter to steer…"
                             : `Message ${worker?.title ?? "this worker"}…`
