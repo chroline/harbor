@@ -179,7 +179,10 @@ function TraceCollapsibleContent({
               className,
             )}
           >
-            {children}
+            {/* Retain content only for the closing animation. Hidden tool
+                output can contain thousands of code/markdown nodes, and must
+                not render again for every streamed agent update. */}
+            {(open || (!closed && !reduced)) && children}
           </div>
         </motion.div>
       </div>
