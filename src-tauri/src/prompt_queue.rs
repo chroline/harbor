@@ -566,27 +566,11 @@ async fn run(state: Arc<AppState>, session: String, child: Option<String>) {
         let busy = rpc.busy.load(Ordering::SeqCst)
             || worker_busy
             || ((child.is_none() || via_parent) && session_record.status == "working");
-        if busy {
-            if next.view.intent != SubmissionIntent::Steer && !rpc.inbound.lock().await.is_empty() {
-                state.prompt_queues.pause(
-                    &state,
-                    &session,
-                    &child,
-                    Some("Answer the pending request, then resume the queue.".into()),
-                );
-                break;
-            }
+        // Requests block delivery only while pending. Once answered, continue
+        // automatically; a separate queue-resume action should never be needed.
+        if busy || !rpc.inbound.lock().await.is_empty() {
             tokio::time::sleep(Duration::from_millis(80)).await;
             continue;
-        }
-        if !rpc.inbound.lock().await.is_empty() {
-            state.prompt_queues.pause(
-                &state,
-                &session,
-                &child,
-                Some("Answer the pending request, then resume the queue.".into()),
-            );
-            break;
         }
         if matches!(session_record.status.as_str(), "error" | "disconnected") {
             state.prompt_queues.pause(
@@ -665,17 +649,7 @@ async fn run(state: Arc<AppState>, session: String, child: Option<String>) {
                     .await
                 }
             };
-            tokio::pin!(request);
-            loop {
-                tokio::select! {
-                    result=&mut request => break result,
-                    _=tokio::time::sleep(Duration::from_millis(80)) => {
-                        if !state.prompt_queues.snapshot(&session,&child).paused && !rpc.inbound.lock().await.is_empty() {
-                            state.prompt_queues.pause(&state,&session,&child,Some("Answer the pending request, then resume the queue.".into()));
-                        }
-                    }
-                }
-            }
+            request.await
         };
         if let Err(error) = result {
             // Never retry a possibly delivered prompt automatically.

@@ -86,9 +86,5 @@ export function usePromptQueue(
       })
         .then(accept)
         .catch((error) => onError(String(error))),
-    resume: () =>
-      void call<QueueSnapshot>("resume_prompt_queue", { sessionId, childId })
-        .then(accept)
-        .catch((error) => onError(String(error))),
   };
 }

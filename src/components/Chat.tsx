@@ -1063,7 +1063,6 @@ export function Chat({
                     }
                   />
                   </div>
-                  {(promptQueue.snapshot.paused || promptQueue.snapshot.error || promptQueue.snapshot.steering) && <div className="prompt-queue-status"><span role={promptQueue.snapshot.error ? "alert" : "status"}>{promptQueue.snapshot.error || (promptQueue.snapshot.steering ? "Stopping to steer…" : "Queue paused")}</span>{promptQueue.snapshot.paused && promptQueue.snapshot.items.length > 0 && <Button variant="ghost" size="compact" onClick={promptQueue.resume}>Resume</Button>}</div>}
                 </div>
               </>
             )}

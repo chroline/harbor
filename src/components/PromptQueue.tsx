@@ -7,13 +7,12 @@ import { Bubble, BubbleContent } from "./ui/bubble";
 import { RichText } from "./shared";
 import "./prompt-queue.css";
 
-export function PromptQueue({ queue, onRemove, onEdit, onSteer, editing, onResume }: {
+export function PromptQueue({ queue, onRemove, onEdit, onSteer, editing }: {
   queue: QueueSnapshot;
   onRemove: (id: string) => void;
   onEdit?: (id: string) => void;
   onSteer?: (id: string) => void;
   editing?: boolean;
-  onResume?: () => void;
 }) {
   const ref = useRef<HTMLElement>(null);
   useLayoutEffect(() => {
@@ -69,6 +68,6 @@ export function PromptQueue({ queue, onRemove, onEdit, onSteer, editing, onResum
         {onEdit && <Button variant="ghost" size="compact" disabled={editing} aria-label={`Edit queued message: ${item.text || "Attached files"}`} onClick={() => onEdit(item.id)}><Pencil size={14} /> Edit</Button>}
         <Button variant="ghost" size="icon-compact" aria-label={`Remove queued message: ${item.text || "Attached files"}`} onClick={() => onRemove(item.id)}><X size={12} /></Button>
       </div>}
-    </li>)}</ol>{onResume && queue.paused && <Button variant="ghost" size="compact" onClick={onResume}>Resume</Button>}
+    </li>)}</ol>
   </section>;
 }

@@ -42,3 +42,8 @@ it("positions a long front message so only its first line peeks above the compos
     styles.mockRestore();
   }
 });
+
+it("never renders a Resume control for a paused queue", () => {
+  render(<PromptQueue queue={{ ...queue, paused: true }} onRemove={() => {}} />);
+  expect(screen.queryByRole("button", { name: "Resume" })).toBeNull();
+});
