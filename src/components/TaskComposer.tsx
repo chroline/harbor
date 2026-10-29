@@ -2,7 +2,7 @@ import { CommandEditor } from "./CommandEditor";
 import type { CommandCatalog } from "../lib/command-catalog";
 import { rem } from "@/lib/units";
 import { SizeProvider } from "@/lib/size-context";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { ArrowUp, Paperclip, Square } from "@/lib/icons";
 import { validateAttachments } from "../lib/attachments";
 import { InputMessage, type InputMessageProps } from "./ui/input-message";
@@ -50,6 +50,25 @@ export function TaskComposer({
   ...input
 }: TaskComposerProps) {
   const [fileError, setFileError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!onStop || input.disabled) return;
+    const stopOnEscape = (event: KeyboardEvent) => {
+      if (
+        event.key !== "Escape" ||
+        event.defaultPrevented ||
+        event.repeat ||
+        event.isComposing ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey ||
+        event.shiftKey
+      ) return;
+      event.preventDefault();
+      onStop();
+    };
+    window.addEventListener("keydown", stopOnEscape);
+    return () => window.removeEventListener("keydown", stopOnEscape);
+  }, [onStop, input.disabled]);
   const showStopOnly =
     !!onStop && ((!input.value.trim() && !files?.length) || !!actionDisabled);
   const label = showStopOnly ? "Stop response" : actionLabel;

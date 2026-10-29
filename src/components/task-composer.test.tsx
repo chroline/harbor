@@ -151,6 +151,50 @@ it("keeps Stop available during a response without sending another message", () 
   expect(submit).not.toHaveBeenCalled();
 });
 
+it("stops on Escape from the editor or transcript and removes the shortcut when idle", () => {
+  const stop = vi.fn();
+  const submit = vi.fn();
+  const { rerender } = render(
+    <TaskComposer {...defaults} onSubmit={submit} onStop={stop} />,
+  );
+  fireEvent.keyDown(screen.getByRole("textbox"), { key: "Escape" });
+  fireEvent.keyDown(document.body, { key: "Escape" });
+  expect(stop).toHaveBeenCalledTimes(2);
+  for (const modifiers of [
+    { repeat: true }, { isComposing: true }, { metaKey: true },
+    { ctrlKey: true }, { altKey: true }, { shiftKey: true },
+  ]) fireEvent.keyDown(document.body, { key: "Escape", ...modifiers });
+  const dismissed = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+  dismissed.preventDefault();
+  document.body.dispatchEvent(dismissed);
+  expect(stop).toHaveBeenCalledTimes(2);
+  rerender(<TaskComposer {...defaults} onSubmit={submit} />);
+  fireEvent.keyDown(document.body, { key: "Escape" });
+  expect(stop).toHaveBeenCalledTimes(2);
+  expect(submit).not.toHaveBeenCalled();
+});
+
+it("dismisses command suggestions before Escape stops the response", async () => {
+  const stop = vi.fn();
+  render(
+    <TaskComposer
+      {...defaults}
+      value="/rev"
+      catalog={{ status: "ready", commands: [{ name: "review", description: "Review changes" }] }}
+      onSubmit={vi.fn()}
+      onStop={stop}
+    />,
+  );
+  const input = screen.getByRole("textbox");
+  fireEvent.focus(input);
+  selectEditor(input, 4, 4);
+  await waitFor(() => expect(screen.getByRole("listbox")).toBeTruthy());
+  fireEvent.keyDown(input, { key: "Escape" });
+  expect(stop).not.toHaveBeenCalled();
+  fireEvent.keyDown(input, { key: "Escape" });
+  expect(stop).toHaveBeenCalledOnce();
+});
+
 function ComposerWithFiles({ disabled = false }: { disabled?: boolean }) {
   const [files, setFiles] = useState<File[]>([]);
   return (

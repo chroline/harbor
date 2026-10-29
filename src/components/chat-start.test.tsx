@@ -752,3 +752,11 @@ it("retains a working chat draft when steering is rejected", async () => {
   await waitFor(() => expect(mock.call).toHaveBeenCalledWith("submit_prompt",expect.objectContaining({intent:"steer"})));
   expect(input.textContent).toBe("Keep my instruction");
 });
+
+it("cancels the active turn with Escape and preserves the draft", () => {
+  render(<Chat session={{ ...session, status: "working", draft: "Keep my draft", error: null }} />);
+  const input = screen.getByRole("textbox");
+  fireEvent.keyDown(input, { key: "Escape" });
+  expect(mock.call).toHaveBeenCalledWith("cancel_turn", { sessionId: "chat", childId: null });
+  expect(input.textContent).toBe("Keep my draft");
+});
