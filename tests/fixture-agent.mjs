@@ -19,6 +19,12 @@ input.on('line',async line=>{const msg=JSON.parse(line);if(!msg.method){awaiting
  case 'session/cancel':for(const [id,resolve]of awaiting){resolve({outcome:{outcome:'cancelled'}});awaiting.delete(id)}break;
  case 'session/prompt':{
   const text=p.prompt[0].text;const s=sessions.get(p.sessionId);if(text==='crash'){process.exit(2);return}if(text==='malformed')process.stdout.write('not json\n');
+  if(text.startsWith('review-plan:')) {
+   const [,provider,revision]=text.split(':');
+   const [implement,revise]=provider==='codex'?['implement_plan','revise_plan']:provider==='claude'?['exit-plan-default','reject']:['approved','cancelled'];
+   const response=await request('session/request_permission',{sessionId:p.sessionId,toolCall:{toolCallId:'plan-'+revision,title:'Review plan',kind:'switch_mode',rawInput:{plan:'# Plan '+revision}},options:[{optionId:implement,name:'Implement',kind:'allow_once'},{optionId:revise,name:'Keep planning',kind:'reject_once'}]});
+   update(p.sessionId,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:JSON.stringify(response)}});
+  }
   if(text==='permission'){const response=await request('session/request_permission',{sessionId:p.sessionId,toolCall:{toolCallId:'write-1',title:'Write greeting.txt',kind:'edit'},options:[{optionId:'allow-once',name:'Allow once',kind:'allow_once'},{optionId:'reject-once',name:'Reject',kind:'reject_once'}]});update(p.sessionId,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:JSON.stringify(response)}});}
   if(text==='files'){const path=join(s.cwd,'fixture.txt');await request('fs/write_text_file',{sessionId:p.sessionId,path,content:'alpha\nbeta\ngamma\n'});const r=await request('fs/read_text_file',{sessionId:p.sessionId,path,line:2,limit:1});update(p.sessionId,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:r.content}});}
   if(text==='terminal'){const t=await request('terminal/create',{sessionId:p.sessionId,command:process.execPath,args:['-e','process.stdout.write("terminal fixture")'],cwd:s.cwd,outputByteLimit:1024});await request('terminal/wait_for_exit',{sessionId:p.sessionId,terminalId:t.terminalId});const out=await request('terminal/output',{sessionId:p.sessionId,terminalId:t.terminalId});update(p.sessionId,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:out.output}});await request('terminal/release',{sessionId:p.sessionId,terminalId:t.terminalId});}

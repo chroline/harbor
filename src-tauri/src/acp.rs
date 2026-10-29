@@ -355,6 +355,36 @@ impl Rpc {
         (self.sink)("answered", json!({"id":id,"result":result}));
         Ok(())
     }
+    /// A follow-up to a pending plan means revise, never permission to execute.
+    /// Snapshot only current requests so a newly generated plan still awaits review.
+    pub async fn revise_pending_plan(&self, thread: &str) -> Result<(), String> {
+        use crate::adapters::contract::PlanApprovalContract;
+        let PlanApprovalContract::Implemented { implement_option_id, revise_option_id } =
+            adapters::get(self.provider_id).descriptor().plan_approval
+        else { return Ok(()); };
+        let pending: Vec<_> = self.inbound.lock().await.values().cloned().collect();
+        for request in pending {
+            if request["params"]["sessionId"].as_str() != Some(thread) { continue; }
+            let permission = if let Some(protocol) = self.plan_protocol.supported()
+                .filter(|protocol| request["method"].as_str() == Some(protocol.method())) {
+                serde_json::to_value(protocol.permission(&request, None)?).map_err(err)?
+            } else { request.clone() };
+            let params = &permission["params"];
+            let options = params["options"].as_array();
+            let has_option = |id: &str, kind: &str| options.is_some_and(|options|
+                options.iter().any(|o| o["optionId"] == id && o["kind"] == kind));
+            if permission["method"] == "session/request_permission"
+                && params["toolCall"]["kind"] == "switch_mode"
+                && has_option(&implement_option_id, "allow_once")
+                && has_option(&revise_option_id, "reject_once") {
+                self.answer(request["id"].clone(), json!({
+                    "outcome":{"outcome":"selected","optionId":revise_option_id}
+                })).await?;
+            }
+        }
+        Ok(())
+    }
+
     pub async fn answer(&self, id: Value, result: Value) -> Result<(), String> {
         let is_async = self.inbound.lock().await.get(&id.to_string()).is_some_and(codex_questions::is_async);
         if is_async {
@@ -808,6 +838,77 @@ mod tests {
         )
         .await
     }
+    #[tokio::test]
+    async fn plan_feedback_allows_a_new_plan_that_still_requires_review() {
+        for provider in ["codex", "claude", "grok"] {
+            let (rpc, _temp, events, root) = fixture_for(provider).await;
+            let original = format!("review-plan:{provider}:original");
+            let (done, ()) = tokio::join!(
+                prompt(&rpc, &root, &original),
+                async {
+                    tokio::time::timeout(Duration::from_secs(5), async {
+                        while rpc.inbound.lock().await.is_empty() {
+                            tokio::time::sleep(Duration::from_millis(10)).await;
+                        }
+                    }).await.unwrap();
+                    rpc.revise_pending_plan(&root).await.unwrap();
+                }
+            );
+            done.unwrap();
+            assert!(rpc.inbound.lock().await.is_empty());
+            // The queued feedback starts a new planning turn after the old turn exits.
+            let revised = format!("review-plan:{provider}:use-existing-react-components");
+            let next = prompt(&rpc, &root, &revised);
+            tokio::pin!(next);
+            tokio::select! {
+                result = &mut next => panic!("Revised plan completed before review: {result:?}"),
+                _ = async {
+                    while rpc.inbound.lock().await.is_empty() {
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                    }
+                } => {}
+                _ = tokio::time::sleep(Duration::from_secs(5)) => panic!("No revised plan"),
+            }
+            let request = rpc.inbound.lock().await.values().next().cloned().unwrap();
+            assert_eq!(request["params"]["toolCall"]["rawInput"]["plan"], "# Plan use-existing-react-components");
+            assert_eq!(events.lock().unwrap().iter().filter(|(kind, _)| kind == "answered").count(), 1);
+            rpc.cancel_requests().await;
+            next.await.unwrap();
+            rpc.stop().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn plan_followups_revise_only_the_target_plan_and_never_approve_tools() {
+        for provider in ["codex", "claude", "grok"] {
+            let (rpc, _temp, events, root) = fixture_for(provider).await;
+            let (implement, revise) = match provider {
+                "codex" => ("implement_plan", "revise_plan"),
+                "claude" => ("exit-plan-default", "reject"),
+                _ => ("approved", "cancelled"),
+            };
+            for (id, owner, kind) in [(1, root.as_str(), "switch_mode"), (2, "other-worker", "switch_mode"), (3, root.as_str(), "execute")] {
+                rpc.inbound.lock().await.insert(json!(id).to_string(), json!({
+                    "id":id,"method":"session/request_permission","params":{
+                        "sessionId":owner,"toolCall":{"kind":kind},"options":[
+                            {"optionId":implement,"kind":"allow_once"},
+                            {"optionId":revise,"kind":"reject_once"}
+                        ]
+                    }
+                }));
+            }
+            rpc.revise_pending_plan(&root).await.unwrap();
+            let pending = rpc.inbound.lock().await;
+            assert!(!pending.contains_key("1"), "{provider}: follow-up must release plan approval");
+            assert!(pending.contains_key("2"), "another conversation's plan must stay pending");
+            assert!(pending.contains_key("3"), "ordinary tools must stay pending");
+            drop(pending);
+            assert!(events.lock().unwrap().iter().any(|(kind, value)| kind == "answered"
+                && value["id"] == 1 && value["result"]["outcome"]["optionId"] == revise));
+            rpc.stop().await;
+        }
+    }
+
     #[tokio::test]
     async fn async_questions_survive_completion_validate_answers_and_remain_recoverable_on_stop() {
         let (rpc, _temp, events, id) = fixture().await;

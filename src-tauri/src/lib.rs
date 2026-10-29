@@ -1032,6 +1032,7 @@ async fn submit_prompt(state: tauri::State<'_, Arc<AppState>>, session_id: Strin
     attachments::validate(&files)?;
     let shared_parent=prompt_queue::validate(state.inner(), &session_id, &child_id, &intent).await?;
     let steering=intent==prompt_queue::SubmissionIntent::Steer;
+    if !steering { prompt_queue::revise_pending_plan(state.inner(), &session_id, &child_id).await?; }
     state.prompt_queues.submit(state.inner(), &session_id, &child_id, text, files, intent, shared_parent);
     if steering {state.prompt_queues.steer(state.inner(), &session_id, &child_id).await;}
     Ok(state.prompt_queues.snapshot(&session_id,&child_id))

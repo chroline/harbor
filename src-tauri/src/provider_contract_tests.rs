@@ -334,7 +334,9 @@ async fn plan_prompt(rpc: &Rpc, sid: &str, text: &str, answer: Option<&str>) {
             };
             assert_eq!(request["params"]["sessionId"], sid);
             assert_eq!(request["params"]["toolCall"]["kind"], "switch_mode");
-            if answer == "cancel" {
+            if answer == "followup" {
+                rpc.revise_pending_plan(sid).await.unwrap();
+            } else if answer == "cancel" {
                 rpc.cancel_requests().await;
                 rpc.notify("session/cancel", json!({"sessionId":sid}))
                     .await
@@ -424,7 +426,7 @@ async fn provider_plans_keep_files_and_identity_until_explicit_execution() {
             model_config::selections(&model_config::from_response(&loaded))[key],
             "plan"
         );
-        for outcome in ["reject", "cancel"] {
+        for outcome in ["reject", "cancel", "followup"] {
             plan_prompt(&rpc, sid, "execute-plan", Some(outcome)).await;
             assert_eq!(std::fs::read_to_string(&file).unwrap(), "hello\n");
         }

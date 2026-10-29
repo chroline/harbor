@@ -442,6 +442,14 @@ async fn target(
     }
 }
 
+/// Release the target conversation's plan review before queuing its feedback.
+pub async fn revise_pending_plan(
+    state: &AppState, session: &str, child: &Option<String>,
+) -> Result<(), String> {
+    let (rpc, wire, _) = target(state, session, child).await?;
+    rpc.revise_pending_plan(&wire).await
+}
+
 pub async fn validate(
     state: &AppState,
     session: &str,
