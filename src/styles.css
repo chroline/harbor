@@ -171,10 +171,13 @@
     color-mix(in srgb, oklch(0.979 0 0) 84%, transparent),
     rgb(20 20 20 / 0.72)
   );
-  --window-tint: light-dark(rgb(237 237 237 / 0.7), rgb(33 33 33 / 0.7));
+  --window-tint: light-dark(
+    color-mix(in srgb, var(--color-gray-100) 70%, transparent),
+    rgb(33 33 33 / 0.7)
+  );
   --sidebar: var(--surface-1);
   --chrome: var(--window-tint);
-  --chrome-solid: light-dark(#ededed, #212121);
+  --chrome-solid: light-dark(var(--color-gray-100), #212121);
   --chrome-edge: var(--border);
   --divider: var(--border);
   --panel: var(--surface-2);
