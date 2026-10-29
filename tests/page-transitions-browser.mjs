@@ -34,7 +34,14 @@ await main(() => {
         const style = getComputedStyle(document.documentElement, `::view-transition-${side}(harbor-page)`);
         return { opacity: Number(style.opacity), filter: style.filter, duration: style.animationDuration };
       };
-      window.__pageTransitions.push({ old: sample("old"), new: sample("new"), count: animations.length });
+      const group = getComputedStyle(document.documentElement, "::view-transition-group(harbor-page)");
+      window.__pageTransitions.push({
+        old: sample("old"), new: sample("new"), count: animations.length,
+        rootName: getComputedStyle(document.documentElement).viewTransitionName,
+        overflow: group.overflow,
+        radius: group.borderRadius,
+        frameRadius: getComputedStyle(document.querySelector(".workspace-frame")).borderRadius,
+      });
       document.documentElement.dataset.blurSampled = "true";
     }).catch((error) => { window.__pageTransitions.push({ error: String(error) }); document.documentElement.dataset.blurSampled = "true"; });
     return transition;
@@ -46,6 +53,9 @@ const entrance = async (selector, action) => {
   await page.waitForSelector(selector);
   await page.waitForFunction(() => document.documentElement.dataset.blurSampled === "true");
   const result = await main(() => window.__pageTransitions.at(-1));
+  assert.equal(result.rootName, "none", "chrome must remain live outside the page snapshot");
+  assert.equal(result.overflow, "hidden", "page blur must be clipped to the content frame");
+  assert.equal(result.radius, result.frameRadius, "snapshot must follow the rounded content frame");
   assert.equal(result.count, 2, "both page snapshots should animate");
   for (const side of [result.old, result.new]) {
     assert.equal(side.duration, "0.42s");
@@ -54,7 +64,8 @@ const entrance = async (selector, action) => {
   }
   await main(async () => {
     document.getAnimations().filter((animation) =>
-      ["page-blur-in", "page-blur-out"].includes(animation.animationName),
+      ["page-blur-in", "page-blur-out"].includes(animation.animationName) ||
+      animation.animationName?.includes("view-transition"),
     ).forEach((animation) => animation.finish());
     await new Promise(requestAnimationFrame);
   });

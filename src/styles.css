@@ -676,16 +676,17 @@ a {
   flex: 1;
   overflow: auto;
   min-height: 0;
+  border-radius: inherit;
   view-transition-name: harbor-page;
 }
-/* Only the workspace cross-blurs; sidebar and window chrome stay steady. */
-::view-transition-group(root) {
-  animation: none;
+/* Keep chrome live: root snapshots would also capture its translucent surfaces. */
+:root {
+  view-transition-name: none;
 }
-::view-transition-old(root),
-::view-transition-new(root) {
-  animation: none;
-  mix-blend-mode: normal;
+/* Snapshot layers escape ancestor overflow, so clip the blur at the frame edge. */
+::view-transition-group(harbor-page) {
+  overflow: hidden;
+  border-radius: var(--page-frame-radius, 0px);
 }
 @media (prefers-reduced-motion: no-preference) {
   ::view-transition-group(harbor-page) {

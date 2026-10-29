@@ -13,6 +13,12 @@ export function transitionPage(update: () => void) {
   }
 
   running?.skipTransition();
+  // Snapshot pseudo-elements live outside the shell and cannot inherit its clip.
+  const frame = document.querySelector(".main-content");
+  document.documentElement.style.setProperty(
+    "--page-frame-radius",
+    frame ? getComputedStyle(frame).borderRadius : "0px",
+  );
   const transition = document.startViewTransition(() => flushSync(update));
   running = transition;
   // A superseded transition can reject `ready`; navigation must still complete.
