@@ -144,6 +144,7 @@ beforeEach(() => {
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.removeItem(PINNED_CHATS_KEY);
+  localStorage.removeItem("harbor.last-view");
   localStorage.removeItem(SIDEBAR_ORDER_KEY);
   mocks.call.mockResolvedValue(undefined);
   mocks.initialSessions = [];
@@ -262,60 +263,29 @@ async function selectSidebarAction(row: HTMLElement, action: string) {
   );
 }
 
-it("keeps projects in their own sidebar group with their workspace association", async () => {
-  mocks.extraProjects = [
-    {
-      id: "release",
-      name: "Release",
-      workspaceId: "workspace",
-      icon: "code",
-      color: "blue",
-    },
-  ];
-  mocks.call.mockResolvedValue(session);
+it("lists a shared workspace once regardless of its associated projects", () => {
+  mocks.extraProjects = [{
+    id: "release", name: "Release", workspaceId: "workspace", icon: "code", color: "blue",
+  }];
   render(<App />);
-  const projects = within(screen.getByRole("region", { name: "Projects" }));
   const workspaces = within(screen.getByRole("region", { name: "Workspaces" }));
-  expect(
-    projects.getByRole("button", { name: "Harbor" }).getAttribute("title"),
-  ).toContain("/repo");
-  expect(
-    projects.getByRole("button", { name: "Release" }).getAttribute("title"),
-  ).toContain("/repo");
-  expect(projects.getByRole("button", { name: "Create project" })).toBeTruthy();
-  expect(
-    workspaces.queryByRole("button", { name: "Create project" }),
-  ).toBeNull();
-  expect(workspaces.getByRole("button", { name: "repo" })).toBeTruthy();
+  expect(workspaces.getAllByRole("button", { name: "repo" })).toHaveLength(1);
+  expect(workspaces.getByRole("button", { name: "repo" }).getAttribute("title")).toContain("/repo");
   expect(workspaces.queryByRole("button", { name: "Harbor" })).toBeNull();
-  fireEvent.click(projects.getByRole("button", { name: "Release" }));
-  typePrompt();
-  fireEvent.click(screen.getByRole("button", { name: "Start task" }));
-  await waitFor(() =>
-    expect(mocks.call).toHaveBeenCalledWith(
-      "create_session",
-      expect.objectContaining({ workspaceId: "workspace", newWorktree: true }),
-    ),
-  );
+  expect(workspaces.queryByRole("button", { name: "Release" })).toBeNull();
 });
 
-it("opens the project editor from its sidebar group using the project's workspace", async () => {
+it("selects a workspace from an active chat and focuses its new-task composer", async () => {
+  mocks.initialSessions = [session];
   render(<App />);
-  const projects = within(screen.getByRole("region", { name: "Projects" }));
-  await selectSidebarAction(
-    projects.getByRole("button", { name: "Harbor" }),
-    "Edit project…",
-  );
-  const dialog = within(
-    await screen.findByRole("dialog", { name: "Edit project" }),
-  );
-  expect(
-    (dialog.getByRole("textbox", { name: "Project name" }) as HTMLInputElement)
-      .value,
-  ).toBe("Harbor");
-  expect(
-    dialog.getByRole("button", { name: "Choose workspace" }).textContent,
-  ).toContain("repo");
+  fireEvent.click(screen.getByRole("button", { name: session.title }));
+  expect(screen.getByLabelText("Active chat")).toBeTruthy();
+  await selectSidebarAction(screen.getByRole("button", { name: "repo" }), "New task");
+  expect(screen.queryByLabelText("Active chat")).toBeNull();
+  expect(screen.getByRole("button", { name: "Workspace for new task" }).textContent).toContain("repo");
+  expect(document.activeElement).toBe(screen.getByRole("textbox", { name: "Describe a new task" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(mocks.call).not.toHaveBeenCalled();
 });
 
 it("groups chats once by their saved workspace, independent of their project", () => {
@@ -432,11 +402,9 @@ it("shows No workspace alongside the other workspaces and starts freeform tasks 
       screen.getByRole("list", { name: "Chats in No workspace" }),
     ).getByRole("button", { name: "Start a conversation" }),
   ).toBeTruthy();
-  fireEvent.click(
-    within(screen.getByRole("region", { name: "Projects" })).getByRole(
-      "button",
-      { name: "Harbor" },
-    ),
+  await selectSidebarAction(
+    within(screen.getByRole("region", { name: "Workspaces" })).getByRole("button", { name: "repo" }),
+    "New task",
   );
   const noWorkspace = screen.getByRole("button", { name: "No workspace" });
   const workspace = screen.getByRole("button", { name: "repo" });
@@ -482,33 +450,32 @@ it("starts a chat in the workspace selected from the sidebar", async () => {
   ).toBeTruthy();
 });
 
-it("collapses Fluid sections independently and retains nested workspace state", () => {
+it("collapses sidebar sections independently and retains nested workspace state", () => {
   mocks.initialSessions = [{ ...session, title: "Freeform chat" }];
+  localStorage.setItem(PINNED_CHATS_KEY, JSON.stringify([session.id]));
   render(<App />);
-  fireEvent.click(screen.getByRole("button", { name: "Freeform chat" }));
+  const chats = within(screen.getByRole("list", { name: "Chats in No workspace" }));
+  fireEvent.click(chats.getByRole("button", { name: "Freeform chat" }));
   const workspace = screen.getByRole("button", { name: "No workspace" });
   fireEvent.click(workspace);
-  const projects = screen.getByRole("button", { name: "Projects" });
+  const pinned = screen.getByRole("button", { name: "Pinned" });
   const workspaces = screen.getByRole("button", { name: "Workspaces" });
-  const projectRows = within(screen.getByRole("region", { name: "Projects" }));
-  fireEvent.click(projects);
-  expect(projects.getAttribute("aria-expanded")).toBe("false");
-  expect(screen.getByRole("button", { name: "Create project" })).toBeTruthy();
-  expect(projectRows.queryByRole("button", { name: "Harbor" })).toBeNull();
+  const pinnedRows = within(screen.getByRole("region", { name: "Pinned" }));
+  fireEvent.click(pinned);
+  expect(pinned.getAttribute("aria-expanded")).toBe("false");
+  expect(pinnedRows.queryByRole("button", { name: "Freeform chat" })).toBeNull();
   fireEvent.click(workspaces);
   expect(screen.queryByRole("button", { name: "No workspace" })).toBeNull();
   expect(workspace.closest("[inert]")).toBeTruthy();
-  expect(screen.getByLabelText("Active chat").textContent).toBe(
-    "Freeform chat",
-  );
-  fireEvent.click(projects);
-  expect(projectRows.getByRole("button", { name: "Harbor" })).toBeTruthy();
+  expect(screen.getByLabelText("Active chat").textContent).toBe("Freeform chat");
+  fireEvent.click(pinned);
+  expect(pinnedRows.getByRole("button", { name: "Freeform chat" })).toBeTruthy();
   expect(workspaces.getAttribute("aria-expanded")).toBe("false");
   fireEvent.click(workspaces);
   expect(workspace.getAttribute("aria-expanded")).toBe("false");
-  expect(screen.queryByRole("button", { name: "Freeform chat" })).toBeNull();
+  expect(chats.queryByRole("button", { name: "Freeform chat" })).toBeNull();
   fireEvent.click(workspace);
-  expect(screen.getByRole("button", { name: "Freeform chat" })).toBeTruthy();
+  expect(chats.getByRole("button", { name: "Freeform chat" })).toBeTruthy();
 });
 
 it("collapses workspaces independently without navigating away from the active chat", () => {
@@ -732,14 +699,12 @@ it("creates and sends directly from Home once, using the selected model configur
   expect(screen.getByLabelText("Active chat")).toBeTruthy();
 });
 
-it("selects a sidebar project without a modal and starts its worktree with the keyboard", async () => {
+it("selects a sidebar workspace without a modal and starts its worktree with the keyboard", async () => {
   mocks.call.mockResolvedValue(session);
   render(<App />);
-  fireEvent.click(
-    within(screen.getByRole("region", { name: "Projects" })).getByRole(
-      "button",
-      { name: "Harbor" },
-    ),
+  await selectSidebarAction(
+    within(screen.getByRole("region", { name: "Workspaces" })).getByRole("button", { name: "repo" }),
+    "New task",
   );
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(document.activeElement).toBe(
@@ -776,11 +741,9 @@ it("lets another chat stay open while a new worktree starts in the background", 
       : Promise.resolve(),
   );
   render(<App />);
-  fireEvent.click(
-    within(screen.getByRole("region", { name: "Projects" })).getByRole(
-      "button",
-      { name: "Harbor" },
-    ),
+  await selectSidebarAction(
+    within(screen.getByRole("region", { name: "Workspaces" })).getByRole("button", { name: "repo" }),
+    "New task",
   );
   typePrompt();
   fireEvent.click(screen.getByRole("button", { name: "Start task" }));
@@ -855,50 +818,24 @@ it("New task and its shortcut return to and focus the home composer", () => {
   expect(screen.queryByRole("dialog")).toBeNull();
 });
 
-it("selects the workspace of a newly created project in the composer", async () => {
+it("opens only one workspace folder picker while selection is pending", async () => {
+  let finish!: (value: string | null) => void;
+  mocks.openFolder.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
   render(<App />);
-  fireEvent.click(screen.getAllByRole("button", { name: "Create project" })[0]);
-  fireEvent.change(screen.getByRole("textbox", { name: "Project name" }), {
-    target: { value: "Release" },
-  });
-  // Radix dropdown triggers open on pointerdown.
-  const user = (await import("@testing-library/user-event")).default.setup();
-  await user.click(screen.getByRole("button", { name: "Choose workspace" }));
-  await user.click(screen.getByRole("menuitemradio", { name: /^repo/ }));
-  mocks.call.mockImplementation(async (command) => {
-    if (command === "save_project") {
-      mocks.addedProject = {
-        id: "new-project",
-        name: "Release",
-        workspaceId: "workspace",
-        icon: "folder",
-        color: "gray",
-      };
-      return mocks.addedProject;
-    }
-    if (command === "create_session") return session;
-  });
-  await user.click(
-    within(screen.getByRole("dialog", { name: "Create project" })).getByRole(
-      "button",
-      { name: "Create project" },
-    ),
-  );
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  typePrompt();
-  fireEvent.click(screen.getByRole("button", { name: "Start task" }));
-  await waitFor(() =>
-    expect(mocks.call).toHaveBeenCalledWith(
-      "create_session",
-      expect.objectContaining({ workspaceId: "workspace" }),
-    ),
-  );
+  const add = screen.getByRole("button", { name: "Add workspace" });
+  fireEvent.click(add);
+  expect(add.getAttribute("aria-disabled")).toBe("true");
+  fireEvent.click(add);
+  expect(mocks.openFolder).toHaveBeenCalledTimes(1);
+  finish(null);
+  await waitFor(() => expect(add.getAttribute("aria-disabled")).toBe("false"));
+  expect(mocks.call).not.toHaveBeenCalled();
 });
 it("uses an ordinary workspace without worktree controls", async () => {
   mocks.isGitRoot = false;
   mocks.call.mockResolvedValue(session);
   render(<App />);
-  fireEvent.click(screen.getAllByRole("button", { name: "Harbor" })[0]);
+  await selectSidebarAction(screen.getByRole("button", { name: "repo" }), "New task");
   expect(
     screen.queryByRole("button", { name: "Working directory" }),
   ).toBeNull();
@@ -912,10 +849,10 @@ it("uses an ordinary workspace without worktree controls", async () => {
     ),
   );
 });
-it("blocks launching a workspace with an unavailable folder", () => {
+it("blocks launching a workspace with an unavailable folder", async () => {
   mocks.available = false;
   render(<App />);
-  fireEvent.click(screen.getAllByRole("button", { name: "Harbor" })[0]);
+  await selectSidebarAction(screen.getByRole("button", { name: "repo" }), "New task");
   typePrompt();
   expect(
     screen.getByRole("button", { name: "Start task" }).hasAttribute("disabled"),
@@ -923,16 +860,7 @@ it("blocks launching a workspace with an unavailable folder", () => {
   expect(screen.getByText(/This workspace folder is unavailable/)).toBeTruthy();
 });
 
-it("reorders projects, workspaces, workspace chats and pins independently and restores them", async () => {
-  mocks.extraProjects = [
-    {
-      id: "second",
-      name: "Second project",
-      workspaceId: "workspace",
-      icon: "folder",
-      color: "gray",
-    },
-  ];
+it("reorders workspaces, workspace chats and pins independently and restores them", async () => {
   mocks.initialSessions = [
     session,
     { ...session, id: "second-chat", title: "Second chat" },
@@ -948,11 +876,6 @@ it("reorders projects, workspaces, workspace chats and pins independently and re
       (row) => row.dataset.reorderId,
     );
 
-  await selectSidebarAction(
-    within(group("Projects")).getByRole("button", { name: "Second project" }),
-    "Move up",
-  );
-  expect(ids("Projects")).toEqual(["second", "repo"]);
   expect(screen.queryByLabelText("Active chat")).toBeNull();
   await selectSidebarAction(
     within(group("Workspaces")).getByRole("button", { name: "repo" }),
@@ -984,7 +907,6 @@ it("reorders projects, workspaces, workspace chats and pins independently and re
 
   unmount();
   render(<App />);
-  expect(ids("Projects")).toEqual(["second", "repo"]);
   expect(ids("Workspaces")).toEqual([
     "workspace",
     NO_WORKSPACE_ID,
