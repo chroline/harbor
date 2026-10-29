@@ -1586,8 +1586,13 @@ async fn read_message_image(
             adapters::grok_build::plan::plan_path(Path::new(&home), Path::new(&session.cwd), id)
                 .and_then(|plan| plan.parent().map(|p| p.join("images")))))
     } else { None };
+    let attachment_root = state.data.join("attachments");
     tokio::task::spawn_blocking(move || {
-        let path = message_images::resolve(Path::new(&session.cwd), images.as_deref(), &source)?;
+        let path = if let Some(relative) = source.strip_prefix("harbor-attachment:") {
+            message_images::resolve(&attachment_root, None, relative)?
+        } else {
+            message_images::resolve(Path::new(&session.cwd), images.as_deref(), &source)?
+        };
         message_images::read(&path)
     }).await.map_err(|e| e.to_string())?
 }

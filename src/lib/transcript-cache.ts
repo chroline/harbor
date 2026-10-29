@@ -2,7 +2,7 @@ import type { Transcript } from "./protocol";
 
 // Bump when reducer semantics or the Transcript shape change. The event log
 // remains authoritative; this is only a disposable checkpoint for cold opens.
-const VERSION = 3;
+const VERSION = 4;
 const DATABASE = "harbor-transcript-cache";
 const STORE = "transcripts";
 

@@ -84,7 +84,11 @@ pub async fn prepare(
             .map_err(|_| "Invalid attachment path")?
             .to_string();
         paths.push(path.clone());
-        metadata.push(json!({"name":name,"mimeType":mime,"size":bytes.len()}));
+        let mut saved = json!({"name":name,"mimeType":mime,"size":bytes.len()});
+        if mime.starts_with("image/") {
+            saved["previewSource"] = json!(format!("harbor-attachment:{}/{}", folder.file_name().unwrap().to_string_lossy(), path.file_name().unwrap().to_string_lossy()));
+        }
+        metadata.push(saved);
         if mime.starts_with("image/") && capabilities["promptCapabilities"]["image"] == true {
             prompt.push(json!({"type":"image","mimeType":mime,"data":file.data}));
         } else if capabilities["promptCapabilities"]["embeddedContext"] == true {
@@ -142,7 +146,7 @@ mod tests {
             mime_type: "text/plain".into(),
             data: STANDARD.encode("hello"),
         };
-        let (prompt, _, _) = prepare(
+        let (prompt, metadata, _) = prepare(
             dir.path(),
             "Inspect",
             &[image, text],
@@ -152,6 +156,8 @@ mod tests {
         .unwrap();
         assert_eq!(prompt[0]["text"], "Inspect");
         assert_eq!(prompt[1]["type"], "image");
+        assert!(metadata[0]["previewSource"].as_str().unwrap().starts_with("harbor-attachment:"));
+        assert!(metadata[0].get("data").is_none());
         assert_eq!(prompt[2]["resource"]["text"], "hello");
     }
 

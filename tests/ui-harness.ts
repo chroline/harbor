@@ -9,6 +9,7 @@ import type { Bootstrap } from "../src/lib/bindings/Bootstrap";
 import type { SessionRecord } from "../src/lib/bindings/SessionRecord";
 import type { SessionEvent } from "../src/lib/bindings/SessionEvent";
 import { populateShowcase } from "./showcase-fixture";
+const attachmentPreviews = new Map<string, string>();
 const showcase = new URLSearchParams(location.search).has("showcase");
 const data: Bootstrap = {
   projects: [
@@ -202,6 +203,11 @@ mockIPC(
     }
     const s = data.sessions.find((s) => s.id === args?.sessionId);
     switch (command) {
+      case "read_message_image": {
+        const preview = attachmentPreviews.get(args.source);
+        if (!preview) throw new Error("Image unavailable");
+        return preview;
+      }
       case "plugin:window|set_theme":
       case "plugin:window|set_title":
         return;
@@ -314,28 +320,20 @@ mockIPC(
         await changed(s!);
         await event(s!, "user_message", {
           text: args.text,
-          // Images arrive below through the provider replay; keep document metadata here.
-          attachments: (args.attachments ?? []).filter(
-            (file: { mimeType: string }) => !file.mimeType.startsWith("image/"),
-          ).map(
-            (file: { name: string; mimeType: string; data: string }) => ({
-              name: file.name,
-              mimeType: file.mimeType,
-              size: atob(file.data).length,
-            }),
+          // Saved previews work even when the provider never echoes image data.
+          attachments: (args.attachments ?? []).map(
+            (file: { name: string; mimeType: string; data: string }, index: number) => {
+              const previewSource = `harbor-attachment:${s!.id}/${index}-${file.name}`;
+              if (file.mimeType.startsWith("image/")) attachmentPreviews.set(previewSource, `data:${file.mimeType};base64,${file.data}`);
+              return {
+                name: file.name,
+                mimeType: file.mimeType,
+                size: atob(file.data).length,
+                ...(file.mimeType.startsWith("image/") ? { previewSource } : {}),
+              };
+            },
           ),
         });
-        // Mirror the provider's image echo so replay hydrates attachment previews.
-        for (const file of args.attachments ?? []) {
-          if (!file.mimeType.startsWith("image/")) continue;
-          await event(s!, "session/update", {
-            sessionId: "wire-root",
-            update: {
-              sessionUpdate: "user_message_chunk",
-              content: { type: "text", text: `${args.text ?? ""}\n[${file.name}](data:${file.mimeType};base64,${file.data})` },
-            },
-          });
-        }
         await event(s!, "session/update", {
           sessionId: "wire-root",
           update: {

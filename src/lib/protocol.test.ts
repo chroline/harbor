@@ -1285,3 +1285,19 @@ it("does not invent a tool title when only the provider tool name is available",
   expect(t.tools["root:provider-name"].title).toBe("");
   expect(t.tools["root:provider-name"].name).toBe("SubagentHandback");
 });
+
+it("restores stored image previews when Grok replays only prompt text", () => {
+  const attachments = [{ name: "screen.png", mimeType: "image/png", size: 8, previewSource: "harbor-attachment:batch/0-screen.png" }];
+  let t = reduceEvent(emptyTranscript(), event("user_message", { text: "Inspect screen", attachments }));
+  expect(t.messages[0].attachments).toEqual(attachments);
+  t = reduceEvent(t, event("history_reset", {}));
+  t = reduceEvent(t, update({ sessionUpdate: "user_message_chunk", content: { type: "text", text: "Inspect " } }));
+  t = reduceEvent(t, update({ sessionUpdate: "user_message_chunk", content: { type: "text", text: "screen" } }));
+  expect(t.messages[0].attachments).toEqual(attachments);
+});
+
+it("does not reuse an older attachment on a new prompt with the same text", () => {
+  let t = reduceEvent(emptyTranscript(), event("user_message", { text: "Inspect", attachments: [{ name: "screen.png", mimeType: "image/png", size: 8, previewSource: "harbor-attachment:batch/0-screen.png" }] }));
+  t = reduceEvent(t, event("user_message", { text: "Inspect" }));
+  expect(t.messages.at(-1)?.attachments).toBeUndefined();
+});

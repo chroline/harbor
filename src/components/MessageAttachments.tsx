@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import { File as FileIcon, X } from "@/lib/icons";
 import {
   IconFileTypePdf,
@@ -18,12 +18,15 @@ import {
   AttachmentTitle,
 } from "./ui/attachment";
 import { LightboxPhoto } from "./ui/lightbox";
+import { MessageImageContext } from "./MessageImage";
+import { call } from "../lib/api";
 
 type AttachmentFile = {
   name: string;
   mimeType: string;
   size: number;
   previewUrl?: string;
+  previewSource?: string;
 };
 
 function fileIcon(name: string) {
@@ -47,7 +50,31 @@ function AttachmentCard({
   onRemove?: () => void;
 }) {
   const [dimensions, setDimensions] = useState({ width: 1, height: 1 });
-  const image = file.mimeType.startsWith("image/") && !!file.previewUrl;
+  const context = useContext(MessageImageContext);
+  const [loaded, setLoaded] = useState<{ source: string; url: string }>();
+  useEffect(() => {
+    if (
+      file.previewUrl ||
+      !file.mimeType.startsWith("image/") ||
+      !file.previewSource ||
+      !context
+    )
+      return;
+    let cancelled = false;
+    const source = file.previewSource;
+    void call<string>("read_message_image", { ...context, source })
+      .then((url) => {
+        if (!cancelled) setLoaded({ source, url });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [file.previewUrl, file.previewSource, file.mimeType, context]);
+  const previewUrl =
+    file.previewUrl ??
+    (loaded?.source === file.previewSource ? loaded?.url : undefined);
+  const image = file.mimeType.startsWith("image/") && !!previewUrl;
   const Icon = fileIcon(file.name);
   const size =
     file.size < 1024
@@ -60,13 +87,13 @@ function AttachmentCard({
       <AttachmentMedia variant={image ? "image" : "icon"}>
         {image ? (
           <LightboxPhoto
-            src={file.previewUrl!}
+            src={previewUrl!}
             alt={file.name}
             {...dimensions}
             className="size-full"
           >
             <img
-              src={file.previewUrl}
+              src={previewUrl}
               alt={file.name}
               className="size-full object-cover"
               onLoad={(event) => {

@@ -38,6 +38,21 @@ export type Tool = {
   turn?: number;
   workCompletedAt?: number;
 };
+function mergeAttachmentPreviews(
+  existing: NonNullable<Message["attachments"]>,
+  incoming: NonNullable<Message["attachments"]>,
+) {
+  const merged = [...existing];
+  for (const image of incoming) {
+    const index = merged.findIndex(
+      (file) => !file.previewUrl && file.mimeType === image.mimeType && file.size === image.size,
+    );
+    if (index >= 0) merged[index] = { ...merged[index], ...image };
+    else merged.push(image);
+  }
+  return merged;
+}
+
 export type RecordedInteraction = Interaction & {
   sequence: number;
   timestamp: number;
@@ -53,6 +68,7 @@ export type Message = {
     mimeType: string;
     size: number;
     previewUrl?: string;
+    previewSource?: string;
   }[];
   commandRanges?: CommandRange[];
   id: string;
@@ -415,10 +431,7 @@ export function reduceEvent(
               text: message.text + text,
               ...(attachments.length
                 ? {
-                    attachments: [
-                      ...(message.attachments ?? []),
-                      ...attachments,
-                    ],
+                    attachments: mergeAttachmentPreviews(message.attachments ?? [], attachments),
                   }
                 : {}),
               ...(role === "user"
@@ -459,6 +472,20 @@ export function reduceEvent(
         },
       ];
     }
+    // Providers need not echo image bytes. Restore our saved attachment metadata
+    // as the replayed prompt text arrives, including images for the lightbox.
+    if (role === "user" && event.kind === "session/update") {
+      t.messages = t.messages.map((message) => {
+        if (
+          message.childId !== childId || message.streamId !== streamId ||
+          message.role !== role || message.attachments?.length
+        ) return message;
+        const saved = [...t.attachmentMetadata].reverse().find(
+          (entry) => entry.childId === childId && entry.text.trim() === message.text.trim(),
+        );
+        return saved ? { ...message, attachments: saved.attachments } : message;
+      });
+    }
   };
   if (event.kind === "user_message") {
     if (targetChild)
@@ -478,6 +505,7 @@ export function reduceEvent(
                 name: str(record(file).name),
                 mimeType: str(record(file).mimeType),
                 size: Number(record(file).size) || 0,
+                ...(str(record(file).previewSource) ? { previewSource: str(record(file).previewSource) } : {}),
               })),
             }
           : message,
