@@ -85,6 +85,7 @@ impl AdapterDescriptor {
 }
 #[derive(Debug, Clone, Copy)]
 pub struct ClientExtensions {
+    pub text_file_reads: bool,
     pub terminal_output: bool,
     pub native_worker_sessions: bool,
 }

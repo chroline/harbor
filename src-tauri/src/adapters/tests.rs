@@ -116,6 +116,15 @@ mod tests {
         assert!(native_resume_args("custom", "same").is_err());
     }
     #[test]
+    fn grok_keeps_native_image_reads_instead_of_delegating_to_a_text_reader() {
+        let caps = client_capabilities("grok");
+        assert_eq!(caps["fs"]["readTextFile"], false);
+        assert_eq!(caps["fs"]["writeTextFile"], true);
+        for provider in ["claude", "codex"] {
+            assert_eq!(client_capabilities(provider)["fs"]["readTextFile"], true);
+        }
+    }
+    #[test]
     fn codex_negotiates_terminal_output_alongside_native_workers() {
         let caps = client_capabilities("codex");
         assert_eq!(caps["_meta"]["terminal_output"], true);

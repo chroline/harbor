@@ -47,6 +47,7 @@ impl Adapter for Codex {
     }
     fn client_extensions(&self) -> ClientExtensions {
         ClientExtensions {
+            text_file_reads: true,
             terminal_output: true,
             native_worker_sessions: true,
         }

@@ -44,7 +44,7 @@ pub fn providers() -> Vec<ProviderDefinition> {
 }
 pub fn client_capabilities(id: SupportedProviderId) -> Value {
     let extensions = get(id).client_extensions();
-    let mut caps = json!({"fs":{"readTextFile":true,"writeTextFile":true},"terminal":true,"elicitation":{"form":{}},"subagents":{},"session":{"configOptions":{"boolean":{}}}});
+    let mut caps = json!({"fs":{"readTextFile":extensions.text_file_reads,"writeTextFile":true},"terminal":true,"elicitation":{"form":{}},"subagents":{},"session":{"configOptions":{"boolean":{}}}});
     if extensions.terminal_output || extensions.native_worker_sessions {
         let mut meta = json!({});
         if extensions.terminal_output {

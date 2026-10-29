@@ -299,6 +299,9 @@ impl Rpc {
             }
         } else { wait.await? };
         if method == "initialize" {
+            if self.provider_id == SupportedProviderId::Grok {
+                adapters::grok_build::normalize_initialize(&mut result);
+            }
             self.async_question_bridge.store(self.provider_id == SupportedProviderId::Codex
                 && result["agentInfo"]["name"] == "@agentclientprotocol/codex-acp"
                 && matches!(result["agentInfo"]["version"].as_str(), Some("2.1.1" | "2.3.0")), Ordering::SeqCst);
@@ -830,6 +833,33 @@ mod tests {
         assert!(events.lock().unwrap().iter().any(|(kind, value)| kind == "tool_terminal" && value["output"].as_str().is_some_and(|output| output.contains("harbor_grok_terminal_ok"))));
         rpc.stop().await;
     }
+    #[tokio::test]
+    #[ignore = "requires Grok authentication and model access"]
+    async fn live_grok_native_screenshot_read() {
+        use base64::Engine;
+        let temp = tempfile::tempdir().unwrap();
+        let png = base64::engine::general_purpose::STANDARD.decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=").unwrap();
+        tokio::fs::write(temp.path().join("screen.png"), png).await.unwrap();
+        tokio::fs::write(temp.path().join("notes.txt"), "harbor_native_text_read_ok").await.unwrap();
+        let events = Arc::new(StdMutex::new(Vec::new()));
+        let copy = events.clone();
+        let provider = crate::types::providers().into_iter().find(|p| p.id == "grok").unwrap();
+        let rpc = Rpc::start(&provider, temp.path().to_str().unwrap(), Arc::new(move |kind, value| {
+            copy.lock().unwrap().push((kind.to_string(), value));
+        })).await.unwrap();
+        let result = async {
+            rpc.request("initialize", json!({"protocolVersion":1,"clientCapabilities":adapters::client_capabilities(SupportedProviderId::Grok)}), Some(Duration::from_secs(30))).await?;
+            let session = rpc.request("session/new", json!({"cwd":temp.path(),"mcpServers":[]}), Some(Duration::from_secs(30))).await?;
+            rpc.request("session/prompt", json!({"sessionId":session["sessionId"],"prompt":[{"type":"text","text":"Use read_file to open screen.png and notes.txt in the current directory. Do not use any other tools. Report the contents of notes.txt."}]}), Some(Duration::from_secs(90))).await
+        }.await;
+        rpc.stop().await;
+        result.unwrap();
+        let events = events.lock().unwrap();
+        assert!(events.iter().any(|(kind, value)| kind == "session/update" && value["update"]["status"] == "completed" && value["update"]["content"].as_array().is_some_and(|blocks| blocks.iter().any(|block| block["content"]["type"] == "image" && block["content"]["data"].as_str().is_some_and(|data| !data.is_empty())))), "native reader must return image content");
+        assert!(events.iter().any(|(kind, value)| kind == "session/update" && value["update"]["status"] == "completed" && value.to_string().contains("harbor_native_text_read_ok")), "native text reads must still work");
+        assert!(!events.iter().any(|(_, value)| value.to_string().contains("stream did not contain valid UTF-8")));
+    }
+
     async fn prompt(rpc: &Arc<Rpc>, id: &str, text: &str) -> Reply {
         rpc.request(
             "session/prompt",

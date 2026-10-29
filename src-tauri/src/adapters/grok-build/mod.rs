@@ -49,6 +49,9 @@ impl Adapter for GrokBuild {
     }
     fn client_extensions(&self) -> ClientExtensions {
         ClientExtensions {
+            // Delegating ReadFile to ACP's text-only reader also intercepts PNGs.
+            // Keep Grok's native reader so it can return image tool content.
+            text_file_reads: false,
             terminal_output: false,
             native_worker_sessions: false,
         }
@@ -80,5 +83,43 @@ impl Adapter for GrokBuild {
     }
     fn worker_announcements(&self, kind: &str, payload: &Value) -> Vec<WorkerAnnouncement> {
         workers::announcements(kind, payload)
+    }
+}
+
+/// Grok 1.0.30 accepts ACP image blocks but advertises image:false.
+/// Verified with a screenshot-only vision prompt against the installed CLI.
+pub(crate) fn normalize_initialize(result: &mut Value) {
+    if result["_meta"]["agentVersion"] == "1.0.30" {
+        result["agentCapabilities"]["promptCapabilities"]["image"] = Value::Bool(true);
+    }
+}
+
+#[cfg(test)]
+mod image_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn sends_screenshot_bytes_instead_of_a_generic_resource() {
+        let mut response = json!({"_meta":{"agentVersion":"1.0.30"},"agentCapabilities":{"promptCapabilities":{"image":false,"embeddedContext":true}}});
+        normalize_initialize(&mut response);
+        let directory = tempfile::tempdir().unwrap();
+        let file = crate::types::PromptAttachment { name: "screen.png".into(), mime_type: "image/png".into(), data: "iVBORw0KGgo=".into() };
+        let (prompt, metadata, _) = crate::attachments::prepare(directory.path(), "Inspect", &[file], &response).await.unwrap();
+        assert_eq!(prompt.len(), 2);
+        assert_eq!(prompt[1], json!({"type":"image","mimeType":"image/png","data":"iVBORw0KGgo="}));
+        assert!(metadata[0]["previewSource"].as_str().unwrap().starts_with("harbor-attachment:"));
+    }
+
+    #[test]
+    fn corrects_only_the_verified_grok_image_capability() {
+        let mut response = json!({"_meta":{"agentVersion":"1.0.30"},"agentCapabilities":{"promptCapabilities":{"image":false,"embeddedContext":true}}});
+        normalize_initialize(&mut response);
+        assert_eq!(response["agentCapabilities"]["promptCapabilities"]["image"], true);
+        assert_eq!(response["agentCapabilities"]["promptCapabilities"]["embeddedContext"], true);
+        response["_meta"]["agentVersion"] = json!("unknown");
+        response["agentCapabilities"]["promptCapabilities"]["image"] = json!(false);
+        normalize_initialize(&mut response);
+        assert_eq!(response["agentCapabilities"]["promptCapabilities"]["image"], false);
     }
 }

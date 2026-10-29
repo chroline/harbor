@@ -41,6 +41,7 @@ impl Adapter for ClaudeCode {
     }
     fn client_extensions(&self) -> ClientExtensions {
         ClientExtensions {
+            text_file_reads: true,
             terminal_output: false,
             native_worker_sessions: false,
         }
