@@ -1,6 +1,9 @@
 "use client";
+
+import { ThinkingIndicatorGlyph } from "./thinking-indicator";
+
 import { rem } from "@/lib/units";
-import { File as FileIcon, LoaderCircle } from "@/lib/icons";
+import { File as FileIcon } from "@/lib/icons";
 
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { cn } from "@/lib/utils";
@@ -24,7 +27,10 @@ async function loadPdfjs(): Promise<PdfjsModule> {
   return pdfjsPromise;
 }
 
-async function renderPdfFirstPage(file: File, targetWidth: number): Promise<string> {
+async function renderPdfFirstPage(
+  file: File,
+  targetWidth: number,
+): Promise<string> {
   const pdfjs = await loadPdfjs();
   const buffer = await file.arrayBuffer();
   const pdf = await pdfjs.getDocument({ data: buffer }).promise;
@@ -66,12 +72,12 @@ function subscribeObjectUrl(file: File) {
 function useObjectUrl(file: File | null): string | null {
   const subscribe = useCallback(
     () => (file ? subscribeObjectUrl(file) : () => {}),
-    [file]
+    [file],
   );
   return useSyncExternalStore(
     subscribe,
     () => (file ? (objectUrls.get(file)?.url ?? null) : null),
-    () => null
+    () => null,
   );
 }
 
@@ -143,7 +149,7 @@ function FileThumbnail({ file, size, radius, className }: FileThumbnailProps) {
         // space, and pure neutral ink stays clean over every surface tint.
         "relative shrink-0 overflow-hidden bg-accent outline-[0.0625rem] -outline-offset-1 outline-black/10 dark:outline-white/10",
         shape.bg,
-        className
+        className,
       )}
       style={{
         width: rem(size),
@@ -164,7 +170,10 @@ function FileThumbnail({ file, size, radius, className }: FileThumbnailProps) {
         // Show progress until the image or PDF preview is ready.
         <div className="absolute inset-0 flex items-center justify-center">
           <span aria-label="Loading preview" role="status">
-            <LoaderCircle size={rem(24)} className="text-muted-foreground animate-spin motion-reduce:animate-none" />
+            <ThinkingIndicatorGlyph
+              size={rem(24)}
+              className="text-muted-foreground"
+            />
           </span>
         </div>
       ) : (

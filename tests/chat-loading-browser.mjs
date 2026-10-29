@@ -1,6 +1,8 @@
 // Run: ego-browser nodejs < tests/chat-loading-browser.mjs
 const assert = (await import("node:assert/strict")).default;
-const task = await taskSpace(globalThis.HARBOR_QA_SPACE ?? "Harbor loading skeleton QA");
+const task = await taskSpace(
+  globalThis.HARBOR_QA_SPACE ?? "Harbor loading indicator QA",
+);
 const page = task.page("p1");
 await page.goto(
   globalThis.HARBOR_QA_URL ?? "http://127.0.0.1:1420/tests/ui.html",
@@ -27,9 +29,11 @@ await page.waitForFunction(() =>
     .calls.some((c) => c.command === "get_events"),
 );
 assert.equal(
-  await page.evaluate(() => document.querySelector(".chat-main")?.textContent),
-  "",
-  "Skeleton does not expose partial transcript text",
+  await page.evaluate(
+    () => !!document.querySelector(".chat-main .conversation-scroll"),
+  ),
+  false,
+  "Loading indicator does not expose partial transcript text",
 );
 assert.equal(
   await page.evaluate(
@@ -45,10 +49,12 @@ assert.ok(
         '[role="status"][aria-label="Loading conversation"]',
       ),
   ),
-  "Loading skeleton is visible",
+  "Loading indicator is visible",
 );
 await page.waitForFunction(() => {
-  const shape = document.querySelector(".chat-loading-prompt");
+  const shape = document.querySelector(
+    ".chat-loading [data-slot=thinking-indicator-glyph]",
+  );
   if (!shape) return false;
   const r = shape.getBoundingClientRect();
   return (
@@ -58,7 +64,37 @@ await page.waitForFunction(() => {
       ?.closest(".chat-loading")
   );
 });
-await page.screenshot({ path: "/tmp/harbor-chat-loading-skeleton.png" });
+const initialPath = await page.evaluate(() =>
+  document.querySelector(".chat-loading svg path")?.getAttribute("d"),
+);
+await page.waitForFunction(
+  (initialPath) =>
+    document.querySelector(".chat-loading svg path")?.getAttribute("d") !==
+    initialPath,
+  initialPath,
+);
+await page.cdp("Emulation.setEmulatedMedia", {
+  features: [{ name: "prefers-reduced-motion", value: "reduce" }],
+});
+const infinityPath =
+  "M 12 12 C 14 8.5 19 8.5 19 12 C 19 15.5 14 15.5 12 12 C 10 8.5 5 8.5 5 12 C 5 15.5 10 15.5 12 12 Z";
+await page.waitForFunction(
+  (infinityPath) =>
+    document.querySelector(".chat-loading svg path")?.getAttribute("d") ===
+    infinityPath,
+  infinityPath,
+);
+assert.equal(
+  await page.evaluate(
+    () =>
+      getComputedStyle(document.querySelector(".chat-loading .shimmer-text"))
+        .animationName,
+  ),
+  "none",
+  "Reduced motion uses a static glyph and label",
+);
+await page.cdp("Emulation.setEmulatedMedia", { features: [] });
+await page.screenshot({ path: "/tmp/harbor-chat-loading-indicator.png" });
 await page.evaluate(async () =>
   window.__harborFixture.update({
     sessionUpdate: "agent_message_chunk",
@@ -66,8 +102,10 @@ await page.evaluate(async () =>
   }),
 );
 assert.equal(
-  await page.evaluate(() => document.querySelector(".chat-main")?.textContent),
-  "",
+  await page.evaluate(
+    () => !!document.querySelector(".chat-main .conversation-scroll"),
+  ),
+  false,
   "Incoming messages do not reveal a partial transcript",
 );
 await page.evaluate(() => window.__harborFixture.resume("get_events"));
@@ -107,9 +145,9 @@ await page.waitForFunction(() =>
 assert.equal(
   await page.evaluate(() => !!document.querySelector(".chat-loading")),
   false,
-  "Skeleton disappears after loading",
+  "Loading indicator disappears after loading",
 );
 console.log(
-  "PASS: skeleton replaces partial chat until full hydration; live events are retained; full conversation opens at the bottom and earliest turns remain reachable with bounded rendering",
+  "PASS: thinking indicator replaces partial chat until full hydration; live events are retained; full conversation opens at the bottom and earliest turns remain reachable with bounded rendering",
 );
 if (!globalThis.HARBOR_QA_SPACE) await task.finish({ keep: [] });

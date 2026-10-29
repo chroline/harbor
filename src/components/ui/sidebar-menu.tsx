@@ -1,4 +1,10 @@
 "use client";
+
+import {
+  ThinkingIndicator,
+  ThinkingIndicatorGlyph,
+} from "./thinking-indicator";
+
 import { Tooltip } from "./tooltip";
 import { pixelsToRem, rem, scaledSize } from "@/lib/units";
 
@@ -38,7 +44,6 @@ import {
 } from "@/lib/size-context";
 import { useFluidHover, type ItemRect } from "@/hooks/use-fluid-hover";
 import type { IconComponent } from "@/lib/icon-context";
-import { LoaderCircle } from "@/lib/icons";
 import { resolveSlotTemplate, SlotElement } from "@/components/ui/sidebar-core";
 import { FluidHoverHighlight } from "@/components/fluid-hover-highlight";
 
@@ -1017,35 +1022,36 @@ function MenuRowMark({
   const isAttention = !isLoading && !!attentionLabel;
   const tone = attentionTone === "danger" ? "danger" : "warning";
   return (
-    <Tooltip content={label}><span
-      data-sidebar="menu-status"
-      data-state={isLoading ? "loading" : isAttention ? "attention" : "unseen"}
-      data-tone={isLoading ? undefined : isAttention ? tone : "info"}
-      className="ml-auto flex size-4 shrink-0 items-center justify-center"
-    >
-      <span className="sr-only">, {label}</span>
-      {isLoading ? (
-        <LoaderCircle
-          size={rem(14)}
-          className={cn(
-            "animate-spin motion-reduce:animate-none",
-            lit ? "text-foreground" : "text-muted-foreground",
-          )}
-        />
-      ) : (
-        <span
-          aria-hidden="true"
-          className={cn(
-            "size-2 rounded-full",
-            isAttention
-              ? tone === "danger"
-                ? "bg-destructive"
-                : "bg-warning"
-              : "bg-info",
-          )}
-        />
-      )}
-    </span></Tooltip>
+    <Tooltip content={label}>
+      <span
+        data-sidebar="menu-status"
+        data-state={
+          isLoading ? "loading" : isAttention ? "attention" : "unseen"
+        }
+        data-tone={isLoading ? undefined : isAttention ? tone : "info"}
+        className="ml-auto flex size-4 shrink-0 items-center justify-center"
+      >
+        <span className="sr-only">, {label}</span>
+        {isLoading ? (
+          <ThinkingIndicatorGlyph
+            size={rem(14)}
+            className={cn(lit ? "text-foreground" : "text-muted-foreground")}
+          />
+        ) : (
+          <span
+            aria-hidden="true"
+            className={cn(
+              "size-2 rounded-full",
+              isAttention
+                ? tone === "danger"
+                  ? "bg-destructive"
+                  : "bg-warning"
+                : "bg-info",
+            )}
+          />
+        )}
+      </span>
+    </Tooltip>
   );
 }
 
@@ -1487,19 +1493,11 @@ export interface SidebarMenuSkeletonProps extends HTMLAttributes<HTMLDivElement>
   showIcon?: boolean;
 }
 
-// Deterministic width cycle (not Math.random) so server and client render the
-// same markup — a random width per render is a hydration mismatch.
-const SKELETON_WIDTHS = ["62%", "74%", "55%", "82%", "68%"];
-
 const SidebarMenuSkeleton = forwardRef<
   HTMLDivElement,
   SidebarMenuSkeletonProps
->(({ className, showIcon = false, ...props }, ref) => {
+>(({ className, showIcon = true, ...props }, ref) => {
   const sizeClasses = useSize();
-  const id = useId();
-  let sum = 0;
-  for (let i = 0; i < id.length; i++) sum += id.charCodeAt(i);
-  const width = SKELETON_WIDTHS[sum % SKELETON_WIDTHS.length];
   return (
     <div
       ref={ref}
@@ -1511,16 +1509,11 @@ const SidebarMenuSkeleton = forwardRef<
       )}
       {...props}
     >
-      {showIcon && (
-        <div
-          data-sidebar="menu-skeleton-icon"
-          className="size-4 shrink-0 animate-pulse rounded-md bg-hover"
-        />
-      )}
-      <div
-        data-sidebar="menu-skeleton-text"
-        className="h-4 flex-1 animate-pulse rounded-md bg-hover"
-        style={{ maxWidth: width }}
+      <ThinkingIndicator
+        size={sizeClasses.variant}
+        showIcon={showIcon}
+        label="Loading…"
+        className="px-0 py-0"
       />
     </div>
   );

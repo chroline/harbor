@@ -1,3 +1,4 @@
+import { ThinkingIndicator } from "./ui/thinking-indicator";
 import { useEffect, useState } from "react";
 import { Code, Scaling } from "@/lib/icons";
 import { renderMermaid } from "@/lib/mermaid";
@@ -123,9 +124,10 @@ export function MermaidBlock({ text }: { text: string }) {
             <img src={image} alt="Mermaid diagram" />
           </button>
         ) : (
-          <p className="mermaid-status" role="status">
-            Rendering diagram…
-          </p>
+          <ThinkingIndicator
+            className="mermaid-status"
+            label="Rendering diagram…"
+          />
         )}
       </figure>
       <DialogContent className="mermaid-lightbox" size="xl">
@@ -175,11 +177,13 @@ export function MermaidBlock({ text }: { text: string }) {
         {image ? (
           <MermaidCanvas image={image} zoom={zoom} onZoomChange={setZoom} />
         ) : (
-          <p className="mermaid-status" role="status">
-            {current?.failed
-              ? "Diagram preview unavailable."
-              : "Rendering diagram…"}
-          </p>
+          <div className="mermaid-status">
+            {current?.failed ? (
+              <p role="status">Diagram preview unavailable.</p>
+            ) : (
+              <ThinkingIndicator label="Rendering diagram…" />
+            )}
+          </div>
         )}
       </DialogContent>
     </Dialog>

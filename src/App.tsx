@@ -1,3 +1,4 @@
+import { ThinkingIndicatorGlyph } from "./components/ui/thinking-indicator";
 import { Tooltip } from "./components/ui/tooltip";
 import { supportedProviderId, defaultProvider } from "./lib/providers";
 import {
@@ -68,7 +69,6 @@ import {
   Archive,
   Pin,
   PinOff,
-  LoaderCircle,
 } from "@/lib/icons";
 import { Button } from "./components/ui/button";
 import {
@@ -966,7 +966,7 @@ export default function App() {
               disabled={deleteBusy}
               onClick={() => void deleteChat()}
             >
-              {deleteBusy && <LoaderCircle size={rem(14)} className="spin" />}
+              {deleteBusy && <ThinkingIndicatorGlyph size={rem(14)} />}
               Archive and delete
             </Button>
           </div>

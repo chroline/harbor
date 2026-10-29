@@ -1,3 +1,4 @@
+import { ThinkingIndicator } from "./ui/thinking-indicator";
 import { Tooltip } from "./ui/tooltip";
 import {
   useEffect,
@@ -217,12 +218,11 @@ export function BaseBranchPicker({
           aria-label="Search base branches"
         />
         {!current && (
-          <div
-            role="status"
-            className="px-2 py-1 text-[length:var(--fs-body-compact)] text-muted-foreground"
-          >
-            Loading branches…
-          </div>
+          <ThinkingIndicator
+            size="compact"
+            className="px-2 py-1 text-muted-foreground"
+            label="Loading branches…"
+          />
         )}
         {current?.error && (
           <div className="px-2 py-1">

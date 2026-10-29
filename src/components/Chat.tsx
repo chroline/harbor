@@ -1,3 +1,4 @@
+import { ThinkingIndicatorGlyph } from "./ui/thinking-indicator";
 import { PromptQueue } from "./PromptQueue";
 import { usePromptQueue } from "../lib/prompt-queue";
 import type { QueueSnapshot } from "../lib/bindings/QueueSnapshot";
@@ -63,7 +64,6 @@ import {
   TerminalSquare,
   ChevronRight,
   Check,
-  LoaderCircle,
   RefreshCw,
   ShieldCheck,
   Plus,
@@ -1295,7 +1295,7 @@ export function ToolCard({
       title={
         <span className="tool-summary" data-status={tool.status}>
           {tool.status === "in_progress" ? (
-            <LoaderCircle className="spin" size={rem(14)} />
+            <ThinkingIndicatorGlyph size={rem(14)} />
           ) : (
             <ToolGlyph
               kind={toolActivityKind(tool)}

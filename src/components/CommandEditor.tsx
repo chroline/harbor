@@ -1,3 +1,4 @@
+import { ThinkingIndicator } from "./ui/thinking-indicator";
 import {
   CommandMenu,
   CommandMenuList,
@@ -402,13 +403,18 @@ function Editor({
                   )}
                 >
                   <CommandMenuEmpty>
-                    {catalog.status === "loading"
-                      ? "Loading commands and skills…"
-                      : catalog.status === "error"
-                        ? "Couldn’t load commands and skills."
-                        : catalog.status === "unavailable"
-                          ? "This agent has not advertised commands or skills."
-                          : "No matching commands or skills."}
+                    {catalog.status === "loading" ? (
+                      <ThinkingIndicator
+                        size="compact"
+                        label="Loading commands and skills…"
+                      />
+                    ) : catalog.status === "error" ? (
+                      "Couldn’t load commands and skills."
+                    ) : catalog.status === "unavailable" ? (
+                      "This agent has not advertised commands or skills."
+                    ) : (
+                      "No matching commands or skills."
+                    )}
                     {catalog.status === "error" && (
                       <Button variant="ghost" size="sm" onClick={catalog.retry}>
                         Retry

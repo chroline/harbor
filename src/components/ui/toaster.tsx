@@ -3,10 +3,11 @@
 // Original store, DOM, timer, gestures and keyboard behavior retained.
 // Status and dismiss glyphs use Harbor's shared Tabler icon wrappers.
 // Recovered JavaScript internals; explicit public TypeScript API below.
+import { ThinkingIndicatorGlyph } from "./thinking-indicator";
 import * as React from "react";
 import * as jsxRuntime from "react/jsx-runtime";
 import toasterStyles from "./toaster.css?inline";
-import { CheckCircle, CircleAlert, Info, LoaderCircle, X } from "@/lib/icons";
+import { CheckCircle, CircleAlert, Info, X } from "@/lib/icons";
 /* empty css             */ var toasts = [],
   listeners = new Set(),
   serverToasts = [],
@@ -146,7 +147,7 @@ var toastApi = Object.assign((e, t) => upsertToast(`default`, e, t), {
 function StatusIcon({ type }: { type: string }) {
   const Icon =
     type === "loading"
-      ? LoaderCircle
+      ? ThinkingIndicatorGlyph
       : type === "success"
         ? CheckCircle
         : type === "error"
@@ -154,9 +155,7 @@ function StatusIcon({ type }: { type: string }) {
           : Info;
   return (
     <Icon
-      className={
-        type === "loading" ? "ui-tsc__status ui-tsc__spin" : "ui-tsc__status"
-      }
+      className="ui-tsc__status"
     />
   );
 }

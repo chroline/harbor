@@ -1,3 +1,4 @@
+import { ThinkingIndicatorGlyph } from "./ui/thinking-indicator";
 import { rem } from "@/lib/units";
 import { RadioGroup, RadioItem } from "./ui/radio-group";
 import { useEffect, useState } from "react";
@@ -166,8 +167,14 @@ export function Settings() {
           <Picker
             label="Time of day"
             className="editor-setting"
-            value={timeForTheme(skylineTimeOfDay(settings.skylineTimeOfDay), theme)}
-            items={skylineTimesOfDay.filter(({ value }) => value === "automatic" || timeForTheme(value, theme) === value)}
+            value={timeForTheme(
+              skylineTimeOfDay(settings.skylineTimeOfDay),
+              theme,
+            )}
+            items={skylineTimesOfDay.filter(
+              ({ value }) =>
+                value === "automatic" || timeForTheme(value, theme) === value,
+            )}
             disabled={saving}
             onValueChange={(value) => {
               if (value !== skylineTimeOfDay(settings.skylineTimeOfDay))
@@ -203,6 +210,7 @@ export function Settings() {
             className="editor-setting"
             value={selectedEditor}
             items={editors}
+            icon={loadingEditors ? ThinkingIndicatorGlyph : undefined}
             placeholder={
               !desktop
                 ? "Open desktop app"

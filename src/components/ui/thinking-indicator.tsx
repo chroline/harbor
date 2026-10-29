@@ -1,25 +1,85 @@
 "use client";
 
-import { forwardRef, useState, useEffect, type HTMLAttributes } from "react";
+import {
+  forwardRef,
+  useState,
+  useEffect,
+  type HTMLAttributes,
+  type SVGProps,
+} from "react";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { rem } from "@/lib/units";
-import { LoaderCircle } from "@/lib/icons";
 import { fontWeights } from "@/lib/font-weight";
 import { useSize, typeClass, type SizeVariant } from "@/lib/size-context";
 
 // The label moves to the next word every 4000ms.
 const defaultWords = ["Thinking", "Moonwalking", "Planning", "Refining"];
 
-/** Library-backed activity glyph for use inside an existing status label. */
-export function ThinkingIndicatorGlyph({ size }: { size?: SizeVariant }) {
-  const compact = useSize(size).variant === "compact";
+// Morph geometry and timing: https://www.fluidfunctionalism.com/docs/thinking-indicator
+// The glyph is one path morphing circle → infinity → circle → infinity →
+// circle. All 3 shapes share the same commands (a move, 4 curves, a close),
+// so the morph interpolates point for point. circleA and circleB trace the
+// same circle in opposite directions: each pass through the infinity sign
+// keeps flowing the same way instead of unwinding.
+const circleA =
+  "M 12 8 C 14.21 8 16 9.79 16 12 C 16 14.21 14.21 16 12 16 C 9.79 16 8 14.21 8 12 C 8 9.79 9.79 8 12 8 Z";
+
+const infinity =
+  "M 12 12 C 14 8.5 19 8.5 19 12 C 19 15.5 14 15.5 12 12 C 10 8.5 5 8.5 5 12 C 5 15.5 10 15.5 12 12 Z";
+
+const circleB =
+  "M 12 16 C 14.21 16 16 14.21 16 12 C 16 9.79 14.21 8 12 8 C 9.79 8 8 9.79 8 12 C 8 14.21 9.79 16 12 16 Z";
+
+/** Shared activity glyph, including when an existing control supplies the label. */
+export function ThinkingIndicatorGlyph({
+  size,
+  className,
+  ...props
+}: Omit<SVGProps<SVGSVGElement>, "ref"> & {
+  size?: SizeVariant | number | string;
+}) {
+  const compact =
+    useSize(size === "compact" || size === "default" ? size : undefined)
+      .variant === "compact";
+  const dimension =
+    size == null || size === "compact" || size === "default"
+      ? rem(compact ? 18 : 20)
+      : rem(size);
+  const reduceMotion = useReducedMotion() ?? false;
   return (
-    <LoaderCircle
+    <svg
       data-slot="thinking-indicator-glyph"
-      size={rem(compact ? 18 : 20)}
-      className="text-muted-foreground shrink-0 animate-spin motion-reduce:animate-none"
-    />
+      aria-hidden="true"
+      width={dimension}
+      height={dimension}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={cn("shrink-0", className)}
+      {...props}
+    >
+      {reduceMotion ? (
+        <path d={infinity} />
+      ) : (
+        <motion.path
+          d={circleA}
+          initial={{ d: circleA }}
+          animate={{ d: [circleA, infinity, circleB, infinity, circleA] }}
+          transition={{
+            d: {
+              duration: 6,
+              ease: "easeInOut",
+              repeat: Infinity,
+              times: [0, 0.25, 0.5, 0.75, 1],
+            },
+          }}
+        />
+      )}
+    </svg>
   );
 }
 
@@ -38,7 +98,7 @@ const ThinkingIndicator = forwardRef<HTMLDivElement, ThinkingIndicatorProps>(
     const words = label ? [label] : defaultWords;
     const compactStep = useSize(size).variant === "compact";
     const [index, setIndex] = useState(0);
-    // Reduced motion drops the glyph rotation and the word cycling — a
+    // Reduced motion drops the glyph morph and the word cycling — a
     // static glyph and label carry the same meaning without the movement.
     const reduceMotion = useReducedMotion() ?? false;
 
@@ -61,7 +121,12 @@ const ThinkingIndicator = forwardRef<HTMLDivElement, ThinkingIndicatorProps>(
           so screen readers hear one "Thinking…" instead of a re-announcement
           every 4 seconds. */}
         <span className="sr-only">{label ?? "Thinking…"}</span>
-        {showIcon && <ThinkingIndicatorGlyph size={size} />}
+        {showIcon && (
+          <ThinkingIndicatorGlyph
+            size={size}
+            className="text-muted-foreground"
+          />
+        )}
         {/* Every word sits in the same grid cell. overflow-hidden clips them
           as they roll in from below and out the top, like a slot. */}
         <span

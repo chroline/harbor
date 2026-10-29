@@ -1,3 +1,4 @@
+import { ThinkingIndicatorGlyph } from "./ui/thinking-indicator";
 import { createContext, useContext, useEffect, useState } from "react";
 import { call } from "../lib/api";
 import { LightboxPhoto } from "./ui/lightbox";
@@ -60,7 +61,10 @@ export function MessageImage({
     );
   if (!resolved)
     return (
-      <span className="text-sm text-muted-foreground">Loading image…</span>
+      <span role="status" className="inline-flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground">
+        <ThinkingIndicatorGlyph />
+        <span className="shimmer-text">Loading image…</span>
+      </span>
     );
   return (
     <LightboxPhoto

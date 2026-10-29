@@ -1,3 +1,4 @@
+import { ThinkingIndicator } from "./ui/thinking-indicator";
 import {
   createContext,
   useCallback,
@@ -411,7 +412,12 @@ export function ChatScroller({
 }) {
   if (!ready)
     return (
-      <div className="conversation-scroll" aria-label="Loading messages" />
+      <div className="conversation-scroll flex items-center justify-center">
+        <ThinkingIndicator
+          label="Loading messages"
+          aria-label="Loading messages"
+        />
+      </div>
     );
   return (
     <MessageScrollerProvider

@@ -1,3 +1,7 @@
+import {
+  ThinkingIndicator,
+  ThinkingIndicatorGlyph,
+} from "./ui/thinking-indicator";
 import { Tooltip } from "./ui/tooltip";
 import { rem } from "@/lib/units";
 import {
@@ -119,7 +123,11 @@ export function Worktrees({
           onClick={() => void load()}
         >
           <span className="inline-flex items-center gap-2">
-            <RefreshCw size={rem(14)} className={busy ? "spin" : ""} />
+            {busy ? (
+              <ThinkingIndicatorGlyph size={14} />
+            ) : (
+              <RefreshCw size={rem(14)} />
+            )}
             <span className="worktrees-refresh-label">Refresh</span>
           </span>
         </Button>
@@ -135,9 +143,8 @@ export function Worktrees({
           </Banner>
         )}
         {busy && !rows.length ? (
-          <div className="large-empty" role="status">
-            <RefreshCw size={rem(24)} className="spin" aria-hidden="true" />
-            <p>Loading worktrees…</p>
+          <div className="large-empty">
+            <ThinkingIndicator label="Loading worktrees…" />
           </div>
         ) : rows.length ? (
           <div className="worktree-table-wrap">
@@ -236,20 +243,26 @@ export function Worktrees({
         >
           {archives.map((a) => (
             <div className="archive-row" role="listitem" key={a.id}>
-              <Tooltip content={"Working files, ignored files, index, and Git history preserved"}><span
-                className="archive-icon"
+              <Tooltip
+                content={
+                  "Working files, ignored files, index, and Git history preserved"
+                }
               >
-                <Archive size={rem(16)} aria-hidden="true" />
-              </span></Tooltip>
+                <span className="archive-icon">
+                  <Archive size={rem(16)} aria-hidden="true" />
+                </span>
+              </Tooltip>
               <div className="archive-details">
                 <Tooltip content={
                     data.sessions.find((s) => s.id === a.sessionId)?.title ??
                     a.worktree.branch
-                  }><strong
+                  }
                 >
-                  {data.sessions.find((s) => s.id === a.sessionId)?.title ??
-                    a.worktree.branch}
-                </strong></Tooltip>
+                  <strong>
+                    {data.sessions.find((s) => s.id === a.sessionId)?.title ??
+                      a.worktree.branch}
+                  </strong>
+                </Tooltip>
                 <p className="archive-meta">
                   <span>Worktree</span>
                   <Tooltip content={a.worktree.branch}><span className="archive-context">

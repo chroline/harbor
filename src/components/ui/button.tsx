@@ -1,5 +1,7 @@
 "use client";
 
+import { ThinkingIndicatorGlyph } from "./thinking-indicator";
+
 import {
   cloneElement,
   forwardRef,
@@ -11,7 +13,6 @@ import {
 import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
 import type { IconComponent } from "@/lib/icon-context";
-import { LoaderCircle } from "@/lib/icons";
 import { cn } from "@/lib/utils";
 import { useShape } from "@/lib/shape-context";
 import { useSizeVariant } from "@/lib/size-context";
@@ -222,7 +223,7 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
                 )}
               </span>
               <span className="absolute inset-0 flex items-center justify-center">
-                <LoaderCircle size={iconSize} className="animate-spin motion-reduce:animate-none" />
+                <ThinkingIndicatorGlyph size={iconSize} />
               </span>
             </>
           ) : isIconOnly ? (

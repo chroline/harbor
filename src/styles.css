@@ -1095,14 +1095,6 @@ a {
   margin-top: 0;
   overflow-wrap: anywhere;
 }
-.provider-editor button [data-icon="LoaderCircle"] {
-  animation: spin 1.5s linear infinite;
-}
-@media (prefers-reduced-motion: reduce) {
-  .provider-editor button [data-icon="LoaderCircle"] {
-    animation: none;
-  }
-}
 .large-empty {
   padding: 4.375rem 1.25rem;
   text-align: center;

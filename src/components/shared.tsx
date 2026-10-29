@@ -1,3 +1,4 @@
+import { ThinkingIndicatorGlyph } from "./ui/thinking-indicator";
 import { isTauri } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { remarkCommandReferences } from "../lib/command-markdown";
@@ -21,7 +22,7 @@ import {
   type ReactElement,
 } from "react";
 import { StreamingText } from "./ui/streaming-text";
-import { Terminal, Copy, Check, LoaderCircle, ChevronDown } from "@/lib/icons";
+import { Terminal, Copy, Check, ChevronDown } from "@/lib/icons";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { MermaidBlock } from "./MermaidBlock";
@@ -90,7 +91,7 @@ export function ProviderIcon({
   );
 }
 export const SpinnerIcon: IconComponent = ({ className, ...props }) => (
-  <LoaderCircle {...props} className={`spin ${className ?? ""}`} />
+  <ThinkingIndicatorGlyph {...props} className={className} />
 );
 
 const glyphs = new Map<string, IconComponent>();
@@ -407,7 +408,7 @@ export function ConfigControls({ session }: { session: SessionRecord }) {
           </p>
         </>
       )}
-      {busy && <LoaderCircle size={rem(14)} className="spin" />}
+      {busy && <ThinkingIndicatorGlyph size={rem(14)} />}
       {opts.length > 0 &&
         !opts.some(
           (o) => o.category === "thought_level" || o.id.includes("effort"),

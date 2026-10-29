@@ -133,7 +133,7 @@ it("allows sending while an existing chat's configuration is syncing or failed",
     }),
   );
 });
-it("shows a skeleton while keeping partial history hidden until the full chat loads", () => {
+it("shows the thinking indicator while keeping partial history hidden until the full chat loads", () => {
   mock.loaded = false;
   mock.messages = [
     {
@@ -146,7 +146,7 @@ it("shows a skeleton while keeping partial history hidden until the full chat lo
     },
   ];
   const { rerender } = render(<Chat session={session} />);
-  expect(document.querySelector(".chat-main")?.textContent).toBe("");
+  expect(document.querySelector(".chat-main .conversation-scroll")).toBeNull();
   expect(
     screen.getByRole("status", { name: "Loading conversation" }),
   ).toBeTruthy();
@@ -169,7 +169,7 @@ it("limits automatic recovery to the mounted chat", () => {
   expect(mock.setActiveSession).toHaveBeenLastCalledWith(null);
 });
 
-it("selects a worker immediately, stays blank during rendering, and allows switching away", async () => {
+it("selects a worker immediately, shows a loading indicator during rendering, and allows switching away", async () => {
   const tabsTarget = document.createElement("div");
   tabsTarget.className = "test-chat-actions";
   document.body.appendChild(tabsTarget);
@@ -212,7 +212,7 @@ it("selects a worker immediately, stays blank during rendering, and allows switc
   expect(
     screen.getByRole("tab", { name: "Worker" }).getAttribute("aria-selected"),
   ).toBe("true");
-  expect(document.querySelector(".chat-main")?.textContent).toBe("");
+  expect(document.querySelector(".chat-main .conversation-scroll")).toBeNull();
   expect(screen.queryByText("Waiting for rendering")).toBeNull();
 
   select(session.title);
@@ -610,7 +610,7 @@ it("keeps native terminal handoff available as a task tab", async () => {
       .getByRole("tab", { name: session.title })
       .getAttribute("aria-selected"),
   ).toBe("true");
-  expect(document.querySelector(".chat-main")?.textContent).toBe("");
+  expect(document.querySelector(".chat-main .conversation-scroll")).toBeNull();
   await waitFor(() =>
     expect(mock.call).toHaveBeenCalledWith("reconnect", { sessionId: "chat" }),
   );

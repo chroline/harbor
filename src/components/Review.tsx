@@ -1,3 +1,7 @@
+import {
+  ThinkingIndicator,
+  ThinkingIndicatorGlyph,
+} from "./ui/thinking-indicator";
 import { rem } from "@/lib/units";
 import { ActionList } from "./fluid";
 import { TabsSubtle, TabsSubtleItem } from "./ui/tabs-subtle";
@@ -83,7 +87,11 @@ export function Review({
         </span>
         <div>
           <IconButton label="Refresh changes" onClick={() => void refresh()}>
-            <RefreshCw size={rem(14)} className={busy ? "spin" : ""} />
+            {busy ? (
+              <ThinkingIndicatorGlyph size={14} />
+            ) : (
+              <RefreshCw size={rem(14)} />
+            )}
           </IconButton>
           <TabsSubtle
             selectedIndex={split ? 1 : 0}
@@ -161,9 +169,10 @@ export function Review({
               after={text}
             />
           ) : (
-            <p className="file-change-note" role="status">
-              Loading file…
-            </p>
+            <ThinkingIndicator
+              className="file-change-note"
+              label="Loading file…"
+            />
           )}
         </div>
       ) : data?.diff ? (

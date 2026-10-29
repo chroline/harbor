@@ -1,3 +1,4 @@
+import { ThinkingIndicator } from "./ui/thinking-indicator";
 import { Tooltip } from "./ui/tooltip";
 import { findAdapter } from "../adapters";
 import { ComposerPickerSurface } from "./composer-picker";
@@ -447,13 +448,13 @@ export function ModelMenu({
                       }))}
                     />
                     {!shown.length && (
-                      <p className="model-menu-empty">
+                      <div className="model-menu-empty">
                         {busy
-                          ? "Loading models…"
+                          ? <ThinkingIndicator size="compact" label="Loading models…" />
                           : query
                             ? "No matching models"
                             : "No models available"}
-                      </p>
+                      </div>
                     )}
                   </div>
                   {current?.description && (

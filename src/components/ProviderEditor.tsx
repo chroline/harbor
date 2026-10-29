@@ -1,7 +1,8 @@
+import { ThinkingIndicatorGlyph } from "./ui/thinking-indicator";
 import { supportedProviderId } from "../lib/providers";
 import { useId, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { RefreshCw, LoaderCircle, ChevronDown } from "@/lib/icons";
+import { RefreshCw, ChevronDown } from "@/lib/icons";
 import { Card } from "./ui/card";
 import {
   Collapsible,
@@ -94,7 +95,11 @@ export function ProviderEditor({
     try {
       await save();
       if (action === "check")
-        setProbe(await call<ProviderProbe>("probe_provider", { providerId: supportedProviderId(value.id) }));
+        setProbe(
+          await call<ProviderProbe>("probe_provider", {
+            providerId: supportedProviderId(value.id),
+          }),
+        );
       else onDone();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -204,13 +209,37 @@ export function ProviderEditor({
           status={probe.status === "ready" ? "success" : "warning"}
         >
           <BannerTitle>
-            {({ ready: "Connected", missing_executable: "Executable not found", incompatible_protocol: "Incompatible adapter", authentication_required: "Sign-in required", timed_out: "Connection timed out", connection_failed: "Connection failed" })[probe.status]}
+            {
+              {
+                ready: "Connected",
+                missing_executable: "Executable not found",
+                incompatible_protocol: "Incompatible adapter",
+                authentication_required: "Sign-in required",
+                timed_out: "Connection timed out",
+                connection_failed: "Connection failed",
+              }[probe.status]
+            }
           </BannerTitle>
           <BannerDescription>
             <span>{probe.message}</span>
             <span>Native CLI: {probe.version ?? "Version unavailable"}</span>
-            {str(record(probe.agentInfo).version) && <span>ACP adapter: {str(record(probe.agentInfo).name)} {str(record(probe.agentInfo).version)}</span>}
-            {array(probe.authMethods).length > 0 && <span>Authentication methods: {array(probe.authMethods).map((method) => str(record(method).name, str(record(method).id))).join(", ")}. Sign in through the provider CLI, then check again.</span>}
+            {str(record(probe.agentInfo).version) && (
+              <span>
+                ACP adapter: {str(record(probe.agentInfo).name)}{" "}
+                {str(record(probe.agentInfo).version)}
+              </span>
+            )}
+            {array(probe.authMethods).length > 0 && (
+              <span>
+                Authentication methods:{" "}
+                {array(probe.authMethods)
+                  .map((method) =>
+                    str(record(method).name, str(record(method).id)),
+                  )
+                  .join(", ")}
+                . Sign in through the provider CLI, then check again.
+              </span>
+            )}
             <span>
               Worktrunk: {probe.worktrunk ? "Installed" : "Not installed"}
             </span>
@@ -242,7 +271,7 @@ export function ProviderEditor({
           variant="secondary"
           className="min-w-[12.5rem]"
           disabled={busy || !valid}
-          leadingIcon={pending === "check" ? LoaderCircle : RefreshCw}
+          leadingIcon={pending === "check" ? ThinkingIndicatorGlyph : RefreshCw}
           onClick={() => void submit("check")}
         >
           {pending === "check" ? "Checking…" : "Save and check"}
@@ -250,7 +279,7 @@ export function ProviderEditor({
         <Button
           className="primary-button min-w-[7.5rem]"
           disabled={busy || !valid}
-          leadingIcon={pending === "save" ? LoaderCircle : undefined}
+          leadingIcon={pending === "save" ? ThinkingIndicatorGlyph : undefined}
           onClick={() => void submit("save")}
         >
           {pending === "save" ? "Saving…" : "Save changes"}

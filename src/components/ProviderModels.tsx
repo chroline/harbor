@@ -1,3 +1,4 @@
+import { ThinkingIndicatorGlyph } from "./ui/thinking-indicator";
 import { Picker } from "./fluid";
 import { Button } from "./ui/button";
 import { Switch } from "./ui/switch";
@@ -35,6 +36,7 @@ export function ProviderModels({
               label="Model"
               searchable
               value={str(record(state.config?.models).currentModelId)}
+              icon={state.busy ? ThinkingIndicatorGlyph : undefined}
               placeholder={state.busy ? "Loading models…" : "Unavailable"}
               disabled={disabled || state.busy || !legacy.length}
               items={legacy}
