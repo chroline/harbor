@@ -252,6 +252,16 @@ pub enum CommandRequest {
         x: f64,
         y: f64,
     },
+    ListToolProcesses {
+        #[ts(rename = "sessionId")]
+        session_id: String,
+    },
+    StopToolProcess {
+        #[ts(rename = "sessionId")]
+        session_id: String,
+        #[ts(rename = "processId")]
+        process_id: String,
+    },
     ListShellTerminals {
         #[ts(rename = "sessionId")]
         session_id: String,

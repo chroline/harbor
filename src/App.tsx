@@ -1,3 +1,5 @@
+import type { ToolProcess } from "./hooks/use-tool-processes";
+import { BackgroundProcesses } from "./components/BackgroundProcesses";
 import { ThinkingIndicatorGlyph } from "./components/ui/thinking-indicator";
 import { Tooltip } from "./components/ui/tooltip";
 import { supportedProviderId, defaultProvider } from "./lib/providers";
@@ -191,6 +193,7 @@ export default function App() {
     typeof view === "object"
       ? sessions.find((s) => s.id === view.session)
       : undefined;
+  const [processRequest, setProcessRequest] = useState<{ sessionId: string; process: ToolProcess; nonce: number } | null>(null);
   const activeIdRef = useRef(active?.id);
   activeIdRef.current = active?.id;
   const unseen = useUnseenTurns(sessions, active?.id);
@@ -576,6 +579,7 @@ export default function App() {
           )}
         </div>
         <div className="topbar-right">
+          {active && <BackgroundProcesses key={active.id} sessionId={active.id} onOpen={(process) => setProcessRequest((previous) => ({ sessionId: active.id, process, nonce: (previous?.nonce ?? 0) + 1 }))} />}
           {!desktop && <span className="preview-label">Browser preview</span>}
           {view === "home" && (
             <DropdownMenu open={notifications} onOpenChange={setNotifications}>
@@ -890,6 +894,8 @@ export default function App() {
               <Chat
                 key={active.id}
                 session={active}
+                processRequest={processRequest?.sessionId === active.id ? processRequest : undefined}
+                onProcessOpened={() => setProcessRequest(null)}
                 tabsTarget={chatTabsTarget}
                 onTabDividerChange={setTabDividerVisible}
               />

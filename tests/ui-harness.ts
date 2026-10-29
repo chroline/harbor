@@ -9,6 +9,7 @@ import type { Bootstrap } from "../src/lib/bindings/Bootstrap";
 import type { SessionRecord } from "../src/lib/bindings/SessionRecord";
 import type { SessionEvent } from "../src/lib/bindings/SessionEvent";
 import { populateShowcase } from "./showcase-fixture";
+const toolProcesses: import("../src/components/BackgroundProcesses").ToolProcess[] = [];
 const attachmentPreviews = new Map<string, string>();
 const showcase = new URLSearchParams(location.search).has("showcase");
 const data: Bootstrap = {
@@ -444,6 +445,13 @@ mockIPC(
         return;
       case "get_detached_tab":
         return [...detachedTabs.values()][0];
+      case "list_tool_processes":
+        return structuredClone(toolProcesses);
+      case "stop_tool_process": {
+        const process = toolProcesses.find((p) => p.id === args.processId);
+        if (process) { process.stopped = true; process.exitCode = 137; }
+        return;
+      }
       case "list_shell_terminals":
         return [...shellTerminals.values()]
           .filter((t) => t.owner === args.sessionId)
@@ -507,6 +515,7 @@ if (!showcase) document.body.append(label);
 
 Object.assign(window, {
   __harborFixture: {
+    setToolProcesses: (processes: typeof toolProcesses) => { toolProcesses.splice(0, toolProcesses.length, ...processes); },
     showQuestion: async (provider: string) => {
       const s = data.sessions.at(-1)!;
       await event(s, "disconnected", {});

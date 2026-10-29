@@ -1,4 +1,6 @@
 import { ThinkingIndicatorGlyph } from "./ui/thinking-indicator";
+import { ProcessTerminal } from "./ProcessTerminal";
+import type { ToolProcess } from "../hooks/use-tool-processes";
 import { PromptQueue } from "./PromptQueue";
 import { usePromptQueue } from "../lib/prompt-queue";
 import type { QueueSnapshot } from "../lib/bindings/QueueSnapshot";
@@ -95,12 +97,16 @@ export function Chat({
   onTabDividerChange,
   standaloneTab,
   initialDraft,
+  processRequest,
+  onProcessOpened,
 }: {
   session: SessionRecord;
   tabsTarget?: HTMLDivElement | null;
   onTabDividerChange?: (visible: boolean) => void;
   standaloneTab?: string;
   initialDraft?: string;
+  processRequest?: { process: ToolProcess; nonce: number };
+  onProcessOpened?: () => void;
 }) {
   const {
     data,
@@ -121,6 +127,20 @@ export function Chat({
       ? initialTab.slice(6)
       : null,
   );
+  const [processTabs, setProcessTabs] = useState<ToolProcess[]>([]);
+  const [activeProcess, setActiveProcess] = useState<string | null>(null);
+  useEffect(() => {
+    if (!processRequest) return;
+    const process = processRequest.process;
+    setProcessTabs((tabs) => tabs.some((p) => p.id === process.id) ? tabs : [...tabs, process]);
+    terminals.setActive(null);
+    setActiveProcess(process.id);
+    onProcessOpened?.();
+  }, [processRequest]);
+  const closeProcessTab = (id: string) => {
+    setProcessTabs((tabs) => tabs.filter((p) => p.id !== id));
+    setActiveProcess((active) => active === id ? null : active);
+  };
   const transcript = transcripts[session.id] ?? emptyTranscript();
   const [draft, setDraft] = useRootDraft(
     session.id,
@@ -489,7 +509,16 @@ export function Chat({
         if (e.key.toLowerCase() === "t") {
           if (standaloneTab) return;
           e.preventDefault();
+          setActiveProcess(null);
           void terminals.create();
+          return;
+        }
+        if (
+          e.key.toLowerCase() === "w" &&
+          activeProcess
+        ) {
+          e.preventDefault();
+          closeProcessTab(activeProcess);
           return;
         }
         if (
@@ -513,7 +542,7 @@ export function Chat({
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, [session, terminals, standaloneTab, taskTabs.detached]);
+  }, [session, terminals, standaloneTab, taskTabs.detached, activeProcess]);
   const messages = useMemo(
     () =>
       conversationReady
@@ -543,7 +572,9 @@ export function Chat({
     !connected &&
     !!session.error &&
     /auth|sign.?in|log.?in|credential/i.test(session.error);
-  const activeTab = terminals.active
+  const activeTab = activeProcess
+    ? `process:${activeProcess}`
+    : terminals.active
     ? `shell:${terminals.active}`
     : nativeTerminal
       ? "terminal"
@@ -553,7 +584,7 @@ export function Chat({
   useEffect(() => {
     // Wait for both sources before validating a saved selection. Otherwise
     // the initial empty tab list would overwrite it during startup.
-    if (standaloneTab || !terminals.loaded || !historyLoaded) return;
+    if (standaloneTab || activeProcess || !terminals.loaded || !historyLoaded) return;
     if (child && !transcript.children[child]) {
       setChild(null);
       return;
@@ -562,6 +593,7 @@ export function Chat({
   }, [
     session.id,
     activeTab,
+    activeProcess,
     child,
     terminals.loaded,
     historyLoaded,
@@ -594,6 +626,7 @@ export function Chat({
             },
           ]
         : []),
+      ...processTabs.map((process) => ({ id: `process:${process.id}`, title: process.command, status: "", shellId: "" })),
       ...terminals.tabs.map((tab) => ({
         id: `shell:${tab.id}`,
         title: tab.title,
@@ -735,6 +768,12 @@ export function Chat({
           taskTabs.focus(value);
           return;
         }
+        if (value.startsWith("process:")) {
+          terminals.setActive(null);
+          setActiveProcess(value.slice(8));
+          return;
+        }
+        setActiveProcess(null);
         if (value.startsWith("shell:")) {
           terminals.setActive(value.slice("shell:".length));
           return;
@@ -764,7 +803,7 @@ export function Chat({
                   const surface = (
                     <div
                       className={`task-tab-surface${floating ? " topbar task-tab-floating" : ""}`}
-                      {...taskTabs.surfaceProps(tab.id)}
+                      {...(tab.id.startsWith("process:") ? {} : taskTabs.surfaceProps(tab.id))}
                     >
                       <Tabs.Trigger
                         value={tab.id}
@@ -783,11 +822,12 @@ export function Chat({
                           className="task-tab"
                           onClick={() => {
                             if (detached) taskTabs.focus(tab.id);
+
                           }}
                         >
                           {detached ? (
                             <ExternalLink size={rem(14)} aria-hidden="true" />
-                          ) : tab.shellId ? (
+                          ) : tab.shellId || tab.id.startsWith("process:") ? (
                             <TerminalSquare size={rem(14)} aria-hidden="true" />
                           ) : null}
                           <span className="task-tab-label">
@@ -802,13 +842,13 @@ export function Chat({
                           )}
                         </Button>
                       </Tabs.Trigger>
-                      {(!!tab.shellId || tab.id === "terminal") && !detached && (
+                      {(!!tab.shellId || tab.id === "terminal" || tab.id.startsWith("process:")) && !detached && (
                         <IconButton
                           label={`Close ${tab.title}`}
                           size="icon-compact"
                           className="terminal-tab-close"
                           disabled={tab.id === "terminal" && busy}
-                          onClick={() => void (tab.id === "terminal"
+                          onClick={() => void (tab.id.startsWith("process:") ? closeProcessTab(tab.id.slice(8)) : tab.id === "terminal"
                             ? closeNativeTerminal()
                             : terminals.close(tab.shellId))}
                         >
@@ -819,9 +859,9 @@ export function Chat({
                   );
                   return (
                     <div
-                      className={`task-tab-item${tab.shellId ? " terminal-tab" : ""}`}
+                      className={`task-tab-item${tab.shellId || tab.id.startsWith("process:") ? " terminal-tab" : ""}`}
                       key={tab.id}
-                      {...taskTabs.props(tab.id, tab.title, tabIds)}
+                      {...(tab.id.startsWith("process:") ? {} : taskTabs.props(tab.id, tab.title, tabIds))}
                     >
                       {floating
                         ? createPortal(surface, document.body)
@@ -834,7 +874,7 @@ export function Chat({
                 label="New terminal tab"
                 size="icon-compact"
                 disabled={terminals.creating}
-                onClick={() => void terminals.create()}
+                onClick={() => { setActiveProcess(null); void terminals.create(); }}
               >
                 <Plus size={rem(15)} />
               </IconButton>
@@ -842,7 +882,7 @@ export function Chat({
             tabsTarget,
           )}
         <Tabs.Content
-          value={terminals.active ? "conversation" : activeTab}
+          value={terminals.active || activeProcess ? "conversation" : activeTab}
           forceMount
           asChild
         >
@@ -850,7 +890,7 @@ export function Chat({
             variant="chat"
             city={skylineCity(record(data.settings).skylineCity)}
             style={
-              terminals.active || detachedActive
+              terminals.active || activeProcess || detachedActive
                 ? { display: "none" }
                 : undefined
             }
@@ -1079,6 +1119,13 @@ export function Chat({
             </Button>
           </section>
         )}
+        {processTabs.map((process) => (
+          <Tabs.Content key={process.id} value={`process:${process.id}`} forceMount asChild>
+            <section className="chat-main shell-terminal-pane" style={{display: activeProcess === process.id ? "flex" : "none"}}>
+              <ProcessTerminal sessionId={session.id} initial={process} visible={activeProcess === process.id} />
+            </section>
+          </Tabs.Content>
+        ))}
         {terminals.tabs
           .filter(
             (tab) =>
@@ -1094,7 +1141,7 @@ export function Chat({
               <section
                 className="chat-main shell-terminal-pane"
                 style={{
-                  display: terminals.active === tab.id ? "flex" : "none",
+                  display: !activeProcess && terminals.active === tab.id ? "flex" : "none",
                 }}
               >
                 <NativeTerminal
@@ -1115,6 +1162,7 @@ export function Chat({
           session.isGit &&
           conversationReady &&
           !terminals.active &&
+          !activeProcess &&
           !detachedActive && (
             <Review sessionId={session.id} onClose={() => setReview(false)} />
           )}

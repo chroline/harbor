@@ -32,6 +32,7 @@ vi.mock("../lib/api", () => ({
   call: mock.call,
   json: (value: unknown) => value,
 }));
+vi.mock("./ProcessTerminal", () => ({ ProcessTerminal: ({ initial }: { initial: { command: string } }) => <div data-testid="process-terminal">{initial.command}</div> }));
 vi.mock("./NativeTerminal", () => ({ NativeTerminal: () => null }));
 vi.mock("./ChatTranscript", async (original) => {
   const { ChatTranscript: Transcript } =
@@ -759,4 +760,20 @@ it("cancels the active turn with Escape and preserves the draft", () => {
   fireEvent.keyDown(input, { key: "Escape" });
   expect(mock.call).toHaveBeenCalledWith("cancel_turn", { sessionId: "chat", childId: null });
   expect(input.textContent).toBe("Keep my draft");
+});
+
+it("opens a process in a reusable terminal tab and closes the view without stopping it", async () => {
+  const tabsTarget = document.createElement("div");
+  document.body.appendChild(tabsTarget);
+  const process = { id:"watch",command:"watch CI",cwd:"/workspace",startedAt:1,wireSessionId:"root",output:"pending",truncated:false,exitCode:null,stopped:false };
+  const view = render(<Chat session={session} tabsTarget={tabsTarget} processRequest={{process,nonce:1}} />);
+  await screen.findByTestId("process-terminal");
+  expect(screen.getByRole("tab", { name:"watch CI" }).getAttribute("data-state")).toBe("active");
+  view.rerender(<Chat session={session} tabsTarget={tabsTarget} processRequest={{process,nonce:2}} />);
+  expect(screen.getAllByRole("tab",{name:"watch CI"})).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button",{name:"Close watch CI"}));
+  expect(screen.queryByTestId("process-terminal")).toBeNull();
+  expect(screen.queryByRole("tab",{name:"watch CI"})).toBeNull();
+  expect(mock.call.mock.calls.some(([command]) => command === "stop_tool_process")).toBe(false);
+  tabsTarget.remove();
 });

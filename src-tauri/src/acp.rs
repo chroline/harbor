@@ -22,12 +22,26 @@ use tokio::{
 type Reply = Result<Value, String>;
 pub type Sink = Arc<dyn Fn(&str, Value) + Send + Sync>;
 struct ToolTerminal {
+    command: String,
+    cwd: String,
+    started_at: u64,
+    session_id: String,
+    stopped: AtomicBool,
     child: Mutex<Child>,
     output: Arc<Mutex<Vec<u8>>>,
     truncated: Arc<AtomicBool>,
     status: Arc<Mutex<Option<i32>>>,
 }
 impl ToolTerminal {
+    async fn snapshot(&self, id: &str) -> Value {
+        let output = self.output.lock().await;
+        let tail = &output[output.len().saturating_sub(32768)..];
+        json!({"id":id,"command":self.command,"cwd":self.cwd,"startedAt":self.started_at,
+            "wireSessionId":self.session_id,"output":String::from_utf8_lossy(tail),
+            "truncated":self.truncated.load(Ordering::SeqCst) || tail.len() < output.len(),
+            "exitCode":*self.status.lock().await,"stopped":self.stopped.load(Ordering::SeqCst)})
+    }
+
     async fn publish_output(&self, sink: &Sink, id: &str) -> Value {
         // Serialize snapshots with readers so a late event cannot replace newer output.
         let output = self.output.lock().await;
@@ -48,6 +62,7 @@ pub struct Rpc {
     pending: Mutex<HashMap<String, oneshot::Sender<Reply>>>,
     pub inbound: Mutex<HashMap<String, Value>>,
     tools: Mutex<HashMap<String, Arc<ToolTerminal>>>,
+    completed_tools: Mutex<Vec<(String, Arc<ToolTerminal>)>>,
     attachment_reads: Mutex<HashSet<PathBuf>>,
     next: AtomicU64,
     pub alive: AtomicBool,
@@ -191,6 +206,7 @@ impl Rpc {
             pending: Mutex::new(HashMap::new()),
             inbound: Mutex::new(HashMap::new()),
             tools: Mutex::new(HashMap::new()),
+            completed_tools: Mutex::new(Vec::new()),
             attachment_reads: Mutex::new(HashSet::new()),
             next: AtomicU64::new(1),
             alive: AtomicBool::new(true),
@@ -580,7 +596,7 @@ impl Rpc {
                         );
                     }
                 }
-                cmd.current_dir(cwd)
+                cmd.current_dir(&cwd)
                     .stdin(Stdio::null())
                     .stdout(Stdio::piped())
                     .stderr(Stdio::piped())
@@ -598,6 +614,11 @@ impl Rpc {
                     .min(4_194_304) as usize;
                 let id = crate::types::id();
                 let terminal = Arc::new(ToolTerminal {
+                    command: std::iter::once(command).chain(p["args"].as_array().into_iter().flatten().filter_map(Value::as_str)).collect::<Vec<_>>().join(" "),
+                    cwd: cwd.to_string_lossy().into_owned(),
+                    started_at: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64,
+                    session_id: p["sessionId"].as_str().unwrap_or_default().into(),
+                    stopped: AtomicBool::new(false),
                     child: Mutex::new(child),
                     output,
                     truncated,
@@ -629,7 +650,26 @@ impl Rpc {
                         terminal.publish_output(&sink, &terminal_id).await;
                     });
                 }
-                self.tools.lock().await.insert(id.clone(), terminal);
+                self.tools.lock().await.insert(id.clone(), terminal.clone());
+                let terminal_id = id.clone();
+                let sink = self.sink.clone();
+                tokio::spawn(async move {
+                    loop {
+                        let exited = {
+                            let mut child = terminal.child.lock().await;
+                            child.try_wait().ok().flatten().map(|status| status.code().unwrap_or(1))
+                        };
+                        if let Some(code) = exited {
+                            let mut status = terminal.status.lock().await;
+                            if status.is_none() { *status = Some(code); }
+                        }
+                        if exited.is_some() {
+                            terminal.publish_output(&sink, &terminal_id).await;
+                        }
+                        if terminal.status.lock().await.is_some() { break; }
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                    }
+                });
                 Ok(json!({"terminalId":id}))
             }
             "terminal/output" | "terminal/wait_for_exit" | "terminal/kill" | "terminal/release" => {
@@ -642,15 +682,11 @@ impl Rpc {
                     .cloned()
                     .ok_or("Unknown terminal")?;
                 if method == "terminal/kill" || method == "terminal/release" {
-                    let mut child = t.child.lock().await;
-                    let exited = child.try_wait().map_err(err)?.map(|s| s.code().unwrap_or(1));
-                    stop_child(&mut child).await;
-                    let mut status = t.status.lock().await;
-                    *status = status.or(exited).or(Some(137));
-                    drop(status);
-                    drop(child);
-                    t.publish_output(&self.sink, id).await;
+                    self.stop_tool_terminal(id).await?;
                     if method == "terminal/release" {
+                        let mut completed = self.completed_tools.lock().await;
+                        completed.push((id.to_owned(), t));
+                        if completed.len() > 20 { completed.remove(0); }
                         self.tools.lock().await.remove(id);
                     }
                     return Ok(json!({}));
@@ -678,6 +714,35 @@ impl Rpc {
             }
             _ => Err(format!("Unsupported client method: {method}")),
         }
+    }
+    pub async fn tool_processes(&self) -> Vec<Value> {
+        let mut tools = self.tools.lock().await.iter().map(|(id, t)| (id.clone(), t.clone())).collect::<Vec<_>>();
+        tools.extend(self.completed_tools.lock().await.iter().cloned());
+        let mut result = Vec::new();
+        for (id, terminal) in tools { result.push(terminal.snapshot(&id).await); }
+        result.sort_by_key(|p| std::cmp::Reverse(p["startedAt"].as_u64().unwrap_or_default()));
+        let mut seen = HashSet::new();
+        let mut completed = 0;
+        result.retain(|p| {
+            if !seen.insert(p["id"].as_str().unwrap_or_default().to_owned()) { return false; }
+            if p["exitCode"].is_null() { true } else { completed += 1; completed <= 20 }
+        });
+        result
+    }
+    pub async fn stop_tool_terminal(&self, id: &str) -> Result<(), String> {
+        let terminal = self.tools.lock().await.get(id).cloned().ok_or("Unknown process")?;
+        let mut child = terminal.child.lock().await;
+        let exited = child.try_wait().map_err(err)?.map(|s| s.code().unwrap_or(1));
+        if exited.is_none() {
+            terminal.stopped.store(true, Ordering::SeqCst);
+            stop_child(&mut child).await;
+        }
+        let mut status = terminal.status.lock().await;
+        *status = (*status).or(exited).or(Some(137));
+        drop(status);
+        drop(child);
+        terminal.publish_output(&self.sink, id).await;
+        Ok(())
     }
     pub async fn cancel_requests(&self) { self.cancel_pending_requests(true).await; }
     pub async fn cancel_blocking_requests(&self) { self.cancel_pending_requests(false).await; }
@@ -712,10 +777,9 @@ impl Rpc {
     }
     pub async fn stop(&self) {
         self.cancel_blocking_requests().await;
-        let terminals = std::mem::take(&mut *self.tools.lock().await);
-        for (_, t) in terminals {
-            stop_child(&mut *t.child.lock().await).await;
-        }
+        let ids = self.tools.lock().await.keys().cloned().collect::<Vec<_>>();
+        for id in ids { let _ = self.stop_tool_terminal(&id).await; }
+        self.tools.lock().await.clear();
         stop_child(&mut *self.child.lock().await).await;
         self.disconnected("Agent stopped").await;
     }
@@ -795,6 +859,43 @@ mod tests {
             .unwrap();
         let id = session["sessionId"].as_str().unwrap().to_string();
         (rpc, temp, events, id)
+    }
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn tool_processes_monitor_output_exit_and_user_stop_without_agent_polling() {
+        let (rpc, _temp, events, sid) = fixture().await;
+        let started = rpc.client_request("terminal/create", json!({"sessionId":sid,"command":"/bin/sh",
+            "args":["-c","printf watching; sleep 30"]})).await.unwrap();
+        let id = started["terminalId"].as_str().unwrap();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if rpc.tool_processes().await.iter().any(|p| p["output"] == "watching") { break; }
+                tokio::time::sleep(Duration::from_millis(25)).await;
+            }
+        }).await.unwrap();
+        let processes = rpc.tool_processes().await;
+        let process = processes.iter().find(|p| p["id"] == id).unwrap();
+        assert_eq!(process["exitCode"], Value::Null);
+        assert_eq!(process["wireSessionId"], sid);
+        assert!(process["command"].as_str().unwrap().contains("sleep 30"));
+        rpc.stop_tool_terminal(id).await.unwrap();
+        let processes = rpc.tool_processes().await;
+        let process = processes.iter().find(|p| p["id"] == id).unwrap();
+        assert!(process["exitCode"].is_number());
+        assert_eq!(process["stopped"], true);
+        rpc.client_request("terminal/release", json!({"terminalId":id})).await.unwrap();
+        assert!(rpc.tool_processes().await.iter().any(|p| p["id"] == id && p["stopped"] == true));
+
+        let started = rpc.client_request("terminal/create", json!({"sessionId":sid,"command":"/bin/sh",
+            "args":["-c","printf done; exit 7"]})).await.unwrap();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if rpc.tool_processes().await.iter().any(|p| p["id"] == started["terminalId"] && p["exitCode"] == 7) { break; }
+                tokio::time::sleep(Duration::from_millis(25)).await;
+            }
+        }).await.unwrap();
+        assert!(events.lock().unwrap().iter().any(|(kind, value)| kind == "tool_terminal" && value["terminalId"] == started["terminalId"] && value["exitStatus"]["exitCode"] == 7));
+        rpc.stop().await;
     }
     #[cfg(unix)]
     #[tokio::test]

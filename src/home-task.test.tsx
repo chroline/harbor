@@ -51,6 +51,7 @@ vi.mock("./lib/provider-config", () => ({
 vi.mock("./components/ModelMenu", () => ({
   DiscoveryModelMenu: () => <button>Choose model</button>,
 }));
+vi.mock("./components/BackgroundProcesses", () => ({ BackgroundProcesses: () => null }));
 vi.mock("./components/Chat", () => ({
   Chat: ({ session }: { session: SessionRecord }) => (
     <div aria-label="Active chat">

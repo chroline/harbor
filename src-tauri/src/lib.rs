@@ -1735,6 +1735,36 @@ async fn create_shell_terminal(
     terminals.insert(id, term);
     Ok(status)
 }
+// Only expose processes belonging to this chat, including attached workers.
+async fn process_transports(state: &AppState, session_id: &str) -> Vec<Arc<Rpc>> {
+    let mut rpcs = Vec::new();
+    if let Some(rpc) = state.connections.lock().await.get(session_id).cloned() { rpcs.push(rpc); }
+    for (key, rpc) in state.child_transports.lock().unwrap().iter() {
+        if key.starts_with(&format!("{session_id}:")) && !rpcs.iter().any(|r| Arc::ptr_eq(r, rpc)) {
+            rpcs.push(rpc.clone());
+        }
+    }
+    rpcs
+}
+#[tauri::command]
+async fn list_tool_processes(state: tauri::State<'_, Arc<AppState>>, session_id: String) -> Result<Vec<Value>, String> {
+    let _: SessionRecord = state.db.get("session", &session_id)?;
+    let mut result = Vec::new();
+    for rpc in process_transports(&state, &session_id).await { result.extend(rpc.tool_processes().await); }
+    result.sort_by_key(|p| p["startedAt"].as_u64().unwrap_or_default());
+    Ok(result)
+}
+#[tauri::command]
+async fn stop_tool_process(state: tauri::State<'_, Arc<AppState>>, session_id: String, process_id: String) -> Result<(), String> {
+    let _guard = state.operations.session(&session_id).await;
+    let _: SessionRecord = state.db.get("session", &session_id)?;
+    for rpc in process_transports(&state, &session_id).await {
+        if rpc.tool_processes().await.iter().any(|p| p["id"] == process_id && p["exitCode"].is_null()) {
+            return rpc.stop_tool_terminal(&process_id).await;
+        }
+    }
+    Err("This process has already exited or is no longer connected".into())
+}
 #[tauri::command]
 async fn list_shell_terminals(
     state: tauri::State<'_, Arc<AppState>>,
@@ -2054,6 +2084,8 @@ pub fn run() {
             tab_windows::focus_task_tab,
             create_shell_terminal,
             list_shell_terminals,
+            list_tool_processes,
+            stop_tool_process,
             close_shell_terminal,
             terminal_status,
             terminal_input,
