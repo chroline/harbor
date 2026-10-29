@@ -81,6 +81,42 @@ export function TaskComposer({
           </div>
         )}
       </SizeProvider>
+      {fileError && (
+        <div className="composer-configuration-error" role="alert">
+          {fileError}
+        </div>
+      )}
+      {/* Keep a configuration dialog mounted when saving clears the error. */}
+      {(modePicker?.error || configurationAction) && (
+        <div
+          className="composer-configuration-error"
+          role={modePicker?.error ? "alert" : undefined}
+          style={modePicker?.error ? undefined : { display: "none" }}
+        >
+          <span>{modePicker?.error}</span>
+          {configurationAction}
+          {modePicker?.onRetry && (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={modePicker.busy || modePicker.disabled}
+              onClick={modePicker.onRetry}
+            >
+              Retry change
+            </Button>
+          )}
+          {modePicker?.onCancel && (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={modePicker.busy}
+              onClick={modePicker.onCancel}
+            >
+              Cancel change
+            </Button>
+          )}
+        </div>
+      )}
       <InputMessage
         {...input}
         files={files}
@@ -214,42 +250,6 @@ export function TaskComposer({
           </div>
         }
       />
-      {fileError && (
-        <div className="composer-configuration-error" role="alert">
-          {fileError}
-        </div>
-      )}
-      {/* Keep a configuration dialog mounted when saving clears the error. */}
-      {(modePicker?.error || configurationAction) && (
-        <div
-          className="composer-configuration-error"
-          role={modePicker?.error ? "alert" : undefined}
-          style={modePicker?.error ? undefined : { display: "none" }}
-        >
-          <span>{modePicker?.error}</span>
-          {configurationAction}
-          {modePicker?.onRetry && (
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={modePicker.busy || modePicker.disabled}
-              onClick={modePicker.onRetry}
-            >
-              Retry change
-            </Button>
-          )}
-          {modePicker?.onCancel && (
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={modePicker.busy}
-              onClick={modePicker.onCancel}
-            >
-              Cancel change
-            </Button>
-          )}
-        </div>
-      )}
     </div>
   );
 }

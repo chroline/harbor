@@ -810,6 +810,12 @@ export default function App() {
                     className="home-message-card"
                     aria-label="New task composer"
                   >
+                    {workspace && !selectedWorkspace?.available && (
+                      <p className="workspace-unavailable">
+                        This workspace folder is unavailable. Choose another
+                        workspace.
+                      </p>
+                    )}
                     <TaskComposer
                       catalog={catalog}
                       files={files}
@@ -870,12 +876,6 @@ export default function App() {
                       }
                     />
 
-                    {workspace && !selectedWorkspace?.available && (
-                      <p className="workspace-unavailable">
-                        This workspace folder is unavailable. Choose another
-                        workspace.
-                      </p>
-                    )}
                   </section>
                 </div>
               </HomeScene>

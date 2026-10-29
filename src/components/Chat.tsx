@@ -985,6 +985,7 @@ export function Chat({
                       </Button>
                     </div>
                   )}
+                  {edit && <div className="prompt-queue-status"><span>Editing queued message</span><Button variant="ghost" size="compact" disabled={preparing} onClick={() => void cancelQueuedEdit()}>Cancel</Button></div>}
                   <div className="prompt-composer-stack">
                   <PromptQueue queue={promptQueue.snapshot} onRemove={promptQueue.remove} editing={!!edit || preparing} onEdit={(id) => void beginQueuedEdit(id)} onSteer={(id) => void call<QueueSnapshot>("steer_queued_prompt", { sessionId: session.id, childId: child, id }).then(promptQueue.accept).catch((error) => setError(String(error)))}/>
                   <TaskComposer
@@ -1062,7 +1063,6 @@ export function Chat({
                     }
                   />
                   </div>
-                  {edit && <div className="prompt-queue-status"><span>Editing queued message</span><Button variant="ghost" size="compact" disabled={preparing} onClick={() => void cancelQueuedEdit()}>Cancel</Button></div>}
                   {(promptQueue.snapshot.paused || promptQueue.snapshot.error || promptQueue.snapshot.steering) && <div className="prompt-queue-status"><span role={promptQueue.snapshot.error ? "alert" : "status"}>{promptQueue.snapshot.error || (promptQueue.snapshot.steering ? "Stopping to steer…" : "Queue paused")}</span>{promptQueue.snapshot.paused && promptQueue.snapshot.items.length > 0 && <Button variant="ghost" size="compact" onClick={promptQueue.resume}>Resume</Button>}</div>}
                 </div>
               </>
