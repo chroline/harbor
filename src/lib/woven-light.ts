@@ -1,4 +1,4 @@
-/** Approved Woven light treatment, shared by the product and design lab. */
+/** Approved Woven light treatment for the new-task background. */
 export const WOVEN_LIGHT = {
   intensity: 0.4,
   speed: 0.5,
