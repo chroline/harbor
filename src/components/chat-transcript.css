@@ -59,7 +59,7 @@
 .chat-transcript .transcript-message {
   max-width: 100%;
   width: 100%;
-  margin: 0.625rem 0;
+  margin: 0.375rem 0;
   gap: 0;
 }
 .chat-transcript .transcript-message [data-slot="message-content"] {
@@ -102,7 +102,7 @@
   /* Same window as the composer: no CSS border. The edge is the shadow-3 hairline. */
   border: 0;
   border-radius: var(--radius-xl);
-  padding: var(--transcript-message-inset);
+  padding: 0.5rem var(--transcript-message-inset);
   box-shadow: var(--shadow-3);
 }
 .transcript-message-label {
@@ -113,7 +113,7 @@
 }
 .chat-transcript .transcript-message .typeset {
   --fs-body: 0.875rem;
-  --lh-body: 1.25rem;
+  --lh-body: 1.5rem;
   --fs-caption: 0.75rem;
   --lh-caption: 1rem;
   --typeset-space-block: 1rem;
@@ -167,6 +167,13 @@
   margin-inline-start: 0;
   padding-inline: 0;
 }
+.transcript-activity > [data-slot="trace-collapsible-content"]
+  > div > [data-slot="trace-collapsible-content-inner"] {
+  margin-top: 0.5rem;
+}
+.transcript-activity [data-slot="trace"] > [data-slot="trace-line"] {
+  padding-block: 0.25rem;
+}
 :is(.chat-transcript, .agent-plan, .subagent-trace)
   [data-slot="trace-description"] {
   font-size: inherit;
@@ -179,7 +186,7 @@
 .transcript-activity .typeset {
   overflow-wrap: anywhere;
   --fs-body: 0.875rem;
-  --lh-body: 1.25rem;
+  --lh-body: 1.5rem;
 }
 .subagent-trace {
   margin: 0.5rem 0;
