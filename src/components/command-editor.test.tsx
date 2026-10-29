@@ -21,6 +21,7 @@ const catalog: CommandCatalog = {
     { name: "$build", description: "Build" },
   ],
 };
+vi.mock("../lib/store", () => ({ useStore: () => ({ setError: vi.fn() }) }));
 beforeAll(() => {
   window.matchMedia = vi.fn().mockImplementation(() => ({
     matches: true,

@@ -236,7 +236,7 @@ function MarkdownOrderedList({ node: _node, children, start, style, ...props }: 
       list.style.setProperty("--list-marker-width", `${widths.reduce((max, width) => Math.max(max, width), 0)}px`);
     };
     measure();
-    void document.fonts.ready.then(measure);
+    void document.fonts?.ready.then(measure);
   }, [children, start]);
   return <ol {...props} ref={ref} start={start} style={style}>{children}</ol>;
 }

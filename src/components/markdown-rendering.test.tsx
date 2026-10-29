@@ -8,14 +8,14 @@ vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn().mockResolvedValue
 vi.mock("../lib/store", () => ({ useStore: () => ({ setError: vi.fn() }) }));
 afterEach(cleanup);
 
-it("keeps fenced source and blank lines as plain text with no code cards", () => {
+it("keeps fenced source and blank lines intact with a copy action", () => {
   const source = "const n = 1;\n\n\nconst empty = '';\n";
   const { container } = render(
     <RichText text={`Use \`n\`.\n\n\`\`\`typescript\n${source}\`\`\``} />,
   );
   expect(container.querySelector("pre > code")?.textContent).toBe(source);
   expect(container.querySelector("p > code")?.textContent).toBe("n");
-  expect(screen.queryByRole("button")).toBeNull();
+  expect(screen.getByRole("button", { name: "Copy" })).toBeTruthy();
   expect(container.querySelector("figure")).toBeNull();
   expect(container.querySelector('[data-slot="file-diff"]')).toBeNull();
 });
@@ -29,7 +29,7 @@ it("preserves partial fences as source while a response streams", () => {
   expect(view.container.querySelector("pre > code")?.textContent).toBe(
     'print("hello")\n\n',
   );
-  expect(screen.queryByRole("button")).toBeNull();
+  expect(screen.getByRole("button", { name: "Copy" })).toBeTruthy();
 });
 
 it("opens chat web links in the system browser in the desktop app", async () => {
