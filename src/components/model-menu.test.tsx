@@ -423,7 +423,7 @@ it("allows switching away from a loading provider and shows retry states", async
   rerender(ui("codex", true));
   fireEvent.click(screen.getByRole("button", { name: "Claude" }));
   expect(providerChange).toHaveBeenCalledWith("claude");
-  expect(screen.getByText("Loading models…")).toBeTruthy();
+  expect(screen.getByRole("status").textContent).toContain("Loading models…");
   expect(
     (screen.getByRole("button", { name: "Choose agent" }) as HTMLButtonElement)
       .disabled,

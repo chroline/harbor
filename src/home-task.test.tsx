@@ -1045,7 +1045,7 @@ it("drags a chat without navigating, rejects another group and cancels with Esca
   vi.unstubAllGlobals();
 });
 
-it("marks working chats with a spinner and chats that need you with an attention dot", () => {
+it("marks working chats with the thinking indicator and chats that need you with an attention dot", () => {
   mocks.initialSessions = [
     {
       ...session,
@@ -1075,7 +1075,7 @@ it("marks working chats with a spinner and chats that need you with an attention
   expect(
     running.querySelector('[data-sidebar="menu-status"][data-state="loading"]'),
   ).toBeTruthy();
-  expect(running.querySelector('[data-icon="LoaderCircle"]')).toBeTruthy();
+  expect(running.querySelector('[data-slot="thinking-indicator-glyph"]')).toBeTruthy();
 
   const waiting = screen.getByRole("button", {
     name: /Waiting on you,\s*Needs you/,
