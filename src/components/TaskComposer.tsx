@@ -3,7 +3,7 @@ import type { CommandCatalog } from "../lib/command-catalog";
 import { rem } from "@/lib/units";
 import { SizeProvider } from "@/lib/size-context";
 import { useEffect, useState, type ReactNode } from "react";
-import { ArrowUp, Paperclip, Square } from "@/lib/icons";
+import { ArrowUp, ImageIcon, Plus, Square } from "@/lib/icons";
 import { validateAttachments } from "../lib/attachments";
 import { InputMessage, type InputMessageProps } from "./ui/input-message";
 import { Button } from "./ui/button";
@@ -154,6 +154,7 @@ export function TaskComposer({
           />
         }
         className="task-composer"
+        quietFrame
         size="default"
         minRows={2}
         onKeyDownCapture={(e) => {
@@ -186,28 +187,48 @@ export function TaskComposer({
         }}
         leftSlot={({ openFilePicker }) => (
           <SizeProvider size="compact">
-            <div className="task-composer-model">
+            <div className="task-composer-tools">
               {onFilesChange && (
-                <Tooltip content="Attach files">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-compact"
-                    aria-label="Attach files"
-                    disabled={
-                      input.disabled || busy || input.textareaProps?.readOnly
-                    }
-                    onClick={() => openFilePicker()}
-                  >
-                    <Paperclip size={rem(14)} />
-                  </Button>
-                </Tooltip>
+                <>
+                  <Tooltip content="Attach files">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-compact"
+                      aria-label="Attach files"
+                      disabled={
+                        input.disabled || busy || input.textareaProps?.readOnly
+                      }
+                      onClick={() => openFilePicker()}
+                    >
+                      <Plus size={rem(14)} />
+                    </Button>
+                  </Tooltip>
+                  <Tooltip content="Attach an image">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-compact"
+                      aria-label="Attach image"
+                      disabled={
+                        input.disabled || busy || input.textareaProps?.readOnly
+                      }
+                      onClick={() => openFilePicker("image/*")}
+                    >
+                      <ImageIcon size={rem(14)} />
+                    </Button>
+                  </Tooltip>
+                </>
               )}
-              {modelMenu}
               {modePicker && <ModePicker {...modePicker} />}
             </div>
           </SizeProvider>
         )}
+        rightSlot={
+          <SizeProvider size="compact">
+            <div className="task-composer-meta">{modelMenu}</div>
+          </SizeProvider>
+        }
         sendControl={
           <div className="task-composer-actions">
             {onStop && !showStopOnly && (

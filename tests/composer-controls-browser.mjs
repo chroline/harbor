@@ -95,9 +95,9 @@ for (const width of [1380, 900]) {
           .getBoundingClientRect();
         return (
           toolbar.bottom <= box.top &&
-          model.left < box.left + box.width / 2 &&
-          model.left >= box.left &&
-          model.right < send.left &&
+          mode.left >= box.left &&
+          mode.right <= model.left &&
+          model.right <= send.left &&
           send.right <= box.right &&
           model.top >= box.top &&
           model.bottom <= box.bottom
@@ -119,7 +119,7 @@ for (const width of [1380, 900]) {
         return (
           mode.top >= box.top &&
           mode.bottom <= box.bottom &&
-          mode.left >= model.right
+          mode.right <= model.left
         );
       }),
       true,
@@ -302,12 +302,11 @@ const chat = await page.evaluate(() => {
       .querySelector(".task-composer")
       .contains(document.querySelector(".mode-picker-trigger")),
     branchSettings: !!document.querySelector(".launch-worktree-settings"),
-    modelOnLeft:
+    modelRightOfMode:
       document.querySelector(".model-menu-trigger").getBoundingClientRect()
-        .left <
-      document.querySelector(".task-composer").getBoundingClientRect().left +
-        document.querySelector(".task-composer").getBoundingClientRect().width /
-          2,
+        .left >=
+      document.querySelector(".mode-picker-trigger").getBoundingClientRect()
+        .right,
     mode: document.querySelector(".mode-picker-trigger").getBoundingClientRect()
       .height,
     model: document.querySelector(".model-menu-trigger").getBoundingClientRect()
@@ -322,7 +321,7 @@ assert.equal(chat.repositoryDetails, false);
 assert.equal(chat.modeInside, true);
 assert.equal(chat.branchSettings, false);
 assert.equal(chat.overflow, false);
-assert.equal(chat.modelOnLeft, true);
+assert.equal(chat.modelRightOfMode, true);
 for (const name of ["mode", "model", "send"])
   assert.ok(Math.abs(chat[name] - 28) < 0.1);
 console.log({ chat });
