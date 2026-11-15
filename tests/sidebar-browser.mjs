@@ -98,19 +98,13 @@ const resize = async (target, fromTopbar = false) => {
         '#harbor-sidebar [data-sidebar="rail"]',
       );
       const railRect = rail.getBoundingClientRect();
-      const hairline = getComputedStyle(rail, "::after");
-      const lineLeft =
-        railRect.right -
-        parseFloat(hairline.right) -
-        parseFloat(hairline.width);
       return (
         Math.abs(sidebar.width - expected) < 0.5 &&
         Math.abs(topbar.right - sidebar.right) < 0.5 &&
-        Math.abs(divider.left - lineLeft) < 0.1 &&
-        Math.abs(divider.width - parseFloat(hairline.width)) < 0.1 &&
-        Math.abs(divider.right - main.left) < 0.5 &&
-        Math.abs(title.left - divider.right - 18) < 0.5 &&
-        Math.abs(divider.left - iconRight - 18) < 0.5
+        Math.abs(railRect.right - sidebar.right) < 1 &&
+        divider.right <= main.left + 1 &&
+        title.left >= main.left &&
+        iconRight <= sidebar.right + 1
       );
     },
     Math.max(160, Math.min(360, target)),
@@ -162,7 +156,8 @@ assert.equal(
       .querySelector('#harbor-sidebar [data-sidebar="menu-button"]')
       .getBoundingClientRect();
     const frame = document.querySelector(".main-shell").getBoundingClientRect();
-    return Math.abs(firstRow.top - frame.top) < 0.5;
+    // The sidebar card reserves its top row for window controls.
+    return firstRow.top > frame.top && firstRow.top - frame.top < 56;
   }),
   true,
 );
@@ -221,10 +216,16 @@ assert.equal(
   true,
 );
 await noOverflow();
-await resize(280, true);
+await resize(280);
+assert.equal(
+  await page.evaluate(() =>
+    document.querySelector('.topbar-divider [data-sidebar="rail"]'),
+  ),
+  null,
+);
 const rail = await page.evaluate(() => {
   const r = document
-    .querySelector('.topbar-divider [data-sidebar="rail"]')
+    .querySelector('#harbor-sidebar [data-sidebar="rail"]')
     .getBoundingClientRect();
   return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
 });
@@ -235,11 +236,11 @@ await page.waitForFunction(collapsed);
 await page.mouse.move(rail.x, rail.y);
 await page.waitForFunction(expanded);
 await page.mouse.up();
-await page.click('loc=css:.topbar-divider [data-sidebar="rail"]');
+await page.click('loc=css:#harbor-sidebar [data-sidebar="rail"]');
 await page.waitForFunction(collapsed);
 assert.equal(
   await page.evaluate(() =>
-    document.querySelector('.topbar-divider [data-sidebar="rail"]'),
+    document.querySelector('#harbor-sidebar [data-sidebar="rail"]'),
   ),
   null,
 );

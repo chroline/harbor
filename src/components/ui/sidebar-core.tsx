@@ -720,7 +720,7 @@ const SidebarShell = forwardRef<HTMLDivElement, SidebarShellProps>(
           // strip or the overlay card — and the shell must rise above the
           // inset (a later sibling) so the card paints over it. Pinning from
           // a peek keeps both through the width spring for the same reason.
-          peekEnabled || pinnedFromPeek ? "z-40" : "overflow-hidden",
+          peekEnabled || pinnedFromPeek ? "z-40" : "",
           // Flex order (not DOM order) decides the side, so consumers can
           // keep Sidebar before SidebarInset regardless of `side`.
           side === "right" && "order-last",
@@ -1012,10 +1012,8 @@ export interface SidebarRailProps extends HTMLAttributes<HTMLButtonElement> {
   tooltipOpen?: boolean;
 }
 
-/** The grab strip on the sidebar's inner edge, rendered by default inside
- *  the desktop shell: drag it to resize (clamped), click it to collapse, and
- *  its tooltip explains both with the toggle keystroke. Hovering it
- *  brightens the edge border. */
+/** The grab strip on the sidebar's inner edge. Harbor's shell passes `rail={false}`
+ *  and resizes through the Kobra panel group instead. */
 const SidebarRail = forwardRef<HTMLButtonElement, SidebarRailProps>(
   ({ className, tooltipOpen, ...props }, ref) => {
     const { toggleSidebar, setOpen, width, setWidth, side, setIsResizing } = useSidebar();
@@ -1126,18 +1124,8 @@ const SidebarRail = forwardRef<HTMLButtonElement, SidebarRailProps>(
           onPointerCancel={onPointerCancel}
           onLostPointerCapture={onPointerCancel}
           className={cn(
-            // touch-none: without it the browser claims a touch drag for
-            // scrolling and pointercancels the resize mid-gesture.
             "absolute inset-y-0 z-20 w-2 cursor-col-resize touch-none outline-none",
-            // Positioned from context (not group-data selectors) so variant
-            // offsets passed via className can win the merge.
             side === "left" ? "right-0" : "left-0",
-            // Hovering brightens the edge border the shell draws by default;
-            // a pinned tooltip brightens it too, so the spotlight reads as
-            // the hover it stands in for.
-            "after:absolute after:inset-y-0 after:w-[0.0625rem] after:bg-transparent hover:after:bg-foreground/25 after:transition-colors after:duration-80",
-            tooltipOpen && "after:bg-foreground/25",
-            side === "left" ? "after:right-0" : "after:left-0",
             className
           )}
           {...props}

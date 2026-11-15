@@ -3,7 +3,13 @@ import { cssLengthToPixels } from "./units";
 export const WINDOW_GUTTER = 4;
 export const SIDEBAR_PREFERENCE_KEY = "harbor.sidebar.v1";
 export const DEFAULT_SIDEBAR_WIDTH = 256;
-export const MIN_SIDEBAR_WIDTH = 160;
+/** Pinned lights, sidebar toggle, and search. History starts after this. */
+export const SIDEBAR_CHROME_PINNED_WIDTH = 160;
+/** Back and forward, reserved inside the card's right edge. */
+export const SIDEBAR_HISTORY_RESERVE = 76;
+/** Narrower than this, and the history buttons leave the sidebar card. */
+export const MIN_SIDEBAR_WIDTH =
+  SIDEBAR_CHROME_PINNED_WIDTH + SIDEBAR_HISTORY_RESERVE;
 export const MAX_SIDEBAR_WIDTH = 360;
 export type ShellPreferences = { open: boolean; width: number };
 export const defaultShellPreferences: ShellPreferences = {
@@ -19,7 +25,7 @@ export function parseShellPreferences(raw: string | null): ShellPreferences {
         typeof value?.width === "number" && Number.isFinite(value.width)
           ? Math.max(
               MIN_SIDEBAR_WIDTH,
-              Math.min(MAX_SIDEBAR_WIDTH, value.width),
+              Math.min(MAX_SIDEBAR_WIDTH, Math.round(value.width)),
             )
           : DEFAULT_SIDEBAR_WIDTH,
     };
@@ -37,6 +43,18 @@ export function useShellLayout() {
       return defaultShellPreferences;
     }
   });
+  if (
+    preferences.width < MIN_SIDEBAR_WIDTH ||
+    preferences.width > MAX_SIDEBAR_WIDTH
+  ) {
+    setPreferences((current) => ({
+      ...current,
+      width: Math.max(
+        MIN_SIDEBAR_WIDTH,
+        Math.min(MAX_SIDEBAR_WIDTH, current.width),
+      ),
+    }));
+  }
   useEffect(() => {
     try {
       localStorage.setItem(SIDEBAR_PREFERENCE_KEY, JSON.stringify(preferences));
@@ -58,7 +76,10 @@ export function useShellLayout() {
     if (Number.isFinite(parsed))
       setPreferences((p) => ({
         ...p,
-        width: Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, parsed)),
+        width: Math.max(
+          MIN_SIDEBAR_WIDTH,
+          Math.min(MAX_SIDEBAR_WIDTH, Math.round(parsed)),
+        ),
       }));
   }, []);
   return {

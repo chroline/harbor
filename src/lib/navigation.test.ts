@@ -76,7 +76,7 @@ describe("Sidebar preferences and bounds", () => {
       open: true,
       width: 360,
     });
-    expect(parseShellPreferences('{"width":-1}').width).toBe(160);
+    expect(parseShellPreferences('{"width":-1}').width).toBe(236);
   });
   it("starts at Fluid's default width and clamps legacy widths to its bounds", () => {
     expect(parseShellPreferences(null)).toEqual({ open: true, width: 256 });
@@ -85,7 +85,7 @@ describe("Sidebar preferences and bounds", () => {
       width: 360,
     });
     expect(parseShellPreferences('{"width":280}').width).toBe(280);
-    expect(parseShellPreferences('{"width":160}').width).toBe(160);
+    expect(parseShellPreferences('{"width":160}').width).toBe(236);
     expect(parseShellPreferences('{"width":"280"}').width).toBe(256);
     expect(parseShellPreferences('{"width":1e999}').width).toBe(256);
   });

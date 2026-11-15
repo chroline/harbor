@@ -83,30 +83,60 @@ export const SkylineScene = forwardRef<HTMLDivElement, SceneProps>(
     useLayoutEffect(() => {
       const element = scene.current;
       if (sharedBackground || !element) return;
+      const shell = element.closest(".app-shell");
+      const sidebar = shell?.querySelector<HTMLElement>("#harbor-sidebar");
+      const card = () =>
+        sidebar?.querySelector<HTMLElement>('[data-sidebar="sidebar"]') ?? null;
+      let frame = 0;
+      let steady = 0;
+      // The card slides on a longer transform than the shell's width spring.
+      // Follow the card's painted edge so the artwork moves with the sidebar.
       const measure = () => {
-        const bounds = element.getBoundingClientRect();
-        for (const [key, value] of Object.entries({
-          left: bounds.left,
-          top: bounds.top,
-          width: bounds.width,
-          height: bounds.height,
-        })) {
-          element.style.setProperty(`--skyline-${key}`, `${value}px`);
+        const sceneBox = element.getBoundingClientRect();
+        const cardBox = card()?.getBoundingClientRect();
+        const edge = cardBox ? Math.max(0, cardBox.right) : sceneBox.left;
+        const next = {
+          left: Math.min(edge, sceneBox.right),
+          top: sceneBox.top,
+          width: Math.max(0, sceneBox.right - Math.min(edge, sceneBox.right)),
+          height: sceneBox.height,
+        };
+        let moved = false;
+        for (const [key, value] of Object.entries(next)) {
+          const current = Number.parseFloat(
+            element.style.getPropertyValue(`--skyline-${key}`),
+          );
+          if (!Number.isFinite(current) || Math.abs(current - value) >= 0.5) {
+            element.style.setProperty(`--skyline-${key}`, `${value}px`);
+            moved = true;
+          }
         }
+        return moved;
+      };
+      const tick = () => {
+        frame = 0;
+        steady = measure() ? 0 : steady + 1;
+        if (steady < 4) frame = requestAnimationFrame(tick);
+      };
+      const kick = () => {
+        steady = 0;
+        if (!frame) frame = requestAnimationFrame(tick);
       };
       measure();
       const observer =
         typeof ResizeObserver === "undefined"
           ? null
-          : new ResizeObserver(measure);
+          : new ResizeObserver(kick);
       observer?.observe(element);
-      const layout = element.closest(".chat-layout");
-      layout?.addEventListener("animationend", measure);
-      window.addEventListener("resize", measure);
+      sidebar?.addEventListener("transitionrun", kick);
+      sidebar?.addEventListener("transitionend", kick);
+      window.addEventListener("resize", kick);
       return () => {
+        if (frame) cancelAnimationFrame(frame);
         observer?.disconnect();
-        layout?.removeEventListener("animationend", measure);
-        window.removeEventListener("resize", measure);
+        sidebar?.removeEventListener("transitionrun", kick);
+        sidebar?.removeEventListener("transitionend", kick);
+        window.removeEventListener("resize", kick);
       };
     }, [sharedBackground]);
 
