@@ -166,7 +166,7 @@
 }
 /* Original workspace surface; Codex tint on the surrounding native chrome. */
 :root {
-  --frame-solid: light-dark(oklch(0.979 0 0), #141414);
+  --frame-solid: light-dark(#ffffff, #1c1c1c);
   --frame-background: light-dark(
     color-mix(in srgb, oklch(0.979 0 0) 84%, transparent),
     rgb(20 20 20 / 0.72)
@@ -175,6 +175,8 @@
     color-mix(in srgb, var(--color-gray-100) 70%, transparent),
     rgb(33 33 33 / 0.7)
   );
+  --shell-canvas: var(--window-tint);
+  --shell-card: var(--frame-background);
   --sidebar: var(--surface-1);
   --chrome: var(--window-tint);
   --chrome-solid: light-dark(var(--color-gray-100), #212121);
@@ -213,6 +215,13 @@ body {
 html.desktop,
 .desktop body {
   background: transparent;
+}
+/* Browser preview has no native vibrancy. Use an opaque canvas and solid
+   cards so the floating shell reads the same way it does on the desktop. */
+html:not(.desktop) {
+  --shell-canvas: light-dark(#f4f4f5, #141414);
+  --shell-card: var(--frame-solid);
+  --frame-background: var(--frame-solid);
 }
 button {
   cursor: pointer;
@@ -375,21 +384,28 @@ a {
 }
 .app-shell {
   --window-radius: var(--radius-2xl);
+  /* Traffic lights, sidebar toggle, and search stay put when the sidebar collapses.
+     Width includes the extra inset that lines the lights up with sidebar icons. */
+  --topbar-pinned-width: 10rem;
+  --topbar-history-width: 4rem;
   --window-content-inset: 0.875rem;
   --chrome-control-gap: 1.125rem;
   --chrome-control-end-inset: calc(var(--chrome-control-gap) - 0.3125rem);
   --sidebar-row-end-inset: calc(var(--chrome-control-gap) - 0.4375rem);
+  /* The conversation is the window. Only the sidebar card is inset. */
+  --shell-card-inset: 0.5rem;
+  --shell-card-radius: 1.125rem;
   display: flex;
   flex-direction: column;
   width: 100%;
   height: 100%;
   overflow: hidden;
   position: relative;
-  padding: 0 var(--window-gutter) var(--window-gutter);
+  padding: 0;
   border: 0;
-  border-radius: var(--window-radius);
+  border-radius: 0;
   isolation: isolate;
-  background-color: var(--window-tint);
+  background-color: var(--shell-canvas);
 }
 .workspace-body {
   display: flex;
@@ -400,22 +416,44 @@ a {
 .workspace-frame {
   overflow: hidden;
   border: 0;
-  /* Concentric with the window at the shared right and bottom inset. */
-  border-radius: max(0px, calc(var(--window-radius) - var(--window-gutter)));
+  border-radius: 0;
   z-index: 0;
-  /* Fluid's elevation includes the frame's inset and outer border rings. */
-  box-shadow: var(--shadow-4);
+  margin: 0;
+  background: transparent;
+  box-shadow: none;
 }
 .window-controls {
-  /* Native lights end at x=80px. The shell's 4px inset plus the toggle's
-     9px painted-icon inset put its edge at x=98px: the same 18px gap as
-     the red light's left inset. Keep this in sync with window_chrome.rs. */
-  width: 5.3125rem;
+  /* Native lights start at the sidebar icon column (x=26) and end at x=88.
+     Keep this in sync with window_chrome.rs. */
+  width: 5.8125rem;
   height: 100%;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   padding-left: var(--window-content-inset);
+}
+.sidebar-window-bar .window-controls {
+  width: auto;
+  padding-left: 0;
+}
+.sidebar-window-bar {
+  height: 2.75rem;
+  flex-shrink: 0;
+}
+.sidebar-window-bar .topbar-history {
+  margin-left: auto;
+  margin-right: 0;
+}
+.sidebar-window-bar .icon-button,
+.sidebar-window-bar [data-sidebar="trigger"] {
+  width: 2rem;
+  height: 2rem;
+  flex: 0 0 2rem;
+}
+.sidebar-window-bar .icon-button svg,
+.sidebar-window-bar [data-sidebar="trigger"] svg {
+  width: 1.125rem;
+  height: 1.125rem;
 }
 .traffic-lights {
   display: flex;
@@ -484,7 +522,7 @@ a {
   color: var(--dim);
 }
 .main-shell {
-  background-color: var(--frame-background);
+  background: transparent;
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -493,16 +531,55 @@ a {
   position: relative;
 }
 .topbar {
-  /* Share the window tint with the sidebar and outer gutter. */
+  /* Sit on the sidebar card's first row, not above the card. */
+  position: absolute;
+  top: var(--shell-card-inset);
+  left: 0;
+  right: 0;
+  z-index: 5;
+  pointer-events: none;
   background: transparent;
-  z-index: 1;
   user-select: none;
   -webkit-user-select: none;
-  height: 3rem;
-  flex-shrink: 0;
+  height: 2.75rem;
   display: flex;
   align-items: center;
-  padding: 0 0.6875rem 0 0;
+  padding: 0 0.75rem 0 0;
+  gap: 0;
+}
+.topbar > * {
+  pointer-events: auto;
+}
+.topbar-pinned {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  width: var(--topbar-pinned-width);
+  height: 100%;
+  /* Card inset (8px) plus the sidebar's group and row padding (6px + 8px),
+     so the lights share the existing icon column. Do not move the rows. */
+  padding-left: calc(var(--shell-card-inset) + 0.875rem);
+  gap: 0.125rem;
+  pointer-events: auto;
+}
+.topbar-pinned .window-controls {
+  width: auto;
+  padding-left: 0;
+  margin-right: 0.25rem;
+}
+.topbar-pinned .icon-button,
+.topbar-pinned [data-sidebar="trigger"] {
+  width: 2rem;
+  height: 2rem;
+  flex: 0 0 2rem;
+}
+.topbar-pinned .icon-button svg,
+.topbar-pinned [data-sidebar="trigger"] svg {
+  width: 1.125rem;
+  height: 1.125rem;
 }
 .topbar button {
   height: 2rem;
@@ -523,6 +600,8 @@ a {
   align-items: center;
   gap: 0;
   min-width: 0;
+  /* Spacer only: the pinned controls are positioned over the window lights. */
+  pointer-events: none;
 }
 .topbar-left > .icon-button,
 .topbar-left > [data-sidebar="trigger"] {
@@ -537,9 +616,12 @@ a {
   display: flex;
   align-items: center;
   gap: 0;
-  margin-left: auto;
-  /* The arrow's painted edge sits 5px inside its hit target. */
-  margin-right: var(--chrome-control-end-inset);
+  flex: 0 0 var(--topbar-history-width);
+  margin-right: 0.5rem;
+}
+.topbar-context .topbar-history .icon-button {
+  width: 2rem;
+  height: 2rem;
 }
 .topbar-history-buttons {
   display: flex;
@@ -568,10 +650,11 @@ a {
   flex: 1;
   display: flex;
   align-items: center;
-  /* The divider paints 1px to the left of its layout box. */
-  gap: calc(var(--chrome-control-gap) - 0.0625rem);
+  gap: 0.5rem;
   min-width: 0;
-  padding-right: 1.25rem;
+  height: 2.75rem;
+  padding: 0 0.75rem 0 0;
+  border-radius: 0;
 }
 .topbar-context:has(.topbar-task-tabs) {
   gap: 0;
@@ -586,62 +669,28 @@ a {
   white-space: nowrap;
   min-width: 0;
   font-size: 0.8125rem;
-  font-weight: 500;
+  font-weight: 550;
+  letter-spacing: -0.01em;
+  line-height: 2rem;
+  /* Cap height sits above the icon center; nudge the title onto that line. */
+  transform: translateY(0.0625rem);
 }
 .topbar-divider {
   position: relative;
-  height: 1.25rem;
-  width: 0.0625rem;
+  height: 0.875rem;
+  width: 0;
   flex-shrink: 0;
-  /* Fluid's rail paints its hairline inside the sidebar's last pixel. */
-  transform: translateX(-100%);
+  margin-right: 0;
+  opacity: 1;
 }
 .topbar-divider::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: var(--border);
-  pointer-events: none;
-  transition:
-    opacity 160ms ease,
-    transform 160ms ease;
+  content: none;
 }
 .topbar-divider[data-visible="false"]::before {
   opacity: 0;
   transform: scaleY(0.6);
 }
-.topbar-divider .topbar-sidebar-rail::after {
-  transition:
-    opacity 160ms ease,
-    background-color 160ms ease;
-}
-.topbar-divider[data-visible="false"] .topbar-sidebar-rail::after {
-  opacity: 0;
-}
-.topbar-divider .topbar-sidebar-rail {
-  /* Continue the grab strip from the divider's top to the sidebar below. */
-  right: -0.21875rem;
-  top: 0;
-  bottom: auto;
-  height: calc(100% + 0.875rem);
-}
-.topbar-sidebar-rail::after {
-  right: 0.21875rem;
-}
-.app-shell:has([data-sidebar="rail"]:hover)
-  .topbar-divider:has(.topbar-sidebar-rail)::before,
-.app-shell[data-resizing] .topbar-divider:has(.topbar-sidebar-rail)::before {
-  /* The active rail paints this pixel; don't composite it over a second line. */
-  background: transparent;
-}
-.app-shell:has([data-sidebar="rail"]:hover) .topbar-sidebar-rail::after,
-.app-shell:has([data-sidebar="rail"]:hover)
-  #harbor-sidebar
-  [data-sidebar="rail"]::after,
-.app-shell[data-resizing] .topbar-sidebar-rail::after,
-.app-shell[data-resizing] #harbor-sidebar [data-sidebar="rail"]::after {
-  background: color-mix(in oklab, var(--foreground) 25%, transparent);
-}
+
 .topbar-right {
   display: flex;
   align-items: center;
@@ -656,11 +705,7 @@ a {
   -webkit-user-select: none;
 }
 .preview-label {
-  font-size: 0.8125rem;
-  background: var(--secondary);
-  padding: 0.1875rem 0.375rem;
-  border-radius: var(--radius-sm);
-  color: var(--muted-foreground);
+  display: none;
 }
 .notification-count {
   position: absolute;
@@ -679,9 +724,12 @@ a {
   flex: 1;
   overflow: auto;
   min-height: 0;
-  border-radius: inherit;
+  border-radius: 0;
   view-transition-name: harbor-page;
+  /* Clear the floating title row, which starts at the sidebar card inset. */
+  padding-top: calc(var(--shell-card-inset) + 2.75rem);
 }
+
 /* Keep chrome live: root snapshots would also capture its translucent surfaces. */
 :root {
   view-transition-name: none;
@@ -1254,8 +1302,8 @@ a {
   overflow: hidden;
 }
 .chat-main {
-  /* The sticky prompt uses this same surface to cover responses seamlessly. */
-  background-color: var(--frame-solid);
+  /* The conversation is the window, not a nested card. */
+  background: transparent;
   --chat-column-max-width: 51.25rem;
   --chat-column-padding: 2.125rem;
   flex: 1;
@@ -1341,6 +1389,9 @@ html.standalone #root {
 }
 .standalone-tab-window.app-shell {
   height: 100dvh;
+}
+.standalone-content {
+  padding-top: 2.75rem;
 }
 .standalone-content > .chat-layout {
   flex: 1;
@@ -1896,6 +1947,8 @@ html.standalone #root {
   .app-shell {
     --chrome: var(--chrome-solid);
     --frame-background: var(--frame-solid);
+    --shell-canvas: var(--chrome-solid);
+    --shell-card: var(--frame-solid);
     background-color: var(--chrome-solid);
   }
 }
@@ -2700,21 +2753,79 @@ html.transitioning *::after {
 .harbor-sidebar {
   z-index: 1;
   background: transparent;
+  overflow: visible !important;
+  transition: transform 0.42s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.harbor-sidebar-handle {
+  /* The card is inset on the left only, so its right edge is the shell edge.
+     Center the 8px strip on that edge. position keeps the grip in the strip
+     instead of the window. */
+  position: relative;
+  z-index: 8;
+  width: 0.5rem;
+  margin-top: var(--shell-card-inset);
+  margin-bottom: var(--shell-card-inset);
+  margin-left: -0.25rem;
+  margin-right: -0.25rem;
+  cursor: col-resize;
+  background: transparent;
+}
+.harbor-sidebar-handle::after {
+  width: 0.5rem;
+}
+.app-shell.sidebar-collapsed .harbor-sidebar {
+  transform: translateX(calc(-1 * var(--sidebar-width)));
+  pointer-events: none;
+}
+.app-shell.sidebar-collapsed .harbor-sidebar-handle {
+  width: 0;
+  margin: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+[data-testid="sidebar"] > .harbor-sidebar {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+}
+/* Fluid paints the inner panel as an absolute full-bleed layer. Inset that
+   layer so the sidebar reads as a card on the window canvas. */
+.harbor-sidebar > div[style*="width"] {
+  position: absolute;
+  top: var(--shell-card-inset);
+  bottom: var(--shell-card-inset);
+  left: var(--shell-card-inset);
+  /* Hold the stored width for the whole slide. Fluid also animates this
+     layer's x and its shell width; those must not fight the card. */
+  width: calc(var(--sidebar-width) - var(--shell-card-inset)) !important;
+  min-width: calc(var(--sidebar-width) - var(--shell-card-inset)) !important;
+  height: auto !important;
+  max-width: none !important;
+  transform: none !important;
+  border-radius: var(--shell-card-radius);
+  background: var(--shell-card);
+  box-shadow:
+    0 0 0 0.0625rem color-mix(in oklab, var(--foreground) 6%, transparent),
+    0 0.0625rem 0.125rem rgb(0 0 0 / 0.03);
+  overflow: hidden;
+}
+.app-shell[data-resizing] .harbor-sidebar,
+.app-shell[data-resizing] .harbor-sidebar > div[style*="width"],
+.app-shell[data-resizing] .topbar-left {
+  transition: none !important;
 }
 /* Keep leading content aligned with the window controls and trailing content
    aligned with the forward arrow's painted tip. */
 .harbor-sidebar [data-sidebar="group"],
 .harbor-sidebar [data-sidebar="header"],
 .harbor-sidebar [data-sidebar="footer"] {
-  padding-inline-start: calc(var(--window-content-inset) - 0.5rem);
-  padding-inline-end: var(--sidebar-row-end-inset);
+  padding-inline: 0.375rem;
 }
 .harbor-sidebar [data-sidebar="group-action"] {
-  right: calc(var(--sidebar-row-end-inset) + 0.5rem);
+  right: 0.625rem;
 }
 .harbor-sidebar [data-sidebar="separator"] {
-  margin-inline-start: var(--window-content-inset);
-  margin-inline-end: calc(var(--sidebar-row-end-inset) + 0.5rem);
+  margin-inline: 0.875rem;
 }
 .harbor-sidebar [data-sidebar="menu-sub-button"] {
   /* Indent the contents, leaving the row's hit area and highlight full width. */
@@ -3366,7 +3477,7 @@ html.transitioning *::after {
   --skyline-opacity: 0.4;
 }
 .skyline-frame[data-skyline-active="true"] {
-  background: var(--frame-solid);
+  background: transparent;
 }
 [data-skyline-background="true"] {
   --skyline-blur: 12px;
@@ -3392,15 +3503,32 @@ html.transitioning *::after {
   padding-block: 2rem;
 }
 .home-landscape {
-  position: absolute;
-  z-index: -1;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+  position: fixed;
+  z-index: 0;
+  top: var(--skyline-top, 0px);
+  left: var(--skyline-left, 0px);
+  width: var(--skyline-width, 100%);
+  height: var(--skyline-height, 100dvh);
   overflow: hidden;
+  border-radius: 0;
   opacity: var(--skyline-image-opacity);
   pointer-events: none;
   user-select: none;
+  /* Shrinks with the sidebar card, and disappears once the card has left. */
+  --skyline-fade: min(9rem, var(--skyline-left, 0px));
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 var(--skyline-fade)
+  );
+  mask-image: linear-gradient(to right, transparent, #000 var(--skyline-fade));
+}
+.app-shell {
+  background-color: transparent;
+}
+html:not(.desktop) .app-shell,
+html:not(.desktop) body {
+  background: var(--shell-canvas);
 }
 .chat-scene {
   overflow: hidden;
@@ -3418,18 +3546,24 @@ html.transitioning *::after {
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  background: var(--frame-solid);
+  background: var(--chrome-solid);
   /* Clip the backing only: the message's rounded edge and shadow stay intact. */
   clip-path: inset(0);
 }
-.home-landscape > img {
+.home-landscape > img,
+.home-landscape > .skyline-pixels {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
+}
+.home-landscape > img {
   display: block;
   object-fit: cover;
-  object-position: center top;
+  object-position: center;
   filter: blur(var(--skyline-blur)) saturate(var(--skyline-saturation, 1));
-  transform: scale(1.1);
+  transform: scale(1.08);
+  transform-origin: center center;
 }
 [data-skyline-variant="home"] > .home-landscape > img {
   object-position: center;
@@ -3437,10 +3571,8 @@ html.transitioning *::after {
   opacity: 0.2;
 }
 .skyline-pixels {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+  object-fit: cover;
+  object-position: center;
   opacity: 0;
   transition: opacity 350ms ease;
 }

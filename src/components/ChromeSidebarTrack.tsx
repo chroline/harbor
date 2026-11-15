@@ -1,30 +1,46 @@
-import type { ReactNode } from "react";
-import { motion, useReducedMotion } from "framer-motion";
-import { SidebarRail, useSidebar } from "./ui/sidebar";
-import { spring } from "../lib/springs";
+import { useEffect, type ReactNode } from "react";
+import {
+  SIDEBAR_CHROME_PINNED_WIDTH,
+  SIDEBAR_HISTORY_RESERVE,
+} from "../lib/shell-layout";
+import { useSidebar } from "./ui/sidebar";
 
 // The header uses the same width and transition as Fluid's sidebar shell.
 // Once collapsed it retains only the space needed for the window controls.
-export function ChromeSidebarTrack({ children }: { children: ReactNode }) {
-  const { width, open, isMobile, isResizing } = useSidebar();
-  const trackWidth = open && !isMobile ? width : "10rem";
-  const reduced = useReducedMotion();
-  return (
-    <motion.div
-      className="topbar-left"
-      initial={false}
-      animate={{ width: trackWidth }}
-      transition={
-        reduced || isResizing
-          ? { duration: 0 }
-          : open
-            ? spring.slow
-            : spring.slow.exit
-      }
-    >
-      {children}
-    </motion.div>
-  );
+export function ChromeSidebarTrack({ children }: { children?: ReactNode }) {
+  const { open, isMobile } = useSidebar();
+  // Open: end just before back/forward, so those sit on the sidebar's trailing
+  // edge. Collapsed: end at the pinned controls. Written from the card edge so
+  // a drag and the slide both move the title on the same frame.
+  useEffect(() => {
+    const card = document.querySelector(
+      '.harbor-sidebar > div[style*="width"]',
+    );
+    const track = document.querySelector(".topbar-left") as HTMLElement | null;
+    if (!card || !track || isMobile) return;
+    const pinned = SIDEBAR_CHROME_PINNED_WIDTH;
+    const history = SIDEBAR_HISTORY_RESERVE;
+    const read = () => {
+      // The shell's box collapses to zero; the painted card is what slides.
+      const right = Math.max(0, card.getBoundingClientRect().right);
+      const next = right > pinned ? Math.max(pinned, right - history) : pinned;
+      track.style.width = `${Math.round(next)}px`;
+    };
+    read();
+    const observer = new ResizeObserver(read);
+    observer.observe(card);
+    let frame = 0;
+    const watch = () => {
+      read();
+      frame = requestAnimationFrame(watch);
+    };
+    frame = requestAnimationFrame(watch);
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+    };
+  }, [open, isMobile]);
+  return <div className="topbar-left">{children}</div>;
 }
 
 export function ChromeSidebarDivider({
@@ -32,14 +48,5 @@ export function ChromeSidebarDivider({
 }: {
   visible?: boolean;
 }) {
-  const { open, isMobile, isResizing } = useSidebar();
-  return (
-    <span className="topbar-divider" data-visible={visible}>
-      {/* Keep pointer capture alive during a drag-collapse preview so the
-          same gesture can pull the sidebar open again. */}
-      {!isMobile && (open || isResizing) && (
-        <SidebarRail className="topbar-sidebar-rail" />
-      )}
-    </span>
-  );
+  return <span className="topbar-divider" data-visible={visible} />;
 }

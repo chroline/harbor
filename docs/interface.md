@@ -8,9 +8,9 @@ a local desktop home for coding agents. Tauri 2, React 19, strict TypeScript, sh
 
 ## native window surfaces
 
-the sidebar sits outside the rounded main-content frame, over the original active macOS sidebar vibrancy. sidebar, titlebar, and outer gutters share Codex's 70% surface tint (#ededed in light mode, #212121 in dark mode). the main frame retains its original color and 84% light / 72% dark surface opacity. the native blur material is shared across the whole window. reduced transparency supplies an opaque chrome background. there is no grain texture. browser checks verify the CSS layers; native desktop screenshots verify the shared chrome after rebuilding.
+the sidebar floats as a rounded card on the window. its inner edge uses the [Kobra resizable handle](https://kobra.systems/components/resizable): a short grip that follows the pointer, with no resting hairline. drag still resizes between 160px and 360px, and a click still collapses. the conversation is not a second panel: it is the window background, edge to edge beside the sidebar. the sidebar card reserves its top row for the window controls; the conversation title sits on that same row over the background. the window canvas keeps Codex's 70% surface tint (#ededed in light mode, #212121 in dark mode), and the sidebar card uses the main frame color at 84% light / 72% dark opacity so native vibrancy still shows through. reduced transparency supplies opaque chrome. there is no grain texture. browser checks verify the CSS layers; native desktop screenshots verify the shared chrome after rebuilding.
 
-macOS traffic lights are aligned within the 48px titlebar in both main and detached windows. native layout and appearance changes reapply their spacing; fullscreen keeps system placement.
+macOS traffic lights sit on the sidebar's icon column, 26px from the window edge, inside the 48px titlebar in both main and detached windows. native layout and appearance changes reapply their spacing; fullscreen keeps system placement.
 
 ## skyline backgrounds
 

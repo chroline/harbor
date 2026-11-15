@@ -54,10 +54,13 @@ unsafe fn align(window: &NSWindow) {
     // AppKit can notify us halfway through its own layout. Reading the current
     // button positions here feeds that temporary spacing back into our layout.
     // Use a stable pitch with room between the native controls instead.
+    // Origin matches the sidebar icon column: 8px card inset + 6px group
+    // padding + 8px row padding. The browser preview uses the same inset.
     let spacing = 24.0;
+    let light_origin = 26.0;
     for (index, button) in [close, minimize, zoom].into_iter().enumerate() {
         let origin = NSPoint::new(
-            18.0 + index as f64 * spacing,
+            light_origin + index as f64 * spacing,
             (height - button.frame().size.height) / 2.0,
         );
         // Avoid scheduling further window updates when the controls are already aligned.

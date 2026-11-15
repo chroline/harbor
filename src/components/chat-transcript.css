@@ -83,7 +83,7 @@
   z-index: 2;
   padding-top: calc(0.5rem + 1px);
   margin-bottom: 1.125rem;
-  background: var(--frame-solid);
+  background: var(--chrome-solid);
 }
 .chat-transcript .transcript-user {
   width: 100%;
@@ -98,12 +98,14 @@
   padding-inline: var(--transcript-message-inset);
 }
 .chat-transcript .transcript-user [data-slot="bubble-content"] {
-  background: var(--panel);
-  /* Same window as the composer: no CSS border. The edge is the shadow-3 hairline. */
+  background: color-mix(in oklab, var(--muted) 72%, var(--frame-solid));
   border: 0;
-  border-radius: var(--radius-xl);
-  padding: 0.5rem var(--transcript-message-inset);
-  box-shadow: var(--shadow-3);
+  border-radius: 1.125rem;
+  padding: 0.625rem 0.875rem;
+  box-shadow: none;
+  width: fit-content;
+  max-width: min(32rem, 100%);
+  margin-left: auto;
 }
 .transcript-message-label {
   display: block;

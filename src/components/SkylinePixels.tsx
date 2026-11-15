@@ -170,10 +170,14 @@ export function SkylinePixels({
     setFocus(document.activeElement);
 
     artwork.addEventListener("load", prepare);
+    // Sidebar motion changes this box every frame. object-fit scales the
+    // current picture with it. Resampling when the motion ends snaps the crop.
     const observer =
       typeof ResizeObserver === "undefined"
         ? null
-        : new ResizeObserver(prepare);
+        : new ResizeObserver(() => {
+            bounds = element.getBoundingClientRect();
+          });
     observer?.observe(element);
     const intersection =
       typeof IntersectionObserver === "undefined"

@@ -79,7 +79,7 @@ function Harness({ defaultOpen = true, topbar = false }: { defaultOpen?: boolean
           <SidebarKeyboardShortcut />
           <SidebarTrigger />
           {topbar && <ChromeSidebarDivider />}
-          <Sidebar rail={!topbar}>
+          <Sidebar>
             <button>Navigation item</button>
           </Sidebar>
           <State />
@@ -113,9 +113,9 @@ function up(handle: HTMLElement) {
   fireEvent.pointerUp(handle, { pointerId: 1 });
 }
 
-describe.each([false, true])("Fluid rail in topbar: %s", (topbar) => {
+describe("sidebar edge", () => {
   it("resizes to Fluid's bounds without treating a drag as a collapse click", () => {
-    render(<Harness topbar={topbar} />);
+    render(<Harness />);
     const handle = rail();
     down(handle);
     move(handle, 318);
@@ -130,7 +130,7 @@ describe.each([false, true])("Fluid rail in topbar: %s", (topbar) => {
     expect(state("resizing")).toBe("false");
   });
   it("collapses on click, previews drag collapse, and recovers before release", () => {
-    render(<Harness topbar={topbar} />);
+    render(<Harness />);
     let handle = rail();
     down(handle);
     up(handle);
@@ -151,7 +151,7 @@ describe.each([false, true])("Fluid rail in topbar: %s", (topbar) => {
     expect(state("open")).toBe("false");
   });
   it("ends cancelled drags and lost capture without a collapse click", () => {
-    render(<Harness topbar={topbar} />);
+    render(<Harness />);
     const handle = rail();
     down(handle);
     move(handle, 300);
@@ -171,14 +171,10 @@ describe.each([false, true])("Fluid rail in topbar: %s", (topbar) => {
   });
 });
 
-it("only offers the topbar rail for an expanded desktop sidebar", () => {
-  const { rerender } = render(<Harness topbar defaultOpen={false} />);
-  expect(screen.queryByRole("button", { name: "Resize or collapse sidebar" })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Toggle Sidebar" }));
-  expect(rail()).toBeTruthy();
-  mobile = true;
-  rerender(<Harness key="mobile" topbar />);
-  expect(screen.queryByRole("button", { name: "Resize or collapse sidebar" })).toBeNull();
+it("does not put a resize handle in the title row", () => {
+  render(<Harness topbar />);
+  expect(document.querySelector(".topbar-divider [data-sidebar='rail']")).toBeNull();
+  expect(document.querySelectorAll('[data-sidebar="rail"]')).toHaveLength(1);
 });
 
 describe("Harbor's Fluid sidebar shortcut", () => {

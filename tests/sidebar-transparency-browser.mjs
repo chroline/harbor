@@ -43,9 +43,9 @@ for (const theme of ["light", "dark"]) {
   console.log({ theme, layers });
   assert.equal(layers.sidebar, "rgba(0, 0, 0, 0)");
   assert.equal(layers.titlebar, "rgba(0, 0, 0, 0)");
-  assert.equal(layers.sidebarContent, "rgba(0, 0, 0, 0)");
+  assert.notEqual(layers.sidebarContent, "rgba(0, 0, 0, 0)");
   assert.match(layers.root, /rgba\(/);
-  assert.notEqual(layers.frame, "rgba(0, 0, 0, 0)");
+  assert.equal(layers.frame, "rgba(0, 0, 0, 0)");
   console.log(
     await page.screenshot({
       path: `/tmp/harbor-sidebar-transparent-${theme}.png`,

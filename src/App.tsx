@@ -15,6 +15,7 @@ import { MenuItem } from "./components/ui/menu-item";
 import {
   SidebarProvider,
   Sidebar,
+  useSidebar,
   SidebarTrigger,
   SidebarGroupAction,
   SidebarContent,
@@ -121,6 +122,57 @@ import {
 } from "./components/ChromeSidebarTrack";
 import { TopbarHistory } from "./components/TopbarHistory";
 import { SidebarRowMenu } from "./components/SidebarRowMenu";
+import { ResizeGrip } from "./components/ui/resizable";
+import { MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH } from "./lib/shell-layout";
+
+function SidebarResizeHandle({
+  width,
+  setWidth,
+  active,
+  setActive,
+}: {
+  width: number;
+  setWidth: (next: string) => void;
+  active: boolean;
+  setActive: (next: boolean) => void;
+}) {
+  const { setIsResizing } = useSidebar();
+  return (
+    <div
+      className="harbor-sidebar-handle"
+      onPointerDown={(event) => {
+        if (event.button !== 0) return;
+        const handle = event.currentTarget;
+        const startX = event.clientX;
+        const startWidth = width;
+        handle.setPointerCapture(event.pointerId);
+        handle.dataset.separator = "active";
+        setActive(true);
+        setIsResizing(true);
+        const move = (pointer: PointerEvent) => {
+          const next = Math.max(
+            MIN_SIDEBAR_WIDTH,
+            Math.min(MAX_SIDEBAR_WIDTH, startWidth + pointer.clientX - startX),
+          );
+          setWidth(pixelsToRem(next));
+        };
+        const up = () => {
+          handle.dataset.separator = "inactive";
+          setActive(false);
+          setIsResizing(false);
+          document.removeEventListener("pointermove", move, true);
+          document.removeEventListener("pointerup", up, true);
+          document.removeEventListener("pointercancel", up, true);
+        };
+        document.addEventListener("pointermove", move, true);
+        document.addEventListener("pointerup", up, true);
+        document.addEventListener("pointercancel", up, true);
+      }}
+    >
+      <ResizeGrip active={active} className="pointer-events-none absolute inset-0" />
+    </div>
+  );
+}
 import { open as openFolder } from "@tauri-apps/plugin-dialog";
 import type { Workspace } from "./lib/bindings/Workspace";
 export default function App() {
@@ -134,6 +186,7 @@ export default function App() {
     setWidth: setSidebarWidth,
   } = useShellLayout();
   const [creating, setCreating] = useState(false);
+  const [resizingSidebar, setResizingSidebar] = useState(false);
   const creatingRef = useRef(false);
   const [tree, setTree] = useState(true);
   const [branch, setBranch] = useState("");
@@ -550,7 +603,7 @@ export default function App() {
             .catch((error) => setError(String(error)));
         }}
       >
-        <ChromeSidebarTrack>
+        <div className="topbar-pinned">
           <div className="window-controls" aria-hidden="true">
             {!desktop && (
               <div className="traffic-lights">
@@ -561,15 +614,19 @@ export default function App() {
             )}
           </div>
           <SidebarTrigger size="icon-compact" />
+          <IconButton label="Search · ⌘ K" onClick={() => setSearch(true)}>
+            <Search size={rem(18)} />
+          </IconButton>
+        </div>
+        <ChromeSidebarTrack />
+        <div className="topbar-context">
           <TopbarHistory
             canGoBack={history.index > 0}
             canGoForward={history.index < history.entries.length - 1}
             onBack={goBack}
             onForward={goForward}
           />
-        </ChromeSidebarTrack>
-        <div className="topbar-context">
-          <ChromeSidebarDivider visible={!active || tabDividerVisible} />
+          <ChromeSidebarDivider />
           {active && typeof view === "object" ? (
             <div ref={setChatTabsTarget} className="topbar-task-tabs" />
           ) : (
@@ -626,7 +683,9 @@ export default function App() {
           className="harbor-sidebar"
           variant="sidebar"
           bordered={false}
+          rail={false}
         >
+          <div className="sidebar-window-bar" aria-hidden="true" />
           <SidebarContent>
             <span id="sidebar-reorder-help" className="sr-only">
               Drag to rearrange, use Option or Alt plus Up or Down, or open the
@@ -796,6 +855,12 @@ export default function App() {
             </SidebarMenu>
           </SidebarFooter>
         </Sidebar>
+        <SidebarResizeHandle
+          width={sidebarWidth}
+          setWidth={setSidebarWidth}
+          active={resizingSidebar}
+          setActive={setResizingSidebar}
+        />
         <div className="main-shell workspace-frame">
           <SkylineScene
             frame
