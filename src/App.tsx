@@ -45,6 +45,7 @@ import { discoveryMode } from "./components/ModePicker";
 import { TaskComposer } from "./components/TaskComposer";
 import { HomeScene, SkylineScene } from "./components/SkylineBackground";
 import { HomeDashboard } from "./components/HomeDashboard";
+import { HomePager } from "./components/HomePager";
 import { skylineCity } from "./lib/skyline-city";
 import { skylineTimeOfDay } from "./lib/skyline-period";
 import { WorkspacePicker } from "./components/WorkspacePicker";
@@ -353,11 +354,18 @@ export default function App() {
     go("home");
     setFocusComposer((value) => value + 1);
   };
+  // Focus the composer only when asked (New task, ⌘N): focusing it centers it
+  // and moves the dashboard aside, so merely landing on home must not.
+  const pendingComposerFocus = useRef(false);
   useEffect(() => {
-    if (view === "home" && !creating)
-      taskComposer.current
-        ?.querySelector<HTMLElement>('[role="textbox"], textarea')
-        ?.focus();
+    if (focusComposer) pendingComposerFocus.current = true;
+  }, [focusComposer]);
+  useEffect(() => {
+    if (view !== "home" || creating || !pendingComposerFocus.current) return;
+    pendingComposerFocus.current = false;
+    taskComposer.current
+      ?.querySelector<HTMLElement>('[role="textbox"], textarea')
+      ?.focus();
   }, [view, focusComposer, creating]);
   const openProject = async (project: Project, fresh = false, throwOnError = false) => {
     if (creatingRef.current && startingProject?.id === project.id) return;
@@ -993,7 +1001,19 @@ export default function App() {
               <div className="large-empty"><ThinkingIndicator label={`Starting ${startingProject.name}…`} /></div>
             ) : view === "home" ? (
               <HomeScene city={skylineCity(record(data.settings).skylineCity)}>
-                <div className="home-stack">
+                <HomePager
+                  sheet={
+                    <HomeDashboard
+                      sessions={sessions}
+                      workspaces={data.workspaces}
+                      onOpenSession={(id) => go({ session: id })}
+                      onNewTask={(id) => {
+                        setWorkspace(id);
+                        newTask();
+                      }}
+                    />
+                  }
+                >
                 <div className="home-content chat-composer-wrap">
                   <section
                     ref={taskComposer}
@@ -1065,16 +1085,7 @@ export default function App() {
                     />
                   </section>
                 </div>
-                <HomeDashboard
-                  sessions={sessions}
-                  workspaces={data.workspaces}
-                  onOpenSession={(id) => go({ session: id })}
-                  onNewTask={(id) => {
-                    setWorkspace(id);
-                    newTask();
-                  }}
-                />
-                </div>
+                </HomePager>
               </HomeScene>
             ) : view === "settings" ? (
               <Settings />
