@@ -200,6 +200,8 @@ export function ActionList({
     onClick: () => void;
     selected?: boolean;
     depth?: number;
+    /** A sibling control (e.g. a star) laid over the row's end; never nested in the row button. */
+    trailing?: ReactNode;
   }[];
   className?: string;
 }) {
@@ -233,13 +235,14 @@ function ActionRow({
     onClick: () => void;
     selected?: boolean;
     depth?: number;
+    trailing?: ReactNode;
   };
   index: number;
   registerItem: (index: number, element: HTMLElement | null) => void;
 }) {
   const ref = useRef<HTMLButtonElement>(null);
   useRegisterFluidHoverItem(registerItem, index, ref);
-  return (
+  const row = (
     <button
       ref={ref}
       className="fluid-action-row"
@@ -257,5 +260,15 @@ function ActionRow({
     >
       {item.content}
     </button>
+  );
+  if (!item.trailing) return row;
+  return (
+    <div
+      className="fluid-action-row-wrap"
+      data-selected={item.selected || undefined}
+    >
+      {row}
+      <span className="fluid-action-row-trailing">{item.trailing}</span>
+    </div>
   );
 }

@@ -1059,6 +1059,7 @@ export default function App() {
                           provider={provider}
                           onProviderChange={(id) => setProvider(defaultProvider(id))}
                           disabled={creating}
+                          workspaceId={workspace || null}
                         />
                       }
                     />

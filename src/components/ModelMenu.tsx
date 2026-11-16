@@ -2,15 +2,35 @@ import { ThinkingIndicator } from "./ui/thinking-indicator";
 import { Tooltip } from "./ui/tooltip";
 import { findAdapter } from "../adapters";
 import { ComposerPickerSurface } from "./composer-picker";
-import { ProviderConnectionButton } from "./ProviderConnectionButton";
 import { rem } from "@/lib/units";
-import { useState, useEffect, type KeyboardEvent, type ReactNode } from "react";
+import {
+  useState,
+  useEffect,
+  useMemo,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { motion } from "framer-motion";
-import { Check, ChevronDown, ChevronRight, ArrowLeft } from "@/lib/icons";
+import {
+  Check,
+  ChevronRight,
+  ArrowLeft,
+  SlidersHorizontal,
+  Star,
+} from "@/lib/icons";
+import {
+  isFavoriteModel,
+  toggleFavoriteModel,
+  useFavoriteModels,
+} from "../lib/favorite-models";
 import { Button } from "./ui/button";
 import { PickerViews } from "./ui/picker-views";
-import { EffortChooser } from "./kokonutui/effort-chooser";
+import {
+  EffortBars,
+  EffortChooser,
+  EffortSlider,
+} from "./kokonutui/effort-chooser";
 import { Switch } from "./ui/switch";
 import { Tabs, TabsList, TabItem } from "./ui/tabs";
 import { Field, Picker, ActionList } from "./fluid";
@@ -25,7 +45,12 @@ import {
   str,
   type ConfigOption,
 } from "../lib/protocol";
-import { missingModelMessage, useProviderConfig } from "../lib/provider-config";
+import {
+  missingModelMessage,
+  selectProviderConfig,
+  useProviderConfig,
+} from "../lib/provider-config";
+import { workspaceRecentModels, type RecentModel } from "../lib/model-recents";
 import { exitFallbackMs, spring } from "../lib/springs";
 import { popupMotionClass } from "../lib/popup";
 import type { SessionRecord } from "../lib/bindings/SessionRecord";
@@ -42,7 +67,9 @@ type MenuProps = {
   disabled?: boolean;
   error?: string;
   retry?: () => void;
-  connectionAction?: ReactNode;
+  /** Agent + model pairs used recently in the current workspace. */
+  recents?: RecentModel[];
+  onRecentSelect?: (recent: RecentModel) => void;
 };
 export function ModelMenu({
   provider,
@@ -56,7 +83,8 @@ export function ModelMenu({
   disabled,
   error,
   retry,
-  connectionAction,
+  recents = [],
+  onRecentSelect,
 }: MenuProps) {
   const { data } = useStore();
   const [open, setOpen] = useState(false);
@@ -111,6 +139,17 @@ export function ModelMenu({
       (o.category === "thought_level" || /reasoning|effort/i.test(o.id)),
   );
   const levels = effort ? values(effort) : [];
+  const effortIndex = effort
+    ? levels.findIndex(
+        (l) =>
+          l.value === str(pendingSelections?.[effort.id] ?? effort.currentValue),
+      )
+    : -1;
+  // While the menu is open the trigger follows the slider's thumb.
+  const [effortPreview, setEffortPreview] = useState<number | null>(null);
+  const shownEffortIndex =
+    open && effortPreview !== null ? effortPreview : effortIndex;
+  const effortLabel = levels[shownEffortIndex]?.name;
   const workingMode = chatMode(controls, modes);
   const remaining = controls.filter(
     (o) => o !== model && o !== effort && o.id !== workingMode?.configId,
@@ -142,6 +181,85 @@ export function ModelMenu({
     )
       onChange(id, value);
   };
+  const changeSetting = (id: string, value: string | boolean) => {
+    if (!disabled && !busy) onChange(id, value);
+  };
+  const favorites = useFavoriteModels();
+  const isCurrent = (m: RecentModel) =>
+    m.providerId === provider && m.value === selected;
+  // Favorites follow you across workspaces; recents fill in what isn't starred.
+  const favoriteShortcuts = onRecentSelect
+    ? favorites.filter((f) => data.providers.some((p) => p.id === f.providerId))
+    : [];
+  const shortcuts = onRecentSelect
+    ? recents.filter((r) => !isCurrent(r) && !isFavoriteModel(favorites, r))
+    : [];
+  const agentName = (id: string) =>
+    data.providers.find((p) => p.id === id)?.name ?? id;
+  // One star control for model-list rows and shortcut rows alike.
+  const starFor = (pair: RecentModel) => {
+    const starred = isFavoriteModel(favorites, pair);
+    return (
+      <Tooltip content={starred ? "Remove from favorites" : "Add to favorites"}>
+        <Button
+          variant="ghost"
+          size="icon-compact"
+          className="model-menu-favorite"
+          data-favorite={starred || undefined}
+          aria-pressed={starred}
+          aria-label={`Favorite ${pair.name} on ${agentName(pair.providerId)}`}
+          onClick={() => toggleFavoriteModel(pair)}
+        >
+          <Star size={rem(14)} fill={starred ? "currentColor" : "none"} />
+        </Button>
+      </Tooltip>
+    );
+  };
+  const favoriteStar = (choice: { value: string; name: string }) =>
+    starFor({
+      providerId: provider,
+      optionId: model?.id ?? "__legacy_model",
+      value: choice.value,
+      name: choice.name,
+    });
+  const shortcutSection = (label: string, items: RecentModel[]) => (
+    <div className="model-menu-recents">
+      <span className="model-menu-recents-label">{label}</span>
+      <div
+        className="model-menu-list"
+        aria-label={label}
+        onKeyDown={navigateMenuList}
+      >
+        <ActionList
+          items={items.map((r) => {
+            const agent =
+              data.providers.find((p) => p.id === r.providerId)?.name ??
+              r.providerId;
+            return {
+              id: `${r.providerId}:${r.value}`,
+              selected: isCurrent(r),
+              trailing: starFor(r),
+              onClick: () => {
+                if (disabled || busy) return;
+                if (!isCurrent(r)) onRecentSelect?.(r);
+                setOpen(false);
+              },
+              content: (
+                <>
+                  <ProviderIcon id={r.providerId} />
+                  <span className="model-menu-recent-label">
+                    <span>{r.name}</span>
+                    <span>{agent}</span>
+                  </span>
+                  {isCurrent(r) && <Check size={rem(16)} />}
+                </>
+              ),
+            };
+          })}
+        />
+      </div>
+    </div>
+  );
   const shown = choices.filter((c) =>
     `${c.name} ${c.description ?? ""}`
       .toLowerCase()
@@ -163,7 +281,7 @@ export function ModelMenu({
         <Button
           variant="ghost"
           leadingIcon={providerGlyph(provider)}
-          trailingIcon={busy ? SpinnerIcon : ChevronDown}
+          trailingIcon={busy ? SpinnerIcon : undefined}
           className="model-menu-trigger"
           aria-label="Choose model and reasoning"
           disabled={disabled}
@@ -172,6 +290,14 @@ export function ModelMenu({
             <span className="model-trigger-name">
               {current?.name ?? providerName}
             </span>
+            {effortLabel && (
+              // The signal-bar stepper stands in for the level name; the name
+              // stays available to assistive tech.
+              <span className="model-trigger-effort effort-meter">
+                <EffortBars count={levels.length} level={shownEffortIndex} />
+                <span className="sr-only">{effortLabel}</span>
+              </span>
+            )}
           </span>
         </Button>
       </Popover.Trigger>
@@ -185,6 +311,20 @@ export function ModelMenu({
             sideOffset={6}
             collisionPadding={14}
             aria-label="Model and agent settings"
+            onOpenAutoFocus={focusPopupContainer}
+            onKeyDown={(event) => {
+              if (
+                event.target !== event.currentTarget ||
+                !["ArrowDown", "ArrowUp"].includes(event.key)
+              )
+                return;
+              event.preventDefault();
+              event.currentTarget
+                .querySelector<HTMLElement>(
+                  '.model-menu-view[data-active="true"] button:not(:disabled), .model-menu-view[data-active="true"] input',
+                )
+                ?.focus();
+            }}
             onEscapeKeyDown={(event) => {
               if (view === "agents") {
                 event.preventDefault();
@@ -221,6 +361,10 @@ export function ModelMenu({
                   returnFocus={returnFocus}
                   settings={
                     <>
+                      {favoriteShortcuts.length > 0 &&
+                        shortcutSection("Favorites", favoriteShortcuts)}
+                      {shortcuts.length > 0 &&
+                        shortcutSection("Recent in this workspace", shortcuts)}
                       <div className="model-menu-summary">
                         <Button
                           variant="ghost"
@@ -233,7 +377,7 @@ export function ModelMenu({
                           }}
                         >
                           <span className="model-menu-summary-content">
-                            <ProviderIcon id={provider} size={rem(18)} />
+                            <ProviderIcon id={provider} />
                             <span className="model-menu-summary-label">
                               <Tooltip content={current?.name ?? providerName}><strong>
                                 {current?.name ?? providerName}
@@ -244,64 +388,22 @@ export function ModelMenu({
                           </span>
                         </Button>
                       </div>
-                      {(remaining.length > 0 || legacyModes.length > 0) && (
-                        <div className="model-menu-settings">
-                          {remaining.map((o) => (
-                            <div className="model-menu-setting" key={o.id}>
-                              <span>
-                                {findAdapter(provider)?.controlLabel(o) ?? o.name}
-                              </span>
-                              {o.type === "boolean" ? (
-                                <Switch
-                                  label={o.name}
-                                  labelHidden
-                                  checked={o.currentValue === true}
-                                  onToggle={() =>
-                                    change(o.id, o.currentValue !== true)
-                                  }
-                                  disabled={busy}
-                                />
-                              ) : /permission|approval|access|mode/i.test(
-                                  `${o.id} ${o.category} ${o.name}`,
-                                ) ? (
-                                <PermissionChoices
-                                  label={
-                                    findAdapter(provider)?.controlLabel(o) ?? o.name
-                                  }
-                                  choices={values(o)}
-                                  value={String(o.currentValue)}
-                                  disabled={busy || disabled}
-                                  onChange={(v) => change(o.id, v)}
-                                />
-                              ) : (
-                                <Picker
-                                  label={o.name}
-                                  value={String(o.currentValue)}
-                                  disabled={busy}
-                                  items={values(o).map((v) => ({
-                                    value: v.value,
-                                    label: v.name,
-                                  }))}
-                                  onValueChange={(v) => change(o.id, v)}
-                                />
-                              )}
-                            </div>
-                          ))}
-                          {!!legacyModes.length && (
-                            <div className="model-menu-setting">
-                              <span>Mode</span>
-                              <PermissionChoices
-                                label="Mode"
-                                value={str(record(modes).currentModeId)}
-                                disabled={busy || disabled}
-                                choices={legacyModes.map((m) => ({
-                                  value: str(m.id),
-                                  name: str(m.name),
-                                }))}
-                                onChange={(v) => change("__legacy_mode", v)}
-                              />
-                            </div>
-                          )}
+                      {effort && levels.length > 0 && (
+                        <div className="model-menu-effort">
+                          <EffortSlider
+                            options={levels.map((level) => ({
+                              value: level.value,
+                              label: level.name,
+                              description: level.description,
+                            }))}
+                            value={str(
+                              pendingSelections?.[effort.id] ??
+                                effort.currentValue,
+                            )}
+                            disabled={busy || disabled}
+                            onChange={(value) => change(effort.id, value)}
+                            onPreview={setEffortPreview}
+                          />
                         </div>
                       )}
                       {error && (
@@ -319,7 +421,6 @@ export function ModelMenu({
                           )}
                         </div>
                       )}
-                      {connectionAction}
                     </>
                   }
                   agents={
@@ -402,28 +503,6 @@ export function ModelMenu({
                       }}
                     />
                   </div>
-                  <div className="model-menu-provider">
-                    {onProviderChange ? (
-                      <Button
-                        variant="ghost"
-                        className="model-menu-agent-trigger"
-                        aria-label="Choose agent"
-                        onClick={() => setView("agents")}
-                        disabled={disabled}
-                      >
-                        <span className="model-menu-agent-trigger-content">
-                          <ProviderIcon id={provider} />
-                          <span>{providerName}</span>
-                          <ChevronRight size={rem(16)} />
-                        </span>
-                      </Button>
-                    ) : (
-                      <span className="model-menu-agent-trigger-content">
-                        <ProviderIcon id={provider} />
-                        <span>{providerName}</span>
-                      </span>
-                    )}
-                  </div>
                   <div
                     className="model-menu-list"
                     aria-label="Available models"
@@ -434,6 +513,7 @@ export function ModelMenu({
                       items={shown.map((c) => ({
                         id: c.value,
                         selected: c.value === selected,
+                        trailing: favoriteStar(c),
                         onClick: () => {
                           if (disabled) return;
                           change(model?.id ?? "__legacy_model", c.value);
@@ -457,11 +537,26 @@ export function ModelMenu({
                       </div>
                     )}
                   </div>
-                  {current?.description && (
-                    <p className="model-menu-description">
-                      {current.description}
-                    </p>
-                  )}
+                  <div className="model-menu-provider">
+                    {/* An existing chat can't change agent, but the row looks the
+                        same; it just doesn't respond. */}
+                    <Button
+                      variant="ghost"
+                      className="model-menu-agent-trigger"
+                      data-static={onProviderChange ? undefined : ""}
+                      aria-label={onProviderChange ? "Choose agent" : `Agent: ${providerName}`}
+                      aria-disabled={onProviderChange ? undefined : true}
+                      tabIndex={onProviderChange ? undefined : -1}
+                      onClick={onProviderChange ? () => setView("agents") : undefined}
+                      disabled={disabled}
+                    >
+                      <span className="model-menu-agent-trigger-content">
+                        <ProviderIcon id={provider} />
+                        <span>{providerName}</span>
+                        {onProviderChange && <ChevronRight size={rem(16)} />}
+                      </span>
+                    </Button>
+                  </div>
                   {error && (
                     <div className="model-menu-error" role="alert">
                       <span>{error}</span>
@@ -483,16 +578,119 @@ export function ModelMenu({
           </Popover.Content>
         </Popover.Portal>
       )}
-      {effort && levels.length > 0 && (
-        <EffortControl
-          option={{
-            ...effort,
-            currentValue: pendingSelections?.[effort.id] ?? effort.currentValue,
-          }}
-          disabled={busy || disabled}
-          onChange={(value) => change(effort.id, value)}
-        />
+      {(remaining.length > 0 || legacyModes.length > 0) && (
+        <AgentSettingsPopover disabled={disabled}>
+          <div className="model-menu-settings">
+            {remaining.map((o) => (
+              <div className="model-menu-setting" key={o.id}>
+                <span>{findAdapter(provider)?.controlLabel(o) ?? o.name}</span>
+                {o.type === "boolean" ? (
+                  <Switch
+                    label={o.name}
+                    labelHidden
+                    checked={o.currentValue === true}
+                    onToggle={() => changeSetting(o.id, o.currentValue !== true)}
+                    disabled={busy || disabled}
+                  />
+                ) : /permission|approval|access|mode/i.test(
+                    `${o.id} ${o.category} ${o.name}`,
+                  ) ? (
+                  <PermissionChoices
+                    label={findAdapter(provider)?.controlLabel(o) ?? o.name}
+                    choices={values(o)}
+                    value={String(o.currentValue)}
+                    disabled={busy || disabled}
+                    onChange={(v) => changeSetting(o.id, v)}
+                  />
+                ) : (
+                  <Picker
+                    label={o.name}
+                    value={String(o.currentValue)}
+                    disabled={busy || disabled}
+                    items={values(o).map((v) => ({
+                      value: v.value,
+                      label: v.name,
+                    }))}
+                    onValueChange={(v) => changeSetting(o.id, v)}
+                  />
+                )}
+              </div>
+            ))}
+            {!!legacyModes.length && (
+              <div className="model-menu-setting">
+                <span>Mode</span>
+                <PermissionChoices
+                  label="Mode"
+                  value={str(record(modes).currentModeId)}
+                  disabled={busy || disabled}
+                  choices={legacyModes.map((m) => ({
+                    value: str(m.id),
+                    name: str(m.name),
+                  }))}
+                  onChange={(v) => changeSetting("__legacy_mode", v)}
+                />
+              </div>
+            )}
+          </div>
+        </AgentSettingsPopover>
       )}
+    </Popover.Root>
+  );
+}
+
+/** Opening shouldn't ring the first row: focus the popup itself so Tab and
+ *  arrows still move into it, but nothing shows a focus outline yet. */
+function focusPopupContainer(event: Event) {
+  event.preventDefault();
+  (event.currentTarget as HTMLElement | null)?.focus({ preventScroll: true });
+}
+
+/** Agent options beyond model and effort (permissions, fast mode…) behind a tuning icon. */
+function AgentSettingsPopover({
+  disabled,
+  children,
+}: {
+  disabled?: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Tooltip content="Agent settings">
+        <Popover.Trigger asChild>
+          <Button
+            variant="ghost"
+            size="icon-compact"
+            className="agent-settings-trigger"
+            aria-label="Agent settings"
+            disabled={disabled}
+          >
+            <SlidersHorizontal size={rem(16)} />
+          </Button>
+        </Popover.Trigger>
+      </Tooltip>
+      <Popover.Portal>
+        <Popover.Content
+          side="top"
+          align="start"
+          sideOffset={6}
+          collisionPadding={14}
+          aria-label="Agent settings"
+          onOpenAutoFocus={focusPopupContainer}
+          className={`z-50 outline-none ${popupMotionClass}`}
+          asChild
+        >
+          <motion.div
+            initial={{ opacity: 0, y: "var(--popup-enter-y)", scaleY: 0.96 }}
+            animate={{ opacity: 1, y: 0, scaleY: 1 }}
+            transition={spring.fast}
+          >
+            <ComposerPickerSurface className="model-menu agent-settings-menu">
+              {children}
+            </ComposerPickerSurface>
+          </motion.div>
+        </Popover.Content>
+      </Popover.Portal>
     </Popover.Root>
   );
 }
@@ -540,7 +738,7 @@ function navigateMenuList(event: KeyboardEvent<HTMLDivElement>) {
   if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
   const buttons = Array.from(
     event.currentTarget.querySelectorAll<HTMLButtonElement>(
-      "button:not(:disabled)",
+      "button:not(:disabled):not(.model-menu-favorite)",
     ),
   );
   const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
@@ -561,12 +759,37 @@ export function DiscoveryModelMenu({
   provider,
   onProviderChange,
   disabled,
+  workspaceId,
 }: {
   state: ReturnType<typeof useProviderConfig>;
   provider: string;
   onProviderChange: (id: string) => void;
   disabled?: boolean;
+  /** Workspace whose recent agent + model pairs to offer; omit to hide recents. */
+  workspaceId?: string | null;
 }) {
+  const { data } = useStore();
+  const recents = useMemo(
+    () =>
+      workspaceId === undefined
+        ? []
+        : workspaceRecentModels(
+            data.sessions,
+            workspaceId,
+            data.providers.map((p) => p.id),
+          ),
+    [data.sessions, data.providers, workspaceId],
+  );
+  const selectRecent = (recent: RecentModel) => {
+    if (recent.providerId === provider) {
+      state.set(recent.optionId, recent.value);
+      return;
+    }
+    const definition = data.providers.find((p) => p.id === recent.providerId);
+    if (!definition) return;
+    selectProviderConfig(definition, recent.optionId, recent.value);
+    onProviderChange(recent.providerId);
+  };
   const controls = options(state.config?.configOptions);
   const missing =
     state.config &&
@@ -579,16 +802,13 @@ export function DiscoveryModelMenu({
       models={state.config?.models}
       modes={state.config?.modes}
       onProviderChange={onProviderChange}
+      recents={recents}
+      onRecentSelect={selectRecent}
       onChange={state.set}
       busy={state.busy}
       pendingSelections={state.pending}
       disabled={disabled}
       retry={state.retry}
-      connectionAction={
-        !state.preview && (
-          <ProviderConnectionButton providerId={provider} disabled={disabled} />
-        )
-      }
       error={
         state.preview
           ? "Open the desktop app to load models."

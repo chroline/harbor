@@ -297,6 +297,7 @@ export function LaunchDialog({
                   provider={provider}
                   onProviderChange={(id) => setProvider(defaultProvider(id))}
                   disabled={busy}
+                  workspaceId={workspaceId || null}
                 />
               )
             }

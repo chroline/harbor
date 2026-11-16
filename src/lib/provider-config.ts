@@ -180,6 +180,22 @@ export function useProviderConfig(
   };
 }
 
+/** Queue a selection on another provider's discovery so switching agents lands on it. */
+export function selectProviderConfig(
+  provider: ProviderDefinition,
+  id: string,
+  value: string | boolean,
+) {
+  if (!desktop) return;
+  const key = JSON.stringify([provider.id, provider.command, provider.args]);
+  const entry = entries.get(key);
+  void load(key, provider, {
+    ...configurationSelections(entry?.config),
+    ...entry?.pending,
+    [id]: value,
+  });
+}
+
 export function missingModelMessage(config: ProviderConfiguration): string {
   const info = record(config.agentInfo);
   const name = str(info.title, str(info.name, "The connected agent"));
