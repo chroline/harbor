@@ -1731,6 +1731,10 @@ html.standalone {
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
 }
+/* Chat tables sit in the same rhythm as code blocks. */
+.markdown [data-slot="table-container"] {
+  margin: 0.75rem 0;
+}
 .markdown-code-block {
   position: relative;
   min-width: 0;

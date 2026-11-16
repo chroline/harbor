@@ -26,6 +26,14 @@ import { Terminal, Copy, Check, ChevronDown } from "@/lib/icons";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { MermaidBlock } from "./MermaidBlock";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "./ui/table";
 import { MessageImage } from "./MessageImage";
 import type { RootContent } from "hast";
 import { Button } from "./ui/button";
@@ -191,8 +199,6 @@ function streamed(
     | "strong"
     | "del"
     | "blockquote"
-    | "td"
-    | "th"
     | "h1"
     | "h2"
     | "h3"
@@ -243,7 +249,32 @@ function MarkdownOrderedList({ node: _node, children, start, style, ...props }: 
   return <ol {...props} ref={ref} start={start} style={style}>{children}</ol>;
 }
 
+// Chat tables use the same primitives as the rest of the app. Cells wrap, since
+// message prose is not a data grid, and still reveal word by word while streaming.
+type MarkdownNode = { node?: unknown };
+function MarkdownCell({ node: _node, children, ...props }: ComponentProps<"td"> & MarkdownNode) {
+  const streaming = useContext(MarkdownStreaming);
+  return (
+    <TableCell {...props} className="h-auto min-w-24 py-2 whitespace-normal">
+      {streamLeaves(children, streaming)}
+    </TableCell>
+  );
+}
+function MarkdownHeadCell({ node: _node, children, ...props }: ComponentProps<"th"> & MarkdownNode) {
+  const streaming = useContext(MarkdownStreaming);
+  return (
+    <TableHead {...props} className="h-auto py-2 font-medium whitespace-normal">
+      {streamLeaves(children, streaming)}
+    </TableHead>
+  );
+}
 const markdownComponents: Components = {
+  table: ({ node: _node, ...props }) => <Table className="text-[length:inherit]" {...props} />,
+  thead: ({ node: _node, ...props }) => <TableHeader {...props} />,
+  tbody: ({ node: _node, ...props }) => <TableBody {...props} />,
+  tr: ({ node: _node, ...props }) => <TableRow {...props} />,
+  td: MarkdownCell,
+  th: MarkdownHeadCell,
   img: ({ src, alt, title }) => <MessageImage src={typeof src === "string" ? src : undefined} alt={alt} title={title} />,
   ol: MarkdownOrderedList,
   a: ({ children, href }) => {
@@ -285,8 +316,6 @@ const markdownComponents: Components = {
   strong: streamed("strong"),
   del: streamed("del"),
   blockquote: streamed("blockquote"),
-  td: streamed("td"),
-  th: streamed("th"),
   h1: streamed("h1"),
   h2: streamed("h2"),
   h3: streamed("h3"),
