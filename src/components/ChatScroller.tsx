@@ -31,6 +31,19 @@ const OVERLAP_CLEARANCE = 8;
 const GUTTER_CLEARANCE = 12;
 const REVEAL_TURN_EVENT = "harbor:reveal-turn";
 const TURN_OVERSCAN = 1200;
+const FOLLOW_GLIDE_TAU_MS = 50;
+const SCROLL_KEYS = new Set([
+  "ArrowDown",
+  "ArrowUp",
+  "End",
+  "Home",
+  "PageDown",
+  "PageUp",
+  " ",
+]);
+const prefersReducedMotion = () =>
+  typeof window.matchMedia === "function" &&
+  window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 function minimapOverlapsContent(root: HTMLElement) {
   const content = root.querySelector<HTMLElement>(".conversation-content");
@@ -288,6 +301,7 @@ function ScrollContent({
   const liveEdge = useRef(true);
   const lastRequest = useRef(requestId);
   const reducedMotion = useReducedMotion();
+  const cleanupViewport = useRef<(() => void) | null>(null);
   const { scrollToMessage, scrollToEnd } = useMessageScroller();
   const { end } = useMessageScrollerScrollable();
 
@@ -305,7 +319,131 @@ function ScrollContent({
     if (!element && viewport.current && opened.current) {
       onPosition.current(viewport.current.scrollTop);
     }
+    if (viewport.current !== element) {
+      cleanupViewport.current?.();
+      cleanupViewport.current = null;
+    }
     viewport.current = element;
+    if (!element || cleanupViewport.current) return;
+
+    // CSS `scroll-behavior: smooth` restarts from zero velocity on every
+    // follow-output `scrollTo`, causing sawtooth stutters and lag during long
+    // generations. Drive follow-end updates with a continuous rAF glide so
+    // growing output updates the target smoothly in-flight.
+    const nativeScrollTo =
+      typeof element.scrollTo === "function"
+        ? element.scrollTo.bind(element)
+        : null;
+    let glideFrame = 0;
+    let gliding = false;
+    let targetTop = 0;
+    let lastTime = 0;
+
+    const stopGlide = () => {
+      if (glideFrame) {
+        cancelAnimationFrame(glideFrame);
+        glideFrame = 0;
+      }
+      gliding = false;
+      lastTime = 0;
+    };
+
+    const step = (now: number) => {
+      glideFrame = 0;
+      const maxTop = Math.max(0, element.scrollHeight - element.clientHeight);
+      const goal = Math.min(targetTop, maxTop);
+      const remaining = goal - element.scrollTop;
+      if (
+        remaining <= 0.5 ||
+        prefersReducedMotion() ||
+        element.hasAttribute("data-pending-scroll")
+      ) {
+        element.scrollTop = goal;
+        stopGlide();
+        return;
+      }
+      const dt = lastTime ? Math.min(24, Math.max(1, now - lastTime)) : 16.67;
+      lastTime = now;
+      const alpha = 1 - Math.exp(-dt / FOLLOW_GLIDE_TAU_MS);
+      const delta = remaining > 1 ? Math.max(1, remaining * alpha) : remaining;
+      element.scrollTop = Math.min(goal, element.scrollTop + delta);
+      glideFrame = requestAnimationFrame(step);
+    };
+
+    const onWheel = () => stopGlide();
+    const onTouchMove = () => stopGlide();
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.target === element && event.offsetX > element.clientWidth)
+        stopGlide();
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (SCROLL_KEYS.has(event.key)) stopGlide();
+    };
+
+    element.addEventListener("wheel", onWheel, { passive: true });
+    element.addEventListener("touchmove", onTouchMove, { passive: true });
+    element.addEventListener("pointerdown", onPointerDown, { passive: true });
+    element.addEventListener("keydown", onKeyDown);
+
+    const hasOwnScrollTo = Object.prototype.hasOwnProperty.call(
+      element,
+      "scrollTo",
+    );
+    const previousDescriptor = hasOwnScrollTo
+      ? Object.getOwnPropertyDescriptor(element, "scrollTo")
+      : undefined;
+
+    if (nativeScrollTo) {
+      element.scrollTo = ((
+        optionsOrX?: ScrollToOptions | number,
+        y?: number,
+      ) => {
+        if (
+          typeof optionsOrX === "object" &&
+          optionsOrX !== null &&
+          typeof optionsOrX.top === "number"
+        ) {
+          const maxTop = Math.max(
+            0,
+            element.scrollHeight - element.clientHeight,
+          );
+          const isFollowEnd =
+            !prefersReducedMotion() &&
+            element.hasAttribute("data-autoscrolling") &&
+            !element.hasAttribute("data-pending-scroll") &&
+            optionsOrX.behavior !== "instant" &&
+            optionsOrX.top >= element.scrollTop - 0.5 &&
+            Math.abs(optionsOrX.top - maxTop) <= 2;
+          if (isFollowEnd) {
+            targetTop = optionsOrX.top;
+            if (!gliding) {
+              gliding = true;
+              lastTime = 0;
+              glideFrame = requestAnimationFrame(step);
+            }
+            return;
+          }
+          stopGlide();
+          nativeScrollTo(optionsOrX);
+          return;
+        }
+        stopGlide();
+        nativeScrollTo(optionsOrX as number, y as number);
+      }) as typeof element.scrollTo;
+    }
+
+    cleanupViewport.current = () => {
+      stopGlide();
+      element.removeEventListener("wheel", onWheel);
+      element.removeEventListener("touchmove", onTouchMove);
+      element.removeEventListener("pointerdown", onPointerDown);
+      element.removeEventListener("keydown", onKeyDown);
+      if (nativeScrollTo) {
+        if (previousDescriptor)
+          Object.defineProperty(element, "scrollTo", previousDescriptor);
+        else delete (element as { scrollTo?: unknown }).scrollTo;
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -378,8 +516,9 @@ function ScrollContent({
         <MessageScrollerViewport
           ref={attachViewport}
           onScroll={() => {
-            if (viewport.current && opened.current)
-              onScrollPosition(viewport.current.scrollTop);
+            const element = viewport.current;
+            if (!element) return;
+            if (opened.current) onScrollPosition(element.scrollTop);
           }}
         >
           <MessageScrollerContent className="conversation-content chat-transcript">

@@ -117,3 +117,70 @@ it("unmounts offscreen content, retains measured space and IDs, and protects foc
       .style.height,
   ).toBe("640px");
 });
+
+it("glides follow-end scroll updates smoothly and cancels on user wheel input", () => {
+  window.matchMedia = vi.fn().mockReturnValue({
+    matches: false,
+    addEventListener() {},
+    removeEventListener() {},
+  });
+  let frameId = 0;
+  const frames = new Map<number, FrameRequestCallback>();
+  vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
+    const id = ++frameId;
+    frames.set(id, cb);
+    return id;
+  });
+  vi.stubGlobal("cancelAnimationFrame", (id: number) => {
+    frames.delete(id);
+  });
+
+  const { container } = render(
+    <ChatScroller
+      ready
+      onScrollPosition={() => {}}
+      minimapItems={[]}
+    >
+      <VirtualTranscriptTurn id="live" live>
+        <p>Streaming reply</p>
+      </VirtualTranscriptTurn>
+    </ChatScroller>,
+  );
+
+  const viewport = container.querySelector<HTMLElement>(
+    '[data-slot="message-scroller-viewport"]',
+  )!;
+  Object.defineProperty(viewport, "scrollHeight", {
+    configurable: true,
+    value: 1000,
+  });
+  Object.defineProperty(viewport, "clientHeight", {
+    configurable: true,
+    value: 600,
+  });
+  viewport.scrollTop = 300;
+  viewport.setAttribute("data-autoscrolling", "");
+  viewport.removeAttribute("data-pending-scroll");
+
+  viewport.scrollTo({ top: 400, behavior: "auto" });
+  // Glide waits for rAF rather than snapping immediately to 400.
+  expect(viewport.scrollTop).toBe(300);
+
+  let now = 16;
+  for (let i = 0; i < 4 && frames.size > 0; i++) {
+    const batch = [...frames.entries()];
+    frames.clear();
+    for (const [, cb] of batch) cb(now);
+    now += 16;
+  }
+  expect(viewport.scrollTop).toBeGreaterThan(300);
+  expect(viewport.scrollTop).toBeLessThan(400);
+
+  // User wheel cancels the active glide immediately.
+  fireEvent.wheel(viewport, { deltaY: -100 });
+  const stoppedAt = viewport.scrollTop;
+  const remaining = [...frames.entries()];
+  frames.clear();
+  for (const [, cb] of remaining) cb(now + 16);
+  expect(viewport.scrollTop).toBe(stoppedAt);
+});
