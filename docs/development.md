@@ -72,6 +72,8 @@ the interface uses actual Fluid Functionalism registry components. see [integrat
 
 `tests/ui.html` is an explicitly labeled deterministic browser IPC fixture. Add `?skyline=dawn`, `day`, `sunset`, or `night` to check a fixed background period. it is excluded from the production bundle. Ego-browser verified launch/configuration, model-dependent effort changes, worker views, syntax highlighting, unified/split review, draft and panel retention, keyboard search/focus, reduced motion, 900×620 layout, and both neutral themes.
 
+`tests/ui-fixtures.js` seeds the real app with realistic data for screenshots and demos: four workspaces, conversations across every agent and status, a full chat transcript, model favorites, and macOS stoplights where the native window draws them. Inject it before the app loads (for example with CDP `Page.addScriptToEvaluateOnNewDocument`) on a dev server; set `localStorage["fixture.theme"] = "dark"` and reload for dark mode. Nothing in the app imports it.
+
 live provider tests are opt-in, can consume model usage, and use the provider’s existing login:
 
 For background naming, run `cargo test --manifest-path src-tauri/Cargo.toml live_title_generation -- --ignored --nocapture` with `HARBOR_TITLE_COMMAND` set to the ACP executable. `HARBOR_TITLE_PROVIDER` selects `codex` (default), `claude`, or `grok`; `HARBOR_TITLE_ARGS` optionally supplies a JSON array of arguments. This opens a temporary title-only session using the selected adapter.
