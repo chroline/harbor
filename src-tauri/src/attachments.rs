@@ -84,9 +84,10 @@ pub async fn prepare(
             .map_err(|_| "Invalid attachment path")?
             .to_string();
         paths.push(path.clone());
-        let mut saved = json!({"name":name,"mimeType":mime,"size":bytes.len()});
+        let reference = format!("harbor-attachment:{}/{}", folder.file_name().unwrap().to_string_lossy(), path.file_name().unwrap().to_string_lossy());
+        let mut saved = json!({"name":name,"mimeType":mime,"size":bytes.len(),"reference":reference});
         if mime.starts_with("image/") {
-            saved["previewSource"] = json!(format!("harbor-attachment:{}/{}", folder.file_name().unwrap().to_string_lossy(), path.file_name().unwrap().to_string_lossy()));
+            saved["previewSource"] = json!(reference);
         }
         metadata.push(saved);
         if mime.starts_with("image/") && capabilities["promptCapabilities"]["image"] == true {
@@ -158,6 +159,8 @@ mod tests {
         assert_eq!(prompt[1]["type"], "image");
         assert!(metadata[0]["previewSource"].as_str().unwrap().starts_with("harbor-attachment:"));
         assert!(metadata[0].get("data").is_none());
+        assert_eq!(metadata[0]["reference"], metadata[0]["previewSource"]);
+        assert!(metadata[1]["reference"].as_str().unwrap().starts_with("harbor-attachment:"));
         assert_eq!(prompt[2]["resource"]["text"], "hello");
     }
 

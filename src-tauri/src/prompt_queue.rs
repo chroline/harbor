@@ -21,6 +21,8 @@ pub enum SubmissionIntent {
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "../../src/lib/bindings/")]
 pub struct QueuedPrompt {
+    #[serde(default)]
+    pub sender_title: Option<String>,
     pub id: String,
     pub text: String,
     pub attachments: Vec<String>,
@@ -49,9 +51,18 @@ pub struct QueueSnapshot {
 }
 #[derive(Clone)]
 struct Pending {
+    agent_message: Option<crate::project_agents::Message>,
     view: QueuedPrompt,
     files: Vec<PromptAttachment>,
     edit_owner: Option<String>,
+}
+fn cancel_delivery(db: &crate::db::Database, item: &Pending) -> Result<(), String> {
+    if let Some(message) = &item.agent_message {
+        let mut cancelled = message.clone();
+        cancelled.status = "cancelled".into();
+        db.put("project-message", &cancelled.id, &cancelled)?;
+    }
+    Ok(())
 }
 #[derive(Default)]
 struct Queue {
@@ -63,8 +74,11 @@ struct Queue {
 }
 impl Queue {
     fn enqueue(&mut self, item: Pending) {
-        self.snapshot.paused = false;
-        self.snapshot.error = None;
+        let interrupted = self.snapshot.paused && self.pending.iter().any(|p| p.agent_message.as_ref().is_some_and(|m| m.status == "interrupted"));
+        if !interrupted {
+            self.snapshot.paused = false;
+            self.snapshot.error = None;
+        }
         if item.view.intent == SubmissionIntent::Steer {
             self.cancelling = true;
             self.snapshot.steering = true;
@@ -90,7 +104,8 @@ impl Queue {
         self.snapshot.error = None;
         self.snapshot.steering = false;
     }
-    fn failed(&mut self, item: Pending, error: String) {
+    fn failed(&mut self, mut item: Pending, error: String) {
+        if let Some(message) = &mut item.agent_message { message.status = "interrupted".into(); }
         self.pending.insert(0, item);
         self.snapshot.paused = true;
         self.snapshot.error = Some(error);
@@ -216,7 +231,15 @@ impl Coordinator {
             self.publish(
                 state,
                 self.change(session, &child, |q| {
-                    q.clear();
+                    let mut failed = None;
+                    q.pending.retain(|item| match cancel_delivery(&state.db, item) {
+                        Ok(()) => false,
+                        Err(error) => { failed = Some(error); true }
+                    });
+                    if let Some(error) = failed {
+                        q.snapshot.paused = true;
+                        q.snapshot.error = Some(error);
+                    } else { q.clear(); }
                 }),
             );
         }
@@ -260,7 +283,17 @@ impl Coordinator {
         child: &Option<String>,
         id: &str,
     ) -> QueueSnapshot {
-        let snapshot = self.change(session, child, |q| q.pending.retain(|p| p.view.id != id || p.edit_owner.is_some()));
+        let snapshot = self.change(session, child, |q| {
+            let mut failed = None;
+            q.pending.retain(|p| {
+            if p.view.id != id || p.edit_owner.is_some() { return true; }
+            match cancel_delivery(&state.db, p) {
+                Ok(()) => false,
+                Err(error) => { failed = Some(error); true }
+            }
+            });
+            if let Some(error) = failed { q.snapshot.error = Some(error); q.snapshot.paused = true; }
+        });
         self.publish(state, snapshot.clone());
         snapshot
     }
@@ -268,6 +301,7 @@ impl Coordinator {
         let mut result = Err("This queued message is no longer available".to_owned());
         let snapshot = self.change(session, child, |q| {
             if let Some(item) = q.pending.iter_mut().find(|p| p.view.id == id) {
+                if item.agent_message.is_some() {result=Err("Agent-authored messages cannot be edited".into());return;}
                 if item.edit_owner.is_some() { result = Err("This message is already being edited".into()); return; }
                 item.edit_owner = Some(owner.into());
                 item.view.editing = true;
@@ -342,7 +376,9 @@ impl Coordinator {
         shared_parent: bool,
     ) -> QueueSnapshot {
         let item = Pending {
+            agent_message: None,
             view: QueuedPrompt {
+                sender_title: None,
                 id: crate::types::id(),
                 text,
                 attachments: files.iter().map(|f| f.name.clone()).collect(),
@@ -359,6 +395,19 @@ impl Coordinator {
         self.publish(state, snapshot.clone());
         self.start(state, session, child);
         snapshot
+    }
+    pub fn recover_agent_messages(&self,state:&AppState,session:&str)->Result<(),String> {
+        let mut messages=state.db.list::<crate::project_agents::Message>("project-message")?.into_iter().filter(|m|m.recipient_id==session && m.status=="interrupted").collect::<Vec<_>>();
+        messages.sort_by(|a,b|a.created_at.total_cmp(&b.created_at));
+        if messages.is_empty(){return Ok(());}
+        let snapshot=self.change(session,&None,|q|{
+            for m in messages {if !q.pending.iter().any(|p|p.view.id==m.id) {q.pending.push(Pending{agent_message:Some(m.clone()),view:QueuedPrompt{sender_title:Some(m.sender_title),id:m.id,text:m.text,attachments:m.attachments.iter().map(|f|f.name.clone()).collect(),intent:SubmissionIntent::Send,editing:false},files:m.attachments,edit_owner:None});q.snapshot.paused=true;q.snapshot.error=Some("Delivery was interrupted. Check the transcript before resuming.".into());}}
+        });self.publish(state,snapshot);Ok(())
+    }
+    pub fn submit_agent(&self,state:&Arc<AppState>,message:&crate::project_agents::Message) -> QueueSnapshot {
+        let item=Pending{agent_message:Some(message.clone()),view:QueuedPrompt{sender_title:Some(message.sender_title.clone()),id:message.id.clone(),text:message.text.clone(),attachments:message.attachments.iter().map(|f|f.name.clone()).collect(),intent:SubmissionIntent::Send,editing:false},files:message.attachments.clone(),edit_owner:None};
+        let snapshot=self.change(&message.recipient_id,&None,|q|{if !q.pending.iter().any(|p|p.view.id==message.id){q.pending.push(item);}});
+        self.publish(state,snapshot.clone());self.start(state,&message.recipient_id,&None);snapshot
     }
     pub async fn steer(&self, state: &Arc<AppState>, session: &str, child: &Option<String>) {
         let result=async {
@@ -646,13 +695,15 @@ async fn run(state: Arc<AppState>, session: String, child: Option<String>) {
                     )
                     .await
                 } else {
-                    crate::send_prompt_locked(
+                    crate::send_prompt_locked_with_origin(
                         &state,
                         session.clone(),
                         item.view.text.clone(),
                         Some(item.files.clone()),
                         None,
                         guard,
+                        false,
+                        item.agent_message.as_ref(),
                     )
                     .await
                 }
@@ -694,7 +745,9 @@ mod tests {
     use super::*;
     fn item(id: &str, intent: SubmissionIntent) -> Pending {
         Pending {
+            agent_message: None,
             view: QueuedPrompt {
+                sender_title: None,
                 id: id.into(),
                 text: id.into(),
                 attachments: vec!["notes.md".into()],
@@ -884,6 +937,30 @@ mod tests {
         assert!(state.take("chat", &None, "a").is_none());
         state.configuration.get_mut("chat").unwrap().clear();
         assert!(state.take("chat", &None, "a").is_some());
+    }
+    #[test]
+    fn new_human_input_does_not_implicitly_retry_an_interrupted_agent_delivery() {
+        let mut q = Queue::default();
+        let mut delivery = item("delivery", SubmissionIntent::Send);
+        delivery.agent_message = Some(crate::project_agents::Message { id:"delivery".into(),project_id:"project".into(),sender_id:"root".into(),sender_title:"Root".into(),recipient_id:"child".into(),text:"Hello".into(),attachments:vec![],status:"queued".into(),created_at:0. });
+        q.failed(delivery, "Transport interrupted".into());
+        q.enqueue(item("human", SubmissionIntent::Send));
+        assert!(q.snapshot.paused);
+        assert_eq!(q.snapshot.error.as_deref(), Some("Transport interrupted"));
+        assert!(q.take("delivery").is_none());
+        q.snapshot.paused = false; // Explicit resume is the recovery action.
+        assert!(q.take("delivery").is_some());
+    }
+    #[test]
+    fn removing_agent_delivery_is_durable_and_cannot_be_recovered_as_interrupted() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = crate::db::Database::open(&dir.path().join("test.sqlite")).unwrap();
+        let mut pending = item("delivery", SubmissionIntent::Send);
+        let message = crate::project_agents::Message { id: "delivery".into(), project_id: "project".into(), sender_id: "root".into(), sender_title: "Root".into(), recipient_id: "child".into(), text: "Hello".into(), attachments: vec![], status: "interrupted".into(), created_at: 0. };
+        db.put("project-message", &message.id, &message).unwrap();
+        pending.agent_message = Some(message);
+        cancel_delivery(&db, &pending).unwrap();
+        assert_eq!(db.get::<crate::project_agents::Message>("project-message", "delivery").unwrap().status, "cancelled");
     }
     #[test]
     fn discarding_a_chat_removes_attachments_and_steering_state() {

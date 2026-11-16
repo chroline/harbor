@@ -19,6 +19,7 @@ pub(crate) fn terminal_command(command: &str) -> tokio::process::Command {
     process
 }
 impl Adapter for GrokBuild {
+    fn project_orchestration(&self) -> ProjectOrchestration { crate::projects::communication(SupportedProviderId::Grok) }
     fn descriptor(&self) -> AdapterDescriptor {
         AdapterDescriptor {
             id: SupportedProviderId::Grok,

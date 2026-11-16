@@ -16,6 +16,12 @@ impl Operations {
         self.lock("session", id).await
     }
 
+    pub async fn lock_agent_request(&self,id:&str)->OwnedMutexGuard<()> {self.lock("agent-request",id).await}
+
+    pub async fn project(&self, id: &str) -> OwnedMutexGuard<()> {
+        self.lock("project", id).await
+    }
+
     pub async fn provider(&self, id: &str) -> OwnedMutexGuard<()> {
         self.lock("provider", id).await
     }

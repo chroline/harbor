@@ -278,7 +278,17 @@ pub enum WorkerState {
 /// struct Incomplete;
 /// impl Adapter for Incomplete {}
 /// ```
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectOrchestration {
+    pub version: String,
+    pub parent: String,
+    pub worker: String,
+    pub verification: FeatureSupport,
+}
+
 pub trait Adapter: Send + Sync {
+    fn project_orchestration(&self) -> ProjectOrchestration;
     fn descriptor(&self) -> AdapterDescriptor;
     fn extra_path_entries(&self, home: &Path) -> Vec<PathBuf>;
     fn version_args(&self) -> &'static [&'static str];

@@ -5,6 +5,7 @@ use serde_json::Value;
 mod updates;
 pub struct Codex;
 impl Adapter for Codex {
+    fn project_orchestration(&self) -> ProjectOrchestration { crate::projects::communication(SupportedProviderId::Codex) }
     fn descriptor(&self) -> AdapterDescriptor {
         AdapterDescriptor {
             id: SupportedProviderId::Codex,

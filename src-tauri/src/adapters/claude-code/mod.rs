@@ -4,6 +4,7 @@ use serde_json::Value;
 const HANDOFF_REASON:&str="Claude Code native handoff is unverified: the tested CLI did not complete the ACP-to-terminal-to-ACP acceptance check. Continue in Chat or use a separate shell tab.";
 pub struct ClaudeCode;
 impl Adapter for ClaudeCode {
+    fn project_orchestration(&self) -> ProjectOrchestration { crate::projects::communication(SupportedProviderId::Claude) }
     fn descriptor(&self) -> AdapterDescriptor {
         AdapterDescriptor {
             id: SupportedProviderId::Claude,

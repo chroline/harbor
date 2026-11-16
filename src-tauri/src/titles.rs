@@ -51,6 +51,9 @@ pub fn provider_title(
         return Ok(None);
     }
     let session: crate::types::SessionRecord = db.get("session", id)?;
+    // Native auto-titles can summarize injected project instructions. Harbor's
+    // title generator receives only the original user text for these sessions.
+    if crate::project_agents::is_agent(&session) { return Ok(None); }
     if session.acp_session_id.as_deref().is_none()
         || session.acp_session_id.as_deref() != payload["sessionId"].as_str()
     {

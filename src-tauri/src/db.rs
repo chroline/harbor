@@ -46,7 +46,7 @@ impl Database {
         let version: u32 = c
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .map_err(|e| e.to_string())?;
-        if version > 3 {
+        if version > 5 {
             return Err(
                 "This database was created by a newer Harbor version. Update Harbor to open it."
                     .into(),
@@ -60,6 +60,23 @@ impl Database {
             migrate_workspaces(&mut c)?;
         }
         if version < 3 { migrate_providers(&mut c)?; }
+        if version < 4 {
+            let tx = c.transaction().map_err(|e| e.to_string())?;
+            tx.execute("UPDATE records SET data=json_set(data,'$.activeOrchestratorSessionId',NULL) WHERE kind='project' AND json_type(data,'$.activeOrchestratorSessionId') IS NULL", []).map_err(|e| e.to_string())?;
+            tx.execute("UPDATE records SET data=json_set(data,'$.isOrchestrator',json('false')) WHERE kind='session' AND json_type(data,'$.isOrchestrator') IS NULL", []).map_err(|e| e.to_string())?;
+            tx.pragma_update(None, "user_version", 4).map_err(|e| e.to_string())?;
+            tx.commit().map_err(|e| e.to_string())?;
+        }
+        if version < 5 {
+            let tx=c.transaction().map_err(|e|e.to_string())?;
+            tx.execute("UPDATE records SET data=json_set(data,'$.parentSessionId',NULL) WHERE kind='session' AND json_type(data,'$.parentSessionId') IS NULL",[]).map_err(|e|e.to_string())?;
+            tx.execute("DELETE FROM records WHERE kind='subagent' AND EXISTS(SELECT 1 FROM records AS owner WHERE owner.kind='session' AND json_extract(owner.data,'$.isOrchestrator')=1 AND substr(records.id,1,length(owner.id)+1)=owner.id||':')",[]).map_err(|e|e.to_string())?;
+            tx.execute("DELETE FROM events WHERE session_id IN (SELECT id FROM records WHERE kind='session' AND json_extract(data,'$.isOrchestrator')=1) AND (kind LIKE 'child_%' OR kind='parent_relay_chunk' OR (kind='user_message' AND json_type(payload,'$.childId')='text') OR (kind='session/update' AND (json_extract(payload,'$.update.sessionUpdate') IN ('subagent_update','subagent_spawned','subagent_state_update') OR json_extract(payload,'$.sessionId')!=(SELECT json_extract(data,'$.acpSessionId') FROM records WHERE kind='session' AND id=events.session_id))))",[]).map_err(|e|e.to_string())?;
+            tx.execute("DELETE FROM records WHERE kind IN ('worker-report','worker-report-candidate')",[]).map_err(|e|e.to_string())?;
+            tx.execute_batch("CREATE INDEX IF NOT EXISTS events_message_identity ON events(session_id,json_extract(payload,'$.sessionId'),json_extract(payload,'$.update.messageId')) WHERE kind='session/update'; CREATE INDEX IF NOT EXISTS events_tool_identity ON events(session_id,json_extract(payload,'$.sessionId'),json_extract(payload,'$.update.toolCallId')) WHERE kind='session/update';").map_err(|e|e.to_string())?;
+            tx.pragma_update(None,"user_version",5).map_err(|e|e.to_string())?;
+            tx.commit().map_err(|e|e.to_string())?;
+        }
         Ok(Self(Mutex::new(c)))
     }
     pub fn save_project(
@@ -107,7 +124,17 @@ impl Database {
                 is_git_root: false,
             });
         workspace.last_used_at = now();
+        let previous = read_values(&tx, "project")?.into_iter()
+            .find(|p| p["id"] == project_id)
+            .map(serde_json::from_value::<Project>).transpose().map_err(|e| e.to_string())?;
+        if let Some(old) = &previous {
+            if old.workspace_id != workspace.id {
+                crate::projects::move_context(&tx, old, &workspace)?;
+            }
+        }
         let project = Project {
+            instructions: previous.as_ref().and_then(|p| p.instructions.clone()),
+            active_orchestrator_session_id: previous.as_ref().filter(|p| p.workspace_id == workspace.id).and_then(|p| p.active_orchestrator_session_id.clone()),
             id: project_id,
             name: name.into(),
             workspace_id: workspace.id.clone(),
@@ -177,6 +204,22 @@ impl Database {
             .execute("DELETE FROM records WHERE kind=?1 AND id=?2", params![kind, id])
             .map_err(|e| e.to_string())?;
         Ok(())
+    }
+    /// Remove a project's application history atomically after filesystem cleanup succeeds.
+    pub fn purge_project(&self, project: &str, sessions: &[String], trees: &[String]) -> Result<(), String> {
+        let mut c = self.0.lock().map_err(|e| e.to_string())?;
+        let tx = c.transaction().map_err(|e| e.to_string())?;
+        tx.execute("DELETE FROM records WHERE kind='agent-message-shown' AND id IN (SELECT id FROM records WHERE kind='project-message' AND json_extract(data,'$.projectId')=?1)",[project]).map_err(|e|e.to_string())?;
+        tx.execute("DELETE FROM records WHERE kind='project-message' AND json_extract(data,'$.projectId')=?1",[project]).map_err(|e|e.to_string())?;
+        for session in sessions {
+            tx.execute("DELETE FROM events WHERE session_id=?1", [session]).map_err(|e| e.to_string())?;
+            tx.execute("DELETE FROM records WHERE (kind IN ('session','project-start','provider-title','prompt-queue') AND id=?1) OR (kind IN ('subagent','agent-request','preference') AND substr(id,1,length(?2))=?2) OR (kind IN ('archive','shell-tab') AND json_extract(data,'$.sessionId')=?1)", params![session, format!("{session}:")]).map_err(|e| e.to_string())?;
+        }
+        for tree in trees {
+            tx.execute("DELETE FROM records WHERE kind='worktree' AND id=?1", [tree]).map_err(|e| e.to_string())?;
+        }
+        tx.execute("DELETE FROM records WHERE kind='project' AND id=?1", [project]).map_err(|e| e.to_string())?;
+        tx.commit().map_err(|e| e.to_string())
     }
     pub fn list<T: DeserializeOwned>(&self, kind: &str) -> Result<Vec<T>, String> {
         let c = self.0.lock().map_err(|e| e.to_string())?;
@@ -251,15 +294,15 @@ impl Database {
         let start: i64 = c.query_row(
             "WITH dialogue AS (
                 SELECT sequence,kind,
-                    CASE WHEN kind='user_message' OR json_extract(payload,'$.update.sessionUpdate')='user_message_chunk' THEN 1 ELSE 0 END AS is_user,
+                    CASE WHEN kind IN ('user_message','agent_message') OR json_extract(payload,'$.update.sessionUpdate')='user_message_chunk' THEN 1 ELSE 0 END AS is_user,
                     COALESCE(json_extract(payload,'$.sessionId'),'native') AS stream
-                FROM events WHERE session_id=?1 AND (kind='user_message' OR (kind='session/update' AND
+                FROM events WHERE session_id=?1 AND (kind IN ('user_message','agent_message') OR (kind='session/update' AND
                     CASE WHEN instr(payload,'message_chunk')>0 OR instr(payload,'thought_chunk')>0 OR instr(payload,'tool_call')>0
                     THEN json_extract(payload,'$.update.sessionUpdate') IN ('user_message_chunk','agent_message_chunk','agent_thought_chunk','tool_call','tool_call_update') ELSE 0 END))
             ), boundaries AS (
                 SELECT sequence,kind,is_user,LAG(is_user) OVER (PARTITION BY stream ORDER BY sequence) AS previous_user FROM dialogue
             ) SELECT CASE WHEN COUNT(*) < 3 THEN 0 ELSE MIN(sequence) END FROM (
-                SELECT sequence FROM boundaries WHERE is_user=1 AND (kind='user_message' OR COALESCE(previous_user,0)=0) ORDER BY sequence DESC LIMIT 3
+                SELECT sequence FROM boundaries WHERE is_user=1 AND (kind IN ('user_message','agent_message') OR COALESCE(previous_user,0)=0) ORDER BY sequence DESC LIMIT 3
             )",
             [session], |r| r.get(0),
         ).map_err(|e| e.to_string())?;
@@ -269,7 +312,7 @@ impl Database {
         ).map_err(|e| e.to_string())?;
         let mut query = c.prepare(
             "SELECT sequence,kind,payload,timestamp FROM events WHERE session_id=?1 AND (
-                sequence>=?2 OR kind IN ('initialized','connected','disconnected','history_reset','child_connected','child_disconnected','child_status','child_history_reset','request','answered')
+                sequence>=?2 OR (kind IN ('user_message','agent_message','worker_message') AND EXISTS(SELECT 1 FROM records WHERE kind='session' AND id=?1 AND (json_extract(data,'$.isOrchestrator')=1 OR json_type(data,'$.parentSessionId')='text'))) OR kind IN ('initialized','connected','disconnected','history_reset','child_connected','child_disconnected','child_status','child_history_reset','request','answered')
                 OR (kind='session/update' AND CASE WHEN instr(payload,'subagent_update')>0 OR instr(payload,'available_commands_update')>0 THEN json_extract(payload,'$.update.sessionUpdate') IN ('subagent_update','available_commands_update') ELSE 0 END)
             ) ORDER BY sequence"
         ).map_err(|e| e.to_string())?;
@@ -714,5 +757,41 @@ mod async_question_tests {
         db.event("chat","answered",serde_json::json!({"id":0})).unwrap();
         drop(db);
         assert_eq!(Database::open(&path).unwrap().answered_request_ids("chat").unwrap(),vec!["harbor:codex-question:thread:call"]);
+    }
+}
+
+#[cfg(test)]
+mod harbor_agent_migration_tests {
+    use super::*;
+    use serde_json::json;
+    #[test]
+    fn cutover_preserves_orchestrator_and_unrelated_history_and_removes_native_children_once() {
+        let dir=tempfile::tempdir().unwrap();let path=dir.path().join("migration.sqlite");
+        let db=Database::open(&path).unwrap();let root=crate::types::id();
+        db.put("session",&root,&json!({"id":root,"isOrchestrator":true,"acpSessionId":"wire"})).unwrap();
+        db.put("session","ordinary",&json!({"id":"ordinary","isOrchestrator":false})).unwrap();
+        db.put("subagent",&format!("{root}:native"),&json!({"id":"native"})).unwrap();db.put("subagent","ordinary:native",&json!({"id":"keep"})).unwrap();
+        db.event(&root,"user_message",json!({"text":"Preserve human conversation"})).unwrap();
+        db.event(&root,"user_message",json!({"text":"Old worker input","childId":"native"})).unwrap();
+        db.event(&root,"session/update",json!({"sessionId":"native","update":{"sessionUpdate":"agent_message_chunk","content":{"text":"Old child"}}})).unwrap();
+        db.event(&root,"session/update",json!({"sessionId":"wire","update":{"sessionUpdate":"agent_message_chunk","content":{"text":"Preserve root answer"}}})).unwrap();
+        db.0.lock().unwrap().pragma_update(None,"user_version",4).unwrap();drop(db);
+        for _ in 0..2 {
+            let db=Database::open(&path).unwrap();let events=db.events(&root,0.,100).unwrap();
+            assert_eq!(events.len(),2);assert!(events[0].payload.to_string().contains("Preserve human"));assert!(events[1].payload.to_string().contains("Preserve root"));
+            assert!(db.get::<Value>("subagent",&format!("{root}:native")).is_err());assert!(db.get::<Value>("subagent","ordinary:native").is_ok());
+            assert!(db.get::<Value>("session",&root).unwrap()["parentSessionId"].is_null());assert!(db.get::<Value>("session","ordinary").is_ok());
+        }
+    }
+    #[test]
+    fn failed_cutover_rolls_back_role_fields_and_history_cleanup() {
+        let dir=tempfile::tempdir().unwrap();let path=dir.path().join("migration.sqlite");let db=Database::open(&path).unwrap();let root=crate::types::id();
+        db.put("session",&root,&json!({"id":root,"isOrchestrator":true,"acpSessionId":"wire"})).unwrap();db.put("subagent",&format!("{root}:child"),&json!({"id":"child"})).unwrap();
+        db.event(&root,"child_status",json!({"childId":"child"})).unwrap();
+        db.0.lock().unwrap().execute_batch("PRAGMA user_version=4; CREATE TRIGGER fail_cutover BEFORE DELETE ON events BEGIN SELECT RAISE(ABORT,'test failure'); END;").unwrap();drop(db);
+        assert!(Database::open(&path).is_err());let c=Connection::open(path).unwrap();
+        assert_eq!(c.query_row("PRAGMA user_version",[],|r|r.get::<_,u32>(0)).unwrap(),4);
+        assert_eq!(c.query_row("SELECT count(*) FROM records WHERE kind='subagent'",[],|r|r.get::<_,u32>(0)).unwrap(),1);
+        assert_eq!(c.query_row("SELECT json_type(data,'$.parentSessionId') FROM records WHERE kind='session'",[],|r|r.get::<_,Option<String>>(0)).unwrap(),None);
     }
 }

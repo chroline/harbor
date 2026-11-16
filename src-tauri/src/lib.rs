@@ -18,6 +18,14 @@ pub mod adapters;
 mod operations;
 mod prompt_queue;
 mod providers;
+mod projects;
+mod project_delete;
+mod project_tools;
+mod project_agents;
+mod project_attachments;
+#[cfg(debug_assertions)]
+mod project_agent_acceptance;
+pub use project_tools::maybe_run as run_project_tools;
 mod sessions;
 mod shell_tabs;
 mod subagents;
@@ -47,6 +55,7 @@ use types::*;
 
 pub struct AppState {
     prompt_queues: prompt_queue::Coordinator,
+    agent_bridge: project_agents::Bridge,
     db: db::Database,
     data: PathBuf,
     app: tauri::AppHandle,
@@ -65,13 +74,22 @@ pub struct AppState {
     quitting: AtomicBool,
 }
 impl AppState {
-    fn emit(&self, id: &str, kind: &str, payload: Value) {
+    fn emit(&self, id: &str, kind: &str, mut payload: Value) {
         if kind == "terminal/data" {
             let _ = self.app.emit(
                 "terminal-data",
                 json!({"sessionId":id,"bytes":payload["bytes"],"end":payload["end"]}),
             );
             return;
+        }
+        if kind == "session/update" {
+            if let Ok(session)=self.db.get::<SessionRecord>("session",id) {
+                if project_agents::is_agent(&session) {
+                    project_agents::history_order(&self.db,id,&mut payload);
+                    let update=payload["update"]["sessionUpdate"].as_str().unwrap_or("");
+                    if update=="user_message_chunk" || update.starts_with("subagent_") || payload["sessionId"].as_str().is_some_and(|wire|session.acp_session_id.as_deref().is_some_and(|root|wire!=root)) {return;}
+                }
+            }
         }
         let payload = if kind == "session/update" {
             match self.db.get::<SessionRecord>("session", id)
@@ -152,6 +170,7 @@ impl AppState {
         match self.db.event(id, kind, payload) {
             Ok(event) => {
                 let _ = self.app.emit("session-event", event);
+
             }
             Err(e) => {
                 let _ = self.app.emit("storage-error", e);
@@ -198,6 +217,7 @@ impl AppState {
             .ok_or("This agent is disconnected. Reconnect to continue.".into())
     }
     async fn stop(&self, id: &str) {
+        self.agent_bridge.revoke(id);
         self.prompt_queues.pause_session(self, id);
         self.title_generator.cancel(id).await;
         self.relay_targets.lock().unwrap().remove(id);
@@ -300,11 +320,19 @@ async fn save_project(
     icon: String,
     color: String,
     workspace_path: String,
+    instructions: Option<String>,
 ) -> Result<Project, String> {
+    let _project_guard = if let Some(id) = &project_id { Some(state.operations.project(id).await) } else { None };
+    let active = project_id.as_ref().and_then(|id| state.db.get::<Project>("project", id).ok()).and_then(|p| p.active_orchestrator_session_id);
+    let _session_guard = if let Some(id) = &active { Some(state.operations.session(id).await) } else { None };
     let db = state.inner().clone();
     tokio::task::spawn_blocking(move || {
-        db.db
-            .save_project(project_id.as_deref(), &name, &icon, &color, &workspace_path)
+        let mut project = db.db.save_project(project_id.as_deref(), &name, &icon, &color, &workspace_path)?;
+        if let Some(instructions) = instructions {
+            project.instructions = Some(instructions.trim().to_owned());
+            db.db.put("project", &project.id, &project)?;
+        }
+        Ok(project)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -386,6 +414,10 @@ async fn connect(
     load: bool,
 ) -> Result<SessionRecord, String> {
     let provider = state.provider(&session.provider_id)?;
+    if session.is_orchestrator {
+        let support = projects::support(&provider).await?;
+        if support["verified"] != true { return Err(support["reason"].as_str().unwrap_or("Project provider is unverified").into()); }
+    }
     let session_id = session.id.clone();
     let generation = id();
     state
@@ -452,7 +484,9 @@ async fn connect(
             }
         }
     });
-    let rpc = match Rpc::start(&provider, &session.cwd, sink).await {
+    let agent_server=if project_agents::is_agent(session) {Some(state.agent_bridge.server(state,session).await?)} else {None};
+    let started = if let Some(server)=&agent_server { Rpc::start_project_server(&provider,&session.cwd,sink,server.clone()).await } else { Rpc::start(&provider, &session.cwd, sink).await };
+    let rpc = match started {
         Ok(r) => r,
         Err(e) => {
             state.update(&session.id, |s| {
@@ -475,7 +509,12 @@ async fn connect(
   caps.native_handoff=handoff.available;caps.native_handoff_reason=handoff.reason;
   state.update(&session.id,|s|s.capabilities=caps.clone())?;
   // Existing CLI login is reused. Explicit authentication choices remain available on errors.
-  let (method,params)=sessions::request(session,&caps,load)?;
+  let (method,mut params)=sessions::request(session,&caps,load)?;
+  if let Some(setup)=projects::system_prompt(&state.db,session)? {
+    if !init["agentCapabilities"]["sessionCapabilities"]["systemPrompt"].is_object() {return Err("This provider does not advertise the systemPrompt channel required for Harbor project roles".into());}
+    params["systemPrompt"]=setup;
+  }
+  if session.provider_id!="codex" {if let Some(server)=&agent_server {params["mcpServers"]=json!([server]);}}
   let mut response=rpc.request(method,params,Some(Duration::from_secs(90))).await?;
   let acp_id=sessions::identity(&response,session.acp_session_id.as_deref(),load)?;
   caps.config_options=response["configOptions"].is_array();
@@ -486,18 +525,20 @@ async fn connect(
       response["modes"]=config.modes.unwrap_or(Value::Null);
     }
   }
-  if !load {if let Ok(saved)=state.db.get::<Value>("preference",&format!("{}:{}",session.project_id.as_deref().or(session.workspace_id.as_deref()).unwrap_or("__freeform__"),session.provider_id)) {
+  if !load {if let Ok(saved)=state.db.get::<Value>("preference",&format!("{}:{}",if session.parent_session_id.is_some() {session.id.as_str()} else {session.project_id.as_deref().or(session.workspace_id.as_deref()).unwrap_or("__freeform__")},session.provider_id)) {
    // Use the same mode routing and model-first ordering as the live selector.
    let mut config=model_config::from_response(&response);
    let selected=if saved.is_array(){model_config::selections(&ProviderConfiguration{agent_info:None,config_options:saved,models:Value::Null,modes:None})}else{saved};
    if let Err(e)=model_config::apply(&rpc,&acp_id,&mut config,&selected,false).await{state.emit(&session.id,"diagnostic",json!({"message":format!("Remembered setting could not be applied: {e}")}));}
    response["configOptions"]=config.config_options;response["models"]=config.models;response["modes"]=config.modes.unwrap_or(Value::Null);
   }}
-  if load&&method=="session/load"{state.emit(&session.id,"history_reset",json!({}));}
+  if load&&method=="session/load"{state.emit(&session.id,"history_reset",json!({"preserveAuthored":project_agents::is_agent(session)}));}
   rpc.restore_async_questions(&acp_id, &state.db.answered_request_ids(&session.id)?).await?;
   let has_requests = !rpc.inbound.lock().await.is_empty();
   state.update(&session.id,|s|{s.acp_session_id=Some(acp_id.clone());s.native_session_id=if caps.native_handoff{Some(acp_id.clone())}else{None};s.status=if has_requests {"needs_input"} else {"idle"}.into();s.mode="gui".into();s.error=None;s.capabilities=caps;s.config_options=response.get("configOptions").cloned().unwrap_or(json!([]));s.models=response["models"].clone();s.modes=response["modes"].clone();})?;
-  {let mut pending=buffer.lock().unwrap();for(k,v)in pending.drain(..){state.emit(&session.id,&k,v);}replay.store(false,Ordering::SeqCst);}
+  {let mut pending=buffer.lock().unwrap();
+   let buffered = pending.drain(..).collect::<Vec<_>>();
+   for(k,v)in buffered {state.emit(&session.id,&k,v);}replay.store(false,Ordering::SeqCst);}
   state.emit(&session.id,"connected",json!({"agentInfo":init["agentInfo"],"sessionId":acp_id}));state.db.get("session", &session.id)
  }.await;
     if let Err(e) = &result {
@@ -663,9 +704,14 @@ async fn create_session(
     base: String,
     initial_config: Option<Value>,
 ) -> Result<SessionRecord, String> {
-    if state.quitting.load(Ordering::SeqCst) {
-        return Err("Harbor is quitting".into());
-    }
+    create_session_impl(state.inner(), workspace_id, provider_id, title, new_worktree, branch, base, initial_config, None, false).await
+}
+async fn create_session_impl(
+    state: &Arc<AppState>, workspace_id: Option<String>, provider_id: String,
+    title: String, new_worktree: bool, branch: String, base: String,
+    initial_config: Option<Value>, project_id: Option<String>, is_orchestrator: bool,
+) -> Result<SessionRecord, String> {
+    if state.quitting.load(Ordering::SeqCst) { return Err("Harbor is quitting".into()); }
     state.provider(&provider_id)?;
     let session_id = id();
     let _guard = state.operations.session(&session_id).await;
@@ -691,11 +737,13 @@ async fn create_session(
     )
     .await?;
     let session = SessionRecord {
+        parent_session_id: None,
+        is_orchestrator,
         id: session_id,
         title: titles::fallback(&title),
         workspace_id,
         is_git: workspaces::git_directory(&cwd),
-        project_id: None,
+        project_id,
         provider_id,
         cwd,
         acp_session_id: None,
@@ -721,7 +769,10 @@ async fn create_session(
     }
     drop(workspace_guard);
     let _ = state.app.emit("session-changed", &session);
-    match connect(state.inner(), &session, false).await {
+    initialize_session(state,&session,initial_config).await
+}
+async fn initialize_session(state:&Arc<AppState>,session:&SessionRecord,initial_config:Option<Value>)->Result<SessionRecord,String> {
+    match connect(state, &session, false).await {
         Ok(s) => {
             if let Some(selected) = initial_config {
                 let rpc = state.connection(&s.id).await?;
@@ -860,7 +911,7 @@ async fn set_config(
         "preference",
         &format!(
             "{}:{}",
-            s.project_id.as_deref().or(s.workspace_id.as_deref()).unwrap_or("__freeform__"),
+            if s.parent_session_id.is_some() {s.id.as_str()} else {s.project_id.as_deref().or(s.workspace_id.as_deref()).unwrap_or("__freeform__")},
             s.provider_id
         ),
         &preference,
@@ -971,6 +1022,7 @@ async fn send_subagent_prompt_locked(state: &Arc<AppState>, session_id: String, 
     let files = attachments.unwrap_or_default();
     if text.trim().is_empty() && files.is_empty() { return Err("Write a message or attach a file first".into()); }
     state.connection(&session_id).await?;
+    if project_agents::is_agent(&state.db.get::<SessionRecord>("session",&session_id)?) {return Err("Project agents are ordinary chats; open their own session to send a message".into());}
     let child: SubagentRecord = state.db.get("subagent", &worker_key(&session_id,&child_id))?;
     let activity = child.state["type"].as_str().or_else(|| child.state["state"].as_str()).unwrap_or("");
     let slot = state.child_connections.lock().await.get(&worker_key(&session_id,&child_id)).cloned().ok_or("Open this worker before messaging it")?;
@@ -1050,7 +1102,7 @@ async fn submit_prompt(state: tauri::State<'_, Arc<AppState>>, session_id: Strin
     Ok(state.prompt_queues.snapshot(&session_id,&child_id))
 }
 #[tauri::command]
-fn get_prompt_queue(state: tauri::State<'_, Arc<AppState>>, session_id: String, child_id: Option<String>) -> prompt_queue::QueueSnapshot {state.prompt_queues.snapshot(&session_id,&child_id)}
+fn get_prompt_queue(state: tauri::State<'_, Arc<AppState>>, session_id: String, child_id: Option<String>) -> prompt_queue::QueueSnapshot {if child_id.is_none(){let _=state.prompt_queues.recover_agent_messages(state.inner(),&session_id);} state.prompt_queues.snapshot(&session_id,&child_id)}
 #[tauri::command]
 fn remove_queued_prompt(state: tauri::State<'_, Arc<AppState>>, session_id: String, child_id: Option<String>, id: String) -> prompt_queue::QueueSnapshot {state.prompt_queues.remove(state.inner(),&session_id,&child_id,&id)}
 #[tauri::command]
@@ -1107,6 +1159,9 @@ async fn send_prompt_impl(
     send_prompt_locked(state,session_id,text,attachments,question_answer,guard).await
 }
 async fn send_prompt_locked(state: &Arc<AppState>, session_id: String, text: String, attachments: Option<Vec<PromptAttachment>>, question_answer: Option<(Value, Value)>, guard: tokio::sync::OwnedMutexGuard<()>) -> Result<(),String> {
+    send_prompt_locked_with_origin(state,session_id,text,attachments,question_answer,guard,false,None).await
+}
+async fn send_prompt_locked_with_origin(state: &Arc<AppState>, session_id: String, text: String, attachments: Option<Vec<PromptAttachment>>, question_answer: Option<(Value, Value)>, guard: tokio::sync::OwnedMutexGuard<()>, project_start: bool, agent_message: Option<&project_agents::Message>) -> Result<(),String> {
     let files = attachments.unwrap_or_default();
     let rpc = state.connection(&session_id).await?;
     let configuration_guard = rpc.configuration_lock.lock().await;
@@ -1117,7 +1172,20 @@ async fn send_prompt_locked(state: &Arc<AppState>, session_id: String, text: Str
     }
     if rpc.busy.load(Ordering::SeqCst) { return Err("This agent is already working".into()); }
     let first_prompt = !state.db.has_user_message(&session_id)?;
-    let (content, file_metadata, paths) = attachments::prepare(&state.data, &text, &files, &s.capabilities.raw).await?;
+    let (mut content, file_metadata, paths) = attachments::prepare(&state.data, &text, &files, &s.capabilities.raw).await?;
+    let mut project_instructions = projects::instruction(&state.db, &s)?;
+    if let Some(instructions) = &mut project_instructions {
+        if !file_metadata.is_empty() {
+            instructions.push_str(&format!("\n[Harbor attachment references]\n{}\nForward the relevant original files using attachments:[{{\"reference\":\"harbor-attachment:…\"}}] on create_agent or send_message. Use the exact reference above; attachments:[{{\"reference\":\"latest\"}}] forwards this chat's most recently received attachments. Preserve the actual image rather than substituting a description.\n[End Harbor attachment references]", serde_json::to_string(&file_metadata).map_err(|e|e.to_string())?));
+        }
+    }
+    if let Some(message)=agent_message {
+        if content.first().is_some_and(|b|b["type"]=="text" && b["text"]==text) {content.remove(0);}
+        content.insert(0,json!({"type":"resource","resource":{"uri":format!("harbor-agent-message://{}/{}",message.sender_id,message.id),"mimeType":"text/plain","text":message.text}}));
+    }
+    if let Some(instructions) = &project_instructions {
+        content.push(json!({"type":"text","text":instructions}));
+    }
     if rpc.busy.swap(true, Ordering::SeqCst) {
         return Err("This agent is already working".into());
     }
@@ -1138,10 +1206,19 @@ async fn send_prompt_locked(state: &Arc<AppState>, session_id: String, text: Str
         rpc.busy.store(false, Ordering::SeqCst);
         return Err(e);
     }
+    if let Some(message)=agent_message {
+        let payload = json!({"messageId":message.id,"senderId":message.sender_id,"senderTitle":message.sender_title,"label":message.sender_title,"text":text,"attachments":file_metadata,"projectInstructionText":project_instructions,"projectInstructionVersion":projects::INSTRUCTION_VERSION});
+        if let Err(error) = project_agents::record_input(state, message, payload) {
+            rpc.busy.store(false, Ordering::SeqCst);
+            state.update(&session_id, |s| { s.status="error".into(); s.error=Some(error.clone()); })?;
+            return Err(error);
+        }
+    } else {
+        state.emit(&session_id, if project_start {"project_start"} else {"user_message"}, json!({"text":text,"attachments":file_metadata,"projectInstructionText":project_instructions,"projectInstructionVersion":if project_agents::is_agent(&s) {Some(projects::INSTRUCTION_VERSION)} else {None}}));
+    }
     drop(configuration_guard);
     drop(guard);
-    state.emit(&session_id, "user_message", json!({"text":text,"attachments":file_metadata}));
-    if first_prompt && !text.trim().is_empty() {
+    if first_prompt && !project_agents::is_agent(&s) && !project_start && !text.trim().is_empty() {
         let state = state.clone();
         let original = s.title.clone();
         let provider_id = s.provider_id.clone();
@@ -1170,6 +1247,13 @@ async fn send_prompt_locked(state: &Arc<AppState>, session_id: String, text: Str
             None,
         )
         .await;
+    if let Some(message) = agent_message {
+        if let Err(error) = project_agents::delivery_status(&state.db, &message.id, if result.is_ok() {"delivered"} else {"interrupted"}) {
+            rpc.busy.store(false, Ordering::SeqCst);
+            state.update(&session_id, |s| { s.status="error".into(); s.error=Some(error.clone()); })?;
+            return Err(error);
+        }
+    }
     if rpc.turn_generation.load(Ordering::SeqCst) != turn_generation { return Ok(()); }
     rpc.busy.store(false, Ordering::SeqCst);
     rpc.cancel_finished_turn_requests(s.acp_session_id.as_deref().unwrap_or("")).await;
@@ -1323,8 +1407,11 @@ async fn answer_request(
             let native_thread = thread.clone(); let cwd = std::path::PathBuf::from(&session.cwd);
             let previous_turn = tokio::task::spawn_blocking(move || adapters::codex::questions::latest_turn(&native_thread, &cwd)).await.map_err(|e|e.to_string())??
                 .map(|(id,_)| id).ok_or("Could not identify the agent's current turn")?;
-            state.emit(&session_id, "user_message", json!({"text":text}));
-            let steered = rpc.request("_session/steering", json!({"sessionId":thread,"prompt":[{"type":"text","text":text}]}), Some(Duration::from_secs(30))).await?;
+            let mut content = vec![json!({"type":"text","text":text})];
+            let project_instructions = projects::instruction(&state.db, &session)?;
+            if let Some(instructions) = &project_instructions { content.push(json!({"type":"text","text":instructions})); }
+            state.emit(&session_id, "user_message", json!({"text":text,"projectInstructionText":project_instructions,"projectInstructionVersion":if session.is_orchestrator {Some(projects::INSTRUCTION_VERSION)} else {None}}));
+            let steered = rpc.request("_session/steering", json!({"sessionId":thread,"prompt":content}), Some(Duration::from_secs(30))).await?;
             rpc.record_async_answer(request_id, result).await?;
             if steered["outcome"] == "startedNewTurn" {
                 let generation = rpc.turn_generation.fetch_add(1, Ordering::SeqCst) + 1;
@@ -1431,10 +1518,13 @@ async fn delete_session(
     session_id: String,
 ) -> Result<(), String> {
     let _guard = state.operations.session(&session_id).await;
+    archive_session_locked(state.inner(), &session_id, true).await
+}
+async fn archive_session_locked(state: &Arc<AppState>, session_id: &str, remove_worktree: bool) -> Result<(), String> {
     let s: SessionRecord = state.db.get("session", &session_id)?;
     let _workspace_guard = state.operations.workspace(&s.cwd).await;
     let prefix = format!("shell:{session_id}:");
-    state.prompt_queues.clear(state.inner(), &session_id);
+    state.prompt_queues.clear(state, &session_id);
     state.tab_windows.close_session(&state.app, &session_id);
     let shells = {
         let mut terminals = state.terminals.lock().await;
@@ -1444,7 +1534,7 @@ async fn delete_session(
     };
     for terminal in shells { terminal.stop(); }
     state.stop(&session_id).await;
-    if let Some(tree_id) = &s.worktree_id {
+    if let Some(tree_id) = s.worktree_id.as_ref().filter(|_| remove_worktree) {
         let sessions: Vec<SessionRecord> = state.db.list("session")?;
         let shared = sessions.iter().any(|other| {
             other.id != s.id
@@ -1457,7 +1547,7 @@ async fn delete_session(
             if tree.owned && tree.state != "archived" {
                 state.update(&session_id, |s| s.status = "archiving".into())?;
                 let tree_copy = tree.clone();
-                let id_copy = session_id.clone();
+                let id_copy = session_id.to_owned();
                 let dest = state.data.join("archives");
                 let result = tokio::task::spawn_blocking(move || {
                     worktrees::archive(&tree_copy, &id_copy, &dest)
@@ -1948,15 +2038,19 @@ pub fn run() {
                     .map_err(std::io::Error::other)?;
                 }
             }
+            for mut message in db.list::<project_agents::Message>("project-message").map_err(std::io::Error::other)? {
+                if matches!(message.status.as_str(),"queued"|"dispatching") {message.status="interrupted".into();db.put("project-message",&message.id,&message).map_err(std::io::Error::other)?;}
+            }
             let state = Arc::new(AppState {
                 prompt_queues: prompt_queue::Coordinator::default(),
+                agent_bridge: project_agents::Bridge::default(),
                 db,
                 data,
                 app: app.handle().clone(),
                 connections: Mutex::new(HashMap::new()),
                 child_connections: Mutex::new(HashMap::new()),
-                child_transports: StdMutex::new(HashMap::new()),
                 child_replays: StdMutex::new(HashMap::new()),
+                child_transports: StdMutex::new(HashMap::new()),
                 relay_targets: StdMutex::new(HashMap::new()),
                 terminals: Mutex::new(HashMap::new()),
                 tab_windows: tab_windows::TabWindows::default(),
@@ -1967,7 +2061,9 @@ pub fn run() {
                 operations: operations::Operations::default(),
                 quitting: AtomicBool::new(false),
             });
-            app.manage(state);
+            app.manage(state.clone());
+            #[cfg(debug_assertions)]
+            project_agent_acceptance::start(state).map_err(std::io::Error::other)?;
             #[cfg(target_os = "macos")]
             if let Some(window) = app.get_webview_window("main") {
                 window_chrome::install(&window);
@@ -2055,6 +2151,16 @@ pub fn run() {
             discover_commands,
             bootstrap,
             save_project,
+            project_delete::project_deletion_summary,
+            project_delete::delete_project,
+            projects::initialize_project_context,
+            projects::project_documents,
+            projects::read_project_document,
+            projects::open_project_document,
+            projects::open_project_orchestrator,
+            projects::create_project_orchestrator,
+            projects::start_project,
+            projects::project_provider_support,
             save_workspace,
             save_provider,
             save_settings,

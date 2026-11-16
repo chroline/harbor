@@ -74,6 +74,7 @@ pub struct Rpc {
     discovery: bool,
     provider_id: SupportedProviderId,
     async_question_bridge: AtomicBool,
+    project: bool,
     answered_async_questions: Mutex<HashSet<String>>,
     pub plan_protocol: Capability<&'static dyn PlanProtocol>,
     session_ids: Mutex<HashSet<String>>,
@@ -125,6 +126,18 @@ pub fn workspace_path(root: &Path, path: &str, write: bool) -> Result<PathBuf, S
     }
     Ok(canonical)
 }
+/// Process-local overrides: native blocking question responses, inherited by workers.
+fn project_codex_config(existing: Option<&str>) -> Result<Value, String> {
+    let mut config: Value = existing.map(serde_json::from_str).transpose().map_err(err)?.unwrap_or(json!({}));
+    let object = config.as_object_mut().ok_or("CODEX_CONFIG must be an object")?;
+    let features = object.entry("features").or_insert_with(|| json!({})).as_object_mut().ok_or("CODEX_CONFIG features must be an object")?;
+    features.insert("default_mode_request_user_input".into(), json!(false));
+    features.insert("multi_agent".into(),json!(false));
+    features.insert("multi_agent_v2".into(),json!(false));
+    features.insert("multi_agent_v2_dynamic_tools".into(),json!(false));
+    object.entry("suppress_unstable_features_warning").or_insert(json!(true));
+    Ok(config)
+}
 impl Rpc {
     pub async fn grant_attachment_reads(&self, paths: &[PathBuf]) {
         let mut allowed = self.attachment_reads.lock().await;
@@ -137,33 +150,38 @@ impl Rpc {
         cwd: &str,
         sink: Sink,
     ) -> Result<Arc<Self>, String> {
-        Self::start_with_policy(provider, cwd, sink, false).await
+        Self::start_with_policy(provider, cwd, sink, false, false, None).await
+    }
+    pub async fn start_project_server(provider:&ProviderDefinition,cwd:&str,sink:Sink,server:Value)->Result<Arc<Self>,String> {
+        Self::start_with_policy(provider,cwd,sink,false,true,Some(server)).await
     }
     pub async fn start_discovery(
         provider: &ProviderDefinition,
         cwd: &str,
     ) -> Result<Arc<Self>, String> {
-        Self::start_with_policy(provider, cwd, Arc::new(|_, _| {}), true).await
+        Self::start_with_policy(provider, cwd, Arc::new(|_, _| {}), true, false, None).await
     }
     pub async fn start_catalog_discovery(
         provider: &ProviderDefinition,
         cwd: &str,
         sink: Sink,
     ) -> Result<Arc<Self>, String> {
-        Self::start_with_policy(provider, cwd, sink, true).await
+        Self::start_with_policy(provider, cwd, sink, true, false, None).await
     }
     pub async fn start_title_generation(
         provider: &ProviderDefinition,
         cwd: &str,
         sink: Sink,
     ) -> Result<Arc<Self>, String> {
-        Self::start_with_policy(provider, cwd, sink, true).await
+        Self::start_with_policy(provider, cwd, sink, true, false, None).await
     }
     async fn start_with_policy(
         provider: &ProviderDefinition,
         cwd: &str,
         sink: Sink,
         discovery: bool,
+        project: bool,
+        project_server: Option<Value>,
     ) -> Result<Arc<Self>, String> {
         let adapter = adapters::resolve(&provider.id)?;
         let exe = resolve_executable(&provider.command).ok_or_else(|| {
@@ -172,7 +190,7 @@ impl Rpc {
                 provider.command, provider.install_hint
             )
         })?;
-        let mut cmd = Command::new(exe);
+        let mut cmd = Command::new(&exe);
         cmd.args(&provider.args)
             .current_dir(cwd)
             .stdin(Stdio::piped())
@@ -181,6 +199,14 @@ impl Rpc {
             .kill_on_drop(true);
         #[cfg(unix)]
         cmd.process_group(0);
+        if project && provider.id == "codex" {
+            let mut config = project_codex_config(std::env::var("CODEX_CONFIG").ok().as_deref())?;
+            if let Some(server)=project_server {
+                let env=server["env"].as_array().into_iter().flatten().filter_map(|e|Some((e["name"].as_str()?.to_owned(),e["value"].clone()))).collect::<serde_json::Map<_,_>>();
+                config["mcp_servers"]["harbor_project"]=json!({"command":server["command"],"args":server["args"],"env":env,"tool_timeout_sec":86400});
+            }
+            cmd.env("CODEX_CONFIG", config.to_string());
+        }
         let mut child = cmd.spawn().map_err(err)?;
         let input = child.stdin.take().ok_or("Missing stdin")?;
         let stdout = child.stdout.take().ok_or("Missing stdout")?;
@@ -197,6 +223,7 @@ impl Rpc {
             discovery,
             provider_id: adapter.descriptor().id,
             async_question_bridge: AtomicBool::new(false),
+            project,
             answered_async_questions: Mutex::new(HashSet::new()),
             plan_protocol,
             session_ids: Mutex::new(HashSet::new()),
@@ -318,7 +345,7 @@ impl Rpc {
             if self.provider_id == SupportedProviderId::Grok {
                 adapters::grok_build::normalize_initialize(&mut result);
             }
-            self.async_question_bridge.store(self.provider_id == SupportedProviderId::Codex
+            self.async_question_bridge.store(!self.project && self.provider_id == SupportedProviderId::Codex
                 && result["agentInfo"]["name"] == "@agentclientprotocol/codex-acp"
                 && matches!(result["agentInfo"]["version"].as_str(), Some("2.1.1" | "2.3.0")), Ordering::SeqCst);
         }
@@ -358,6 +385,10 @@ impl Rpc {
         Ok(())
     }
     pub async fn async_question_answer(&self, id: &Value, result: &Value) -> Result<Option<String>, String> {
+        if self.project {
+            if self.inbound.lock().await.get(&id.to_string()).is_some_and(codex_questions::is_async) { return Err("Project questions require a native tool response; synthetic answer prompts are disabled".into()); }
+            return Ok(None);
+        }
         let inbound = self.inbound.lock().await;
         let Some(request) = inbound.get(&id.to_string()).filter(|r| codex_questions::is_async(r)) else { return Ok(None); };
         if result["action"] != "accept" { return Ok(None); }
@@ -819,6 +850,9 @@ mod tests {
         Arc<StdMutex<Vec<(String, Value)>>>,
         String,
     ) {
+        fixture_policy(provider_id, false).await
+    }
+    async fn fixture_policy(provider_id: &str, project: bool) -> (Arc<Rpc>, tempfile::TempDir, Arc<StdMutex<Vec<(String, Value)>>>, String) {
         let temp = tempfile::tempdir().unwrap();
         let events = Arc::new(StdMutex::new(Vec::new()));
         let copy = events.clone();
@@ -834,10 +868,11 @@ mod tests {
             install_hint: "Install Node".into(),
             color: "mint".into(),
         };
-        let rpc = Rpc::start(
+        let rpc = Rpc::start_with_policy(
             &provider,
             temp.path().to_str().unwrap(),
             Arc::new(move |kind, v| copy.lock().unwrap().push((kind.into(), v))),
+            false, project, None,
         )
         .await
         .unwrap();
@@ -1052,6 +1087,27 @@ mod tests {
         assert!(rpc.inbound.lock().await.contains_key("2"));
         rpc.stop().await;
         assert!(rpc.inbound.lock().await.is_empty());
+    }
+    #[test]
+    fn project_config_enables_native_questions_without_changing_other_settings() {
+        let config = project_codex_config(Some(r#"{"model":"kept","features":{"other":true},"sandbox_mode":"workspace-write"}"#)).unwrap();
+        assert_eq!(config["features"]["default_mode_request_user_input"], false);
+        for feature in ["multi_agent", "multi_agent_v2", "multi_agent_v2_dynamic_tools"] { assert_eq!(config["features"][feature], false); }
+        assert_eq!(config["sandbox_mode"], "workspace-write");
+        assert_eq!(config["model"], "kept");
+        assert_eq!(config["features"]["other"], true);
+        assert!(project_codex_config(Some("[]")).is_err());
+    }
+    #[tokio::test]
+    async fn projects_reject_synthetic_answer_prompts_but_accept_native_responses() {
+        let (rpc, _temp, events, id) = fixture_policy("codex", true).await;
+        let legacy = json!({"id":"harbor:codex-question:thread:legacy","method":"elicitation/create","params":{"sessionId":id,"_meta":{"harborCodexAsyncQuestion":true}}});
+        rpc.inbound.lock().await.insert(legacy["id"].to_string(),legacy.clone());
+        assert!(rpc.async_question_answer(&legacy["id"],&json!({"action":"accept","content":{}})).await.unwrap_err().contains("synthetic"));
+        assert!(events.lock().unwrap().iter().all(|(k,_)|k!="user_message" && k!="answered"));
+        assert!(rpc.async_question_answer(&json!(123),&json!({"action":"accept","content":{}})).await.unwrap().is_none());
+        assert!(!rpc.async_question_bridge.load(Ordering::SeqCst));
+        rpc.stop().await;
     }
     #[tokio::test]
     async fn async_questions_survive_completion_validate_answers_and_remain_recoverable_on_stop() {

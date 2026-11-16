@@ -22,7 +22,31 @@ pub enum CommandRequest {
         color: String,
         #[ts(rename = "workspacePath")]
         workspace_path: String,
+        #[ts(optional)] instructions: Option<String>,
     },
+    InitializeProjectContext { #[ts(rename = "projectId")] project_id: String },
+    ProjectDocuments { #[ts(rename = "projectId")] project_id: String, #[ts(optional, rename = "sessionId")] session_id: Option<String> },
+    ReadProjectDocument { #[ts(rename = "projectId")] project_id: String, path: String, #[ts(optional, rename = "sessionId")] session_id: Option<String> },
+    OpenProjectDocument { #[ts(rename = "projectId")] project_id: String, path: String, #[ts(optional, rename = "sessionId")] session_id: Option<String> },
+    ProjectDeletionSummary { #[ts(rename = "projectId")] project_id: String },
+    DeleteProject { #[ts(rename = "projectId")] project_id: String },
+    OpenProjectOrchestrator { #[ts(rename = "projectId")] project_id: String },
+    StartProject {
+        #[ts(rename = "projectId")] project_id: String,
+        #[ts(rename = "providerId")] provider_id: SupportedProviderId,
+        #[ts(rename = "initialConfig")] initial_config: Option<Value>,
+        fresh: bool,
+        #[ts(optional, rename = "expectedSessionId")] expected_session_id: Option<String>,
+    },
+    CreateProjectOrchestrator {
+        #[ts(rename = "projectId")] project_id: String,
+        #[ts(rename = "providerId")] provider_id: SupportedProviderId,
+        title: String,
+        #[ts(rename = "initialConfig")] initial_config: Option<Value>,
+        fresh: bool,
+        #[ts(optional, rename = "expectedSessionId")] expected_session_id: Option<String>,
+    },
+    ProjectProviderSupport { #[ts(rename = "providerId")] provider_id: SupportedProviderId },
     SaveWorkspace {
         path: String,
     },
@@ -316,6 +340,11 @@ pub struct ProviderDefinition {
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "../../src/lib/bindings/")]
 pub struct Project {
+    #[serde(default)]
+    #[ts(optional)]
+    pub instructions: Option<String>,
+    #[serde(default)]
+    pub active_orchestrator_session_id: Option<String>,
     pub id: String,
     pub name: String,
     pub workspace_id: String,
@@ -350,6 +379,10 @@ pub struct AgentCapabilities {
 #[serde(rename_all = "camelCase")]
 #[ts(export, export_to = "../../src/lib/bindings/")]
 pub struct SessionRecord {
+    #[serde(default)]
+    pub parent_session_id: Option<String>,
+    #[serde(default)]
+    pub is_orchestrator: bool,
     pub id: String,
     pub title: String,
     pub project_id: Option<String>,
