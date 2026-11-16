@@ -99,6 +99,11 @@
 .chat-transcript [data-slot="message-attachments"] {
   gap: var(--user-stack-gap);
 }
+/* Attached images and files sit on the same card edge as the message bubble. */
+.chat-transcript [data-slot="message-attachments"] > * {
+  border: 0;
+  box-shadow: var(--shell-card-shadow);
+}
 /* An unanswered user message has no reply under it. Drop the reply margin
    and let the next message use the same gap as the pieces inside a message. */
 .chat-transcript > .transcript-turn:not(:has(.transcript-responses > *)) > .transcript-prompt-header {
