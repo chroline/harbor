@@ -102,7 +102,7 @@ function FileChip({
 
 function useSavedPreview(file: AttachmentFile) {
   const context = useContext(MessageImageContext);
-  const [loaded, setLoaded] = useState<{ source: string; url: string }>();
+  const [loaded, setLoaded] = useState<{ source: string; url?: string }>();
   useEffect(() => {
     if (
       file.previewUrl ||
@@ -117,20 +117,25 @@ function useSavedPreview(file: AttachmentFile) {
       .then((url) => {
         if (!cancelled) setLoaded({ source, url });
       })
-      .catch(() => {});
+      // An unreadable or unsupported image falls back to a file chip.
+      .catch(() => {
+        if (!cancelled) setLoaded({ source });
+      });
     return () => {
       cancelled = true;
     };
   }, [file.previewUrl, file.previewSource, file.mimeType, context]);
-  return (
-    file.previewUrl ??
-    (loaded && loaded.source === file.previewSource ? loaded.url : undefined)
-  );
+  const settled = loaded?.source === file.previewSource ? loaded : undefined;
+  return {
+    url: file.previewUrl ?? settled?.url,
+    failed: !file.previewUrl && !!settled && !settled.url,
+  };
 }
 
 function MessageImage({ file }: { file: AttachmentFile }) {
   const [dimensions, setDimensions] = useState({ width: 1, height: 1 });
-  const previewUrl = useSavedPreview(file);
+  const { url: previewUrl, failed } = useSavedPreview(file);
+  if (failed) return <FileChip file={file} />;
   if (!previewUrl) {
     return (
       <div className="flex h-48 w-48 items-center justify-center rounded-[var(--shell-card-radius)] bg-muted">

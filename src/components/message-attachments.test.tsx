@@ -61,3 +61,24 @@ it("shows a document as a name and size, separate from image previews", () => {
   expect(screen.getByText("22.2 MB")).toBeTruthy();
   expect(screen.queryByRole("img")).toBeNull();
 });
+
+it("falls back to a file chip when a saved image cannot be previewed", async () => {
+  vi.mocked(call).mockRejectedValue("Unsupported image format");
+  render(
+    <MessageImageContext.Provider value={{ sessionId: "chat", childId: null }}>
+      <MessageAttachments
+        files={[
+          {
+            name: "IMG_0001.HEIC",
+            mimeType: "image/heic",
+            size: 4_493_732,
+            previewSource: "harbor-attachment:batch/0-IMG_0001.HEIC",
+          },
+        ]}
+      />
+    </MessageImageContext.Provider>,
+  );
+  await waitFor(() => expect(screen.getByText("IMG_0001.HEIC")).toBeTruthy());
+  expect(screen.getByText("4.3 MB")).toBeTruthy();
+  expect(screen.queryByRole("status")).toBeNull();
+});
