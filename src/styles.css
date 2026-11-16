@@ -803,13 +803,9 @@ a {
   padding-top: calc(var(--shell-card-inset) + 2.75rem);
 }
 .app-shell:has(.topbar-task-tabs) .main-content {
-  /* Clear the 8px top inset and 2rem tab row; chat prompts inset themselves by 8px. */
-  padding-top: calc(var(--shell-card-inset) + 2rem);
-}
-.app-shell:has(.topbar-task-tabs)
-  .main-content
-  :is(.shell-terminal-pane, .detached-tab-placeholder, .review-pane) {
-  margin-top: var(--shell-card-inset);
+  /* The 2rem tab row with the same inset above and below it, so the tabs sit
+     evenly between the window edge and the content (chat, terminal, review). */
+  padding-top: calc(var(--shell-card-inset) * 2 + 2rem);
 }
 
 /* Keep chrome live: root snapshots would also capture its translucent surfaces. */
