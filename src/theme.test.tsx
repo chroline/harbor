@@ -18,7 +18,10 @@ vi.mock("./lib/api", async (original) => ({
   },
 }));
 vi.mock("@tauri-apps/api/window", () => ({
-  getCurrentWindow: () => ({ setTheme: mocks.setTheme }),
+  getCurrentWindow: () => ({
+    setTheme: mocks.setTheme,
+    isFullscreen: async () => false,
+  }),
 }));
 vi.mock("./lib/store", () => ({
   useStore: () => ({

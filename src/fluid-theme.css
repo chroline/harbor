@@ -8,44 +8,39 @@
 .light,
 .dark {
   /* ── Surfaces (8-level ladder) ──
-     Light: 2 color steps (floor, sunken) then flat #FFFFFF; shadow does the
-     work. Dark: additive white-opacity ladder over #171717. Each surface
-     pairs 1:1 with a shadow recipe (--shadow-1 .. --shadow-8). */
-  --surface-1: light-dark(#fafafa, #171717);
-  --surface-2: light-dark(#fcfcfc, #1e1e1e);
-  --surface-3: light-dark(#ffffff, #252525);
-  --surface-4: light-dark(#ffffff, #2c2c2c);
-  --surface-5: light-dark(#ffffff, #333333);
-  --surface-6: light-dark(#ffffff, #3a3a3a);
-  --surface-7: light-dark(#ffffff, #414141);
-  --surface-8: light-dark(#ffffff, #484848);
+     The index still runs 1–8 so each step keeps its shadow recipe.
+     The paints are Tailwind neutral, and only three of them: light is
+     neutral-50 then white, dark is 900, then 800, then 700. */
+  --surface-1: light-dark(var(--color-neutral-50), var(--color-neutral-900));
+  --surface-2: light-dark(white, var(--color-neutral-800));
+  --surface-3: light-dark(white, var(--color-neutral-800));
+  --surface-4: light-dark(white, var(--color-neutral-700));
+  --surface-5: light-dark(white, var(--color-neutral-700));
+  --surface-6: light-dark(white, var(--color-neutral-700));
+  --surface-7: light-dark(white, var(--color-neutral-700));
+  --surface-8: light-dark(white, var(--color-neutral-700));
 
   /* ── Semantic tokens ── */
   --background: var(--surface-1);
-  --foreground: light-dark(#171717, #f5f5f5);
+  --foreground: light-dark(var(--color-neutral-900), var(--color-neutral-100));
   --card: var(--surface-3);
-  --card-foreground: light-dark(#171717, #f5f5f5);
-  /* Light `muted` decouples from surface-2: the light surface ladder is so
-     compressed (#FAFAFA → #FCFCFC → #FFFFFF) that bg-muted would read as
-     near-white, making anything sitting on it (Tabs track, etc.) blend
-     together. A slightly more grey value gives muted real semantic presence.
-     Dark keeps the ladder value (#1E1E1E = surface-2). */
-  --muted: light-dark(#f4f4f5, #1e1e1e);
-  /* Harbor's translucent light chrome needs a stronger secondary text tone. */
-  --muted-foreground: light-dark(#666666, #a3a3a3);
+  --card-foreground: light-dark(var(--color-neutral-900), var(--color-neutral-100));
+  /* Muted reuses a surface step: neutral-100 on white, neutral-800 in the dark. */
+  --muted: light-dark(var(--color-neutral-100), var(--color-neutral-800));
+  --muted-foreground: light-dark(var(--color-neutral-500), var(--color-neutral-400));
 
   /* ── Interactive states ── */
-  --accent: light-dark(#e5e5e5, #525252);
-  --accent-foreground: light-dark(#171717, #f5f5f5);
-  --selected: light-dark(#d4d4d4, #525252);
+  --accent: light-dark(var(--color-neutral-200), var(--color-neutral-600));
+  --accent-foreground: light-dark(var(--color-neutral-900), var(--color-neutral-100));
+  --selected: light-dark(var(--color-neutral-300), var(--color-neutral-600));
 
   /* ── Borders ──
      --border mixes from --foreground, so it tracks the theme automatically —
      including inside nested forced scopes, where light-dark() re-resolves
      --foreground before the mix happens. */
   --border: color-mix(in oklab, var(--foreground) 12%, transparent);
-  --ring: light-dark(#e5e5e5, #404040);
-  --input: light-dark(#e5e5e5, #404040);
+  --ring: light-dark(var(--color-neutral-200), var(--color-neutral-700));
+  --input: light-dark(var(--color-neutral-200), var(--color-neutral-700));
 
   /* ── Error / Destructive ── */
   --destructive: light-dark(#ef4444, #fca5a5);
@@ -66,8 +61,8 @@
   --focus-ring: #6b97ff;
 
   /* ── Alpha checkerboard (color-picker swatches) ── */
-  --checker-a: light-dark(#bbbbbb, #1f1f1f);
-  --checker-b: light-dark(#ffffff, #2a2a2a);
+  --checker-a: light-dark(var(--color-neutral-400), var(--color-neutral-900));
+  --checker-b: light-dark(white, var(--color-neutral-800));
 
   /* ── Surface-relative interactive overlays (work on any elevation) ──
      --overlay is the *tint direction* triplet — black for light surfaces,

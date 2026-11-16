@@ -438,7 +438,7 @@
   }
 }
 :where(.dark, [data-theme="dark"]) .ui-tsc {
-  --ui-tsc-card: #1c1c1e;
+  --ui-tsc-card: var(--color-neutral-900);
   --ui-tsc-strong: #ffffff;
   --ui-tsc-ink: rgba(255, 255, 255, 0.9);
   --ui-tsc-text: rgba(255, 255, 255, 0.62);
@@ -461,5 +461,5 @@
   background: rgba(255, 255, 255, 0.06);
 }
 :where(.dark, [data-theme="dark"]) .ui-tsc .ui-tsc__close {
-  background: #2a2a2d;
+  background: var(--color-neutral-800);
 }

@@ -1841,7 +1841,7 @@ function Row({
           outlinedChip
             ? chipFilled
               ? "bg-foreground text-background"
-              : "border-[0.0625rem] border-border text-muted-foreground"
+              : "border-[0.0625rem] border-foreground/30 text-foreground/75"
             : chipFilled
             ? "text-foreground"
             : "text-muted-foreground",

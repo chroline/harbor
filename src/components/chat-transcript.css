@@ -25,13 +25,20 @@
   color: inherit;
 }
 .conversation-scroll[data-slot="message-scroller"] {
-  overflow: hidden;
+  /* overflow: hidden would flatten this scroller, so a message's blur could
+     not see the text scrolling under it. clip still hides the overflow. */
+  overflow: clip;
   scroll-padding: 0;
 }
 .conversation-scroll [data-slot="message-scroller-viewport"] {
+  --scroll-fade-size: 1.5rem;
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
   scroll-padding: 1.25rem;
+  /* scroll-fade's mask becomes the backdrop root and cancels blur on the cards inside. */
+  -webkit-mask-image: none;
+  mask-image: none;
+  animation: none;
 }
 /* While following output, let the scroller move the viewport. Native scroll
    anchoring would jump to each new line before the animation can start. */
@@ -77,13 +84,19 @@
   overflow: visible;
   padding: 0;
 }
+.chat-transcript.conversation-content {
+  padding-top: 0;
+}
+.chat-transcript > .transcript-turn:first-child {
+  margin-top: -1px;
+}
+.chat-transcript > :first-child:not(.transcript-turn) {
+  padding-top: var(--shell-card-inset);
+}
 .chat-transcript .transcript-prompt-header {
-  position: sticky;
-  top: -1px;
-  z-index: 2;
-  padding-top: calc(0.5rem + 1px);
+  padding-top: calc(var(--shell-card-inset) + 1px);
+  padding-inline: var(--transcript-message-inset);
   margin-bottom: 1.125rem;
-  background: var(--chrome-solid);
 }
 .chat-transcript .transcript-user {
   width: 100%;
@@ -98,14 +111,15 @@
   padding-inline: var(--transcript-message-inset);
 }
 .chat-transcript .transcript-user [data-slot="bubble-content"] {
-  background: color-mix(in oklab, var(--muted) 72%, var(--frame-solid));
+  width: auto;
+  /* Same fill as the sidebar, composer, and active tabs. */
+  background: var(--shell-card);
+  -webkit-backdrop-filter: var(--shell-card-backdrop-filter);
+  backdrop-filter: var(--shell-card-backdrop-filter);
   border: 0;
   border-radius: 1.125rem;
   padding: 0.625rem 0.875rem;
-  box-shadow: none;
-  width: fit-content;
-  max-width: min(32rem, 100%);
-  margin-left: auto;
+  box-shadow: var(--shell-card-shadow);
 }
 .transcript-message-label {
   display: block;

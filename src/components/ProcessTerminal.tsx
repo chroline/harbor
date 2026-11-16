@@ -45,8 +45,9 @@ export function ProcessTerminal({
       fontFamily: '"SFMono-Regular", Menlo, monospace',
       fontSize: scaledSize(15),
       theme: {
-        background: "#181818",
-        foreground: "#dedede",
+        // Canvas paints. neutral-900, neutral-200, neutral-700.
+        background: "#171717",
+        foreground: "#e5e5e5",
         selectionBackground: "#404040",
       },
     });

@@ -164,22 +164,40 @@
     }
   }
 }
-/* Original workspace surface; Codex tint on the surrounding native chrome. */
-:root {
-  --frame-solid: light-dark(#ffffff, #1c1c1c);
-  --frame-background: light-dark(
-    color-mix(in srgb, oklch(0.979 0 0) 84%, transparent),
-    rgb(20 20 20 / 0.72)
-  );
+/* Cursor main content surface over Cursor's sidebar background + native vibrancy. */
+:root,
+.light,
+.dark {
+  --cursor-bg-chrome: light-dark(var(--color-neutral-50), var(--color-neutral-900));
+  --cursor-bg-sidebar: light-dark(var(--color-neutral-100), var(--color-neutral-900));
+  --window-root-wash: light-dark(rgb(255 255 255 / 16%), rgb(0 0 0 / 42%));
   --window-tint: light-dark(
-    color-mix(in srgb, var(--color-gray-100) 70%, transparent),
-    rgb(33 33 33 / 0.7)
+    color-mix(in srgb, var(--cursor-bg-sidebar) 42%, transparent),
+    color-mix(in srgb, var(--cursor-bg-sidebar) 36%, transparent)
   );
-  --shell-canvas: var(--window-tint);
+  --frame-solid: var(--cursor-bg-chrome);
+  --frame-background: light-dark(
+    color-mix(in srgb, var(--cursor-bg-chrome) 84%, transparent),
+    color-mix(in srgb, var(--cursor-bg-chrome) 72%, transparent)
+  );
   --shell-card: var(--frame-background);
+  --shell-card-backdrop-filter: blur(16px) saturate(1.2);
+  --shell-card-shadow: var(--shadow-3);
+  --chrome-solid: light-dark(var(--color-neutral-100), var(--color-neutral-900));
+  --glass-chat-backdrop:
+    linear-gradient(var(--shell-card), var(--shell-card)),
+    linear-gradient(var(--window-tint), var(--window-tint)),
+    linear-gradient(var(--window-root-wash), var(--window-root-wash)),
+    linear-gradient(var(--chrome-solid), var(--chrome-solid));
+}
+:root {
+  --window-radius: 1.25rem;
+  /* The conversation is the window. Only the sidebar card is inset. */
+  --shell-card-inset: 0.5rem;
+  --shell-card-radius: max(0px, calc(var(--window-radius) - var(--shell-card-inset)));
+  --shell-canvas: var(--window-tint);
   --sidebar: var(--surface-1);
   --chrome: var(--window-tint);
-  --chrome-solid: light-dark(var(--color-gray-100), #212121);
   --chrome-edge: var(--border);
   --divider: var(--border);
   --panel: var(--surface-2);
@@ -212,15 +230,22 @@ body {
   background: var(--background);
   color: var(--foreground);
 }
-html.desktop,
+html.desktop {
+  background: transparent;
+}
 .desktop body {
   background: transparent;
 }
+.desktop #root {
+  background: var(--window-root-wash);
+}
 /* Browser preview has no native vibrancy. Use an opaque canvas and solid
    cards so the floating shell reads the same way it does on the desktop. */
-html:not(.desktop) {
-  --shell-canvas: light-dark(#f4f4f5, #141414);
+html:not(.desktop),
+html:not(.desktop) :is(.light, .dark) {
+  --shell-canvas: var(--chrome-solid);
   --shell-card: var(--frame-solid);
+  --shell-card-backdrop-filter: none;
   --frame-background: var(--frame-solid);
 }
 button {
@@ -383,7 +408,6 @@ a {
   }
 }
 .app-shell {
-  --window-radius: var(--radius-2xl);
   /* Traffic lights, sidebar toggle, and search stay put when the sidebar collapses.
      Width includes the extra inset that lines the lights up with sidebar icons. */
   --topbar-pinned-width: 10rem;
@@ -392,14 +416,11 @@ a {
   --chrome-control-gap: 1.125rem;
   --chrome-control-end-inset: calc(var(--chrome-control-gap) - 0.3125rem);
   --sidebar-row-end-inset: calc(var(--chrome-control-gap) - 0.4375rem);
-  /* The conversation is the window. Only the sidebar card is inset. */
-  --shell-card-inset: 0.5rem;
-  --shell-card-radius: 1.125rem;
   display: flex;
   flex-direction: column;
   width: 100%;
   height: 100%;
-  overflow: hidden;
+  overflow: clip;
   position: relative;
   padding: 0;
   border: 0;
@@ -414,7 +435,7 @@ a {
   min-width: 0;
 }
 .workspace-frame {
-  overflow: hidden;
+  overflow: clip;
   border: 0;
   border-radius: 0;
   z-index: 0;
@@ -423,7 +444,7 @@ a {
   box-shadow: none;
 }
 .window-controls {
-  /* Native lights start at the sidebar icon column (x=26) and end at x=88.
+  /* Native lights start at the sidebar icon ink (x=24) and end at x=86.
      Keep this in sync with window_chrome.rs. */
   width: 5.8125rem;
   height: 100%;
@@ -566,9 +587,26 @@ a {
   pointer-events: auto;
 }
 .topbar-pinned .window-controls {
-  width: auto;
-  padding-left: 0;
+  /* Parent padding starts at x=22. Native lights run x=24 through x=86.
+     The padding puts the browser dots on that origin, and the width keeps
+     the toggle and search clear of the lights. On the desktop this box is
+     empty, so the width has to reserve the space itself.
+     Keep this in sync with window_chrome.rs. */
+  width: 4rem;
+  padding-left: 0.125rem;
   margin-right: 0.25rem;
+}
+/* Fullscreen hides the lights until the menu bar is shown. The 18px glyph
+   is centered in a 32px button, so pull that centering back and line the
+   ink up with the sidebar row icons. */
+.app-shell[data-fullscreen] {
+  --topbar-pinned-width: 5.0625rem;
+}
+.app-shell[data-fullscreen] .topbar-pinned {
+  padding-left: calc(var(--shell-card-inset) + 0.4375rem);
+}
+.app-shell[data-fullscreen] .topbar-pinned .window-controls {
+  display: none;
 }
 .topbar-pinned .icon-button,
 .topbar-pinned [data-sidebar="trigger"] {
@@ -587,6 +625,15 @@ a {
 .topbar .icon-button,
 .topbar-notification-button {
   width: 2rem;
+}
+.topbar-notification-button {
+  position: relative;
+  overflow: visible;
+}
+/* The icon-only button wraps its label in a shrink-wrapped relative span,
+   so a count anchored there covers the bell. Anchor to the button instead. */
+.topbar-notification-button > span:last-child {
+  position: static;
 }
 .topbar button svg {
   width: 1.125rem;
@@ -617,7 +664,9 @@ a {
   align-items: center;
   gap: 0;
   flex: 0 0 var(--topbar-history-width);
-  margin-right: 0.5rem;
+  /* The 2rem control is centered in the 2.75rem bar, so the card has 0.375rem
+     above it. Keep the same inset on the card's right edge. */
+  margin-right: 0.375rem;
 }
 .topbar-context .topbar-history .icon-button {
   width: 2rem;
@@ -650,19 +699,14 @@ a {
   flex: 1;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0;
   min-width: 0;
   height: 2.75rem;
   padding: 0 0.75rem 0 0;
   border-radius: 0;
 }
-.topbar-context:has(.topbar-task-tabs) {
-  gap: 0;
-}
-.topbar-context:has(.topbar-task-tabs) .task-tab-list {
-  padding-inline-start: 0;
-}
 .topbar-title {
+  margin-inline-start: 0.75rem;
   color: var(--foreground);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -691,6 +735,9 @@ a {
   transform: scaleY(0.6);
 }
 
+.topbar:has(.topbar-task-tabs) .topbar-right {
+  align-self: flex-start;
+}
 .topbar-right {
   display: flex;
   align-items: center;
@@ -711,11 +758,13 @@ a {
   position: absolute;
   display: grid;
   place-items: center;
-  right: -0.5rem;
-  top: -0.4375rem;
-  font-size: 0.8125rem;
-  min-width: 1.125rem;
-  height: 1.125rem;
+  right: 0.0625rem;
+  top: 0.0625rem;
+  font-size: 0.5rem;
+  line-height: 1;
+  min-width: 0.625rem;
+  height: 0.625rem;
+  padding: 0 0.125rem;
   border-radius: var(--radius-full);
   color: var(--background);
   background: #dec18b;
@@ -728,6 +777,15 @@ a {
   view-transition-name: harbor-page;
   /* Clear the floating title row, which starts at the sidebar card inset. */
   padding-top: calc(var(--shell-card-inset) + 2.75rem);
+}
+.app-shell:has(.topbar-task-tabs) .main-content {
+  /* Clear the 8px top inset and 2rem tab row; chat prompts inset themselves by 8px. */
+  padding-top: calc(var(--shell-card-inset) + 2rem);
+}
+.app-shell:has(.topbar-task-tabs)
+  .main-content
+  :is(.shell-terminal-pane, .detached-tab-placeholder, .review-pane) {
+  margin-top: var(--shell-card-inset);
 }
 
 /* Keep chrome live: root snapshots would also capture its translucent surfaces. */
@@ -1305,7 +1363,7 @@ a {
   /* The conversation is the window, not a nested card. */
   background: transparent;
   --chat-column-max-width: 51.25rem;
-  --chat-column-padding: 2.125rem;
+  --chat-column-padding: var(--shell-card-inset);
   flex: 1;
   min-width: 0;
   display: flex;
@@ -1314,6 +1372,8 @@ a {
 .topbar-task-tabs {
   flex: 1;
   min-width: 0;
+  align-self: flex-start;
+  padding-inline-start: var(--shell-card-inset);
 }
 .task-tab-list {
   display: flex;
@@ -1321,9 +1381,15 @@ a {
   gap: 0.25rem;
   overflow-x: auto;
   scrollbar-width: none;
-  padding: 0.25rem;
+  margin-block: -0.375rem;
+  margin-inline-start: -0.25rem;
+  padding: 0.375rem 0.25rem;
   min-width: 0;
   flex: 0 1 auto;
+}
+.task-tab-list:is([style*="--task-tabs-overflow"]):not(
+    [style*="--task-tabs-overflow: 0px"]
+  ) {
   /* Ease the clipped edge away as the last tab scrolls fully into view. */
   --task-tabs-fade-size: min(3rem, var(--task-tabs-overflow, 0px), 50%);
   -webkit-mask-image: linear-gradient(
@@ -1367,13 +1433,21 @@ a {
 .task-tab-surface {
   position: relative;
   width: 100%;
-  border-radius: var(--radius-lg);
+  border-radius: var(--shell-card-radius);
 }
 .task-tab-floating {
   padding: 0;
-  background: var(--chrome-solid);
-  box-shadow: var(--shadow-3);
+  background: var(--shell-card);
+  -webkit-backdrop-filter: var(--shell-card-backdrop-filter);
+  backdrop-filter: var(--shell-card-backdrop-filter);
+  border: 0;
+  border-radius: var(--shell-card-radius);
+  box-shadow: var(--shell-card-shadow);
   cursor: grabbing;
+}
+.task-tab-floating .task-tab[data-state="active"] > span.absolute[aria-hidden] {
+  background: transparent;
+  box-shadow: none;
 }
 .task-tab-floating:has(.terminal-tab-close) .task-tab {
   padding-right: 2rem;
@@ -1382,9 +1456,7 @@ a {
   align-items: center;
   justify-content: center;
 }
-html.standalone,
-html.standalone body,
-html.standalone #root {
+html.standalone {
   background: transparent;
 }
 .standalone-tab-window.app-shell {
@@ -1429,7 +1501,7 @@ html.standalone #root {
   display: none;
 }
 .shell-terminal-pane {
-  background: #181818;
+  background: var(--color-neutral-900);
 }
 .task-tab-list::-webkit-scrollbar {
   display: none;
@@ -1437,6 +1509,7 @@ html.standalone #root {
 .topbar .task-tab {
   flex: 0 0 15rem;
   width: 15rem;
+  border-radius: var(--shell-card-radius);
   justify-content: flex-start;
   text-align: left;
   white-space: nowrap;
@@ -1456,8 +1529,12 @@ html.standalone #root {
   color: var(--foreground);
 }
 .task-tab[data-state="active"] > span.absolute[aria-hidden] {
-  background-color: var(--frame-background);
-  box-shadow: var(--shadow-2);
+  inset: 0;
+  background: var(--shell-card);
+  -webkit-backdrop-filter: var(--shell-card-backdrop-filter);
+  backdrop-filter: var(--shell-card-backdrop-filter);
+  border: 0;
+  box-shadow: var(--shell-card-shadow);
 }
 .task-tab[data-state="active"] .task-tab-label {
   font-weight: 500;
@@ -1838,7 +1915,7 @@ html.standalone #root {
   max-width: var(--chat-column-max-width);
   width: 100%;
   margin: 0 auto;
-  padding: 0.625rem var(--chat-column-padding) 0.875rem;
+  padding: 0.625rem var(--chat-column-padding) var(--shell-card-inset);
   flex-shrink: 0;
 }
 .chat-config {
@@ -1852,7 +1929,7 @@ html.standalone #root {
   flex: 1;
   min-height: 0;
   padding: 0.75rem;
-  background: #181818;
+  background: var(--color-neutral-900);
 }
 .review-pane {
   width: 40%;
@@ -1944,11 +2021,20 @@ html.standalone #root {
   }
 }
 @media (prefers-reduced-transparency: reduce) {
-  .app-shell {
+  .desktop body,
+  .desktop #root {
+    background: var(--chrome-solid);
+  }
+  .app-shell,
+  .app-shell :is(.light, .dark) {
     --chrome: var(--chrome-solid);
     --frame-background: var(--frame-solid);
     --shell-canvas: var(--chrome-solid);
     --shell-card: var(--frame-solid);
+    --shell-card-backdrop-filter: none;
+    --glass-chat-backdrop: linear-gradient(var(--frame-solid), var(--frame-solid));
+  }
+  .app-shell {
     background-color: var(--chrome-solid);
   }
 }
@@ -1958,9 +2044,6 @@ html.standalone #root {
     padding-right: 1.875rem;
   }
 
-  .chat-main {
-    --chat-column-padding: 1.375rem;
-  }
   .conversation-content {
     padding-block: 1.5625rem;
   }
@@ -2017,14 +2100,12 @@ html.standalone #root {
     padding-left: 1.375rem;
     padding-right: 1.375rem;
   }
-  .chat-main {
-    --chat-column-padding: 1rem;
-  }
   .conversation-content {
     padding-block: 1.375rem;
   }
   .chat-composer-wrap {
-    padding-block: 0.5625rem;
+    padding-top: 0.5625rem;
+    padding-bottom: var(--shell-card-inset);
   }
 }
 
@@ -2756,6 +2837,10 @@ html.transitioning *::after {
   overflow: visible !important;
   transition: transform 0.42s cubic-bezier(0.32, 0.72, 0, 1);
 }
+/* A 3rem fade hid the last visible chat above Settings. */
+.harbor-sidebar .scroll-fade {
+  --scroll-fade-size: 0.75rem;
+}
 .harbor-sidebar-handle {
   /* The card is inset on the left only, so its right edge is the shell edge.
      Center the 8px strip on that edge. position keeps the grip in the strip
@@ -2803,10 +2888,15 @@ html.transitioning *::after {
   max-width: none !important;
   transform: none !important;
   border-radius: var(--shell-card-radius);
+  background: transparent;
+}
+#harbor-sidebar [data-sidebar="sidebar"] {
   background: var(--shell-card);
-  box-shadow:
-    0 0 0 0.0625rem color-mix(in oklab, var(--foreground) 6%, transparent),
-    0 0.0625rem 0.125rem rgb(0 0 0 / 0.03);
+  -webkit-backdrop-filter: var(--shell-card-backdrop-filter);
+  backdrop-filter: var(--shell-card-backdrop-filter);
+  border: 0;
+  border-radius: var(--shell-card-radius);
+  box-shadow: var(--shell-card-shadow);
   overflow: hidden;
 }
 .app-shell[data-resizing] .harbor-sidebar,
@@ -3523,32 +3613,17 @@ html.transitioning *::after {
   );
   mask-image: linear-gradient(to right, transparent, #000 var(--skyline-fade));
 }
-.app-shell {
-  background-color: transparent;
-}
 html:not(.desktop) .app-shell,
 html:not(.desktop) body {
   background: var(--shell-canvas);
 }
 .chat-scene {
-  overflow: hidden;
-}
-.chat-scene .transcript-prompt-header {
-  background: transparent;
+  overflow: clip;
 }
 .chat-scene [data-slot="message-scroller-viewport"] {
   /* Layout/paint containment would anchor fixed skyline copies to the scroll
      content. The scroller already clips overflow; keep only style containment. */
   contain: style;
-}
-.chat-scene .transcript-prompt-backdrop {
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background: var(--chrome-solid);
-  /* Clip the backing only: the message's rounded edge and shadow stay intact. */
-  clip-path: inset(0);
 }
 .home-landscape > img,
 .home-landscape > .skyline-pixels {
@@ -3587,6 +3662,7 @@ html:not(.desktop) body {
 }
 .home-welcome {
   position: relative;
+  z-index: 0;
   width: fit-content;
   max-width: 100%;
   margin: 0 auto 1.5rem;
@@ -3630,10 +3706,20 @@ html:not(.desktop) body {
 .home-page.light .workspace-picker-trigger,
 .home-page.light .worktree-picker-trigger {
   background: rgb(255 255 255 / 0.5);
-  color: #364152;
+  color: var(--color-neutral-700);
 }
 .home-content.chat-composer-wrap {
-  padding-block: 0;
+  padding: 0 2.125rem;
+}
+@media (max-width: 68.75rem) {
+  .home-content.chat-composer-wrap {
+    padding-inline: 1.375rem;
+  }
+}
+@media (max-width: 40rem) {
+  .home-content.chat-composer-wrap {
+    padding-inline: 1rem;
+  }
 }
 .home-message-card .task-composer-context {
   padding: 0;
@@ -3701,14 +3787,12 @@ html:not(.desktop) body {
 }
 .task-composer {
   width: 100%;
-  border: 0.0625rem solid light-dark(rgb(0 0 0 / 0.08), rgb(255 255 255 / 0.12));
-  border-radius: 1.25rem;
-  background: light-dark(rgb(255 255 255 / 0.78), rgb(28 30 34 / 0.78));
-  -webkit-backdrop-filter: blur(18px);
-  backdrop-filter: blur(18px);
-  box-shadow:
-    0 0.75rem 1.75rem rgb(0 0 0 / 0.16),
-    inset 0 0.0625rem 0 light-dark(rgb(255 255 255 / 0.72), rgb(255 255 255 / 0.06));
+  border: 0;
+  border-radius: var(--shell-card-radius);
+  background: var(--shell-card);
+  -webkit-backdrop-filter: var(--shell-card-backdrop-filter);
+  backdrop-filter: var(--shell-card-backdrop-filter);
+  box-shadow: var(--shell-card-shadow);
   padding: 0.5rem 0.65rem 0.4rem;
   gap: 0.125rem;
 }

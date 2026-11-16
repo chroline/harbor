@@ -232,10 +232,7 @@ function TranscriptTurn({
 }) {
   return (
     <VirtualTranscriptTurn id={id} anchor={anchor} live={live} user>
-      <div className="transcript-prompt-header">
-        <div className="transcript-prompt-backdrop" aria-hidden="true" />
-        {header}
-      </div>
+      <div className="transcript-prompt-header">{header}</div>
       <div className="transcript-responses">{children}</div>
     </VirtualTranscriptTurn>
   );

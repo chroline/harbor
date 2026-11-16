@@ -320,6 +320,10 @@ const Switch = forwardRef<HTMLDivElement, SwitchProps>(
               : hovered
                 ? "color-mix(in oklab, var(--accent), rgb(var(--overlay)) 10%)"
                 : "var(--accent)",
+            // The off fill is --accent, which disappears on the window canvas.
+            boxShadow: checked
+              ? undefined
+              : "inset 0 0 0 0.0625rem color-mix(in srgb, var(--foreground) 22%, transparent)",
           }}
           // The primitive toggles through onCheckedChange; stopping the click
           // here keeps the row's onClick from toggling a second time.

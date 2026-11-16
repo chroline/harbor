@@ -167,13 +167,13 @@ await p.hover('[data-slot="plan-card"][data-state="pending"]');
 await p.screenshot({
   path: `${root}/screenshots/ui-craft/final-plan-card-light.png`,
 });
-assert.equal(
+assert.match(
   await p.evaluate(
     () =>
       getComputedStyle(document.querySelector('[data-slot="plan-card"][data-state="pending"]'))
         .backgroundColor,
   ),
-  "rgb(252, 252, 252)",
+  /0\.84\)$/,
 );
 await p.click('#harbor-sidebar button:has-text("Settings")');
 await p.click('[role="radio"][aria-label="Dark"]');

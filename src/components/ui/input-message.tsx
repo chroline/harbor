@@ -174,7 +174,7 @@ interface InputMessageProps extends Omit<
   /** Harbor: preserve application submission semantics without replacing motion. */
   submitOn?: "enter" | "mod-enter";
   sendControl?: ReactNode;
-  /** Leave the resting, hover, and focus frame to CSS. Drag-over still rings the edge. */
+  /** Leave resting, hover, and focus shadow/border to CSS; drag-over still rings. */
   quietFrame?: boolean;
   /** Optional application editor; the surrounding Fluid frame is retained. */
   editor?: ReactNode;
@@ -640,10 +640,10 @@ const InputMessage = forwardRef<HTMLDivElement, InputMessageProps>(
       "0 0.0625rem 0.0625rem -0.03125rem",
       "0 0.1875rem 0.1875rem -0.09375rem",
     ].map((layer) => `${layer} light-dark(var(--shadow-color), var(--dm-drop))`).join(", ");
-    const edgeShadow = quietFrame
-      ? undefined
-      : dragOver
-        ? `0 0 0 0.0625rem #6B97FF, ${EDGE_DROP}`
+    const edgeShadow = dragOver
+      ? `0 0 0 0.0625rem #6B97FF, ${EDGE_DROP}`
+      : quietFrame
+        ? undefined
         : focusVisible
           ? `0 0 0 0.0625rem color-mix(in oklab, var(--foreground) 20%, transparent), ${EDGE_DROP}`
           : hovered && clickToFocus && !disabled

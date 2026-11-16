@@ -18,7 +18,7 @@ import { useSizeVariant } from "@/lib/size-context";
 // Tailwind's 500 step for each hue (400 for gray). Text never takes the hue:
 // it stays on the foreground color, so it keeps its contrast on every color.
 const badgeColors = {
-  gray: "#a3a3a3",
+  gray: "#a1a1a1",
   red: "#ef4444",
   orange: "#f97316",
   amber: "#f59e0b",

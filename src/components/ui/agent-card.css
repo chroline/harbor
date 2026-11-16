@@ -3,9 +3,11 @@
   width: 100%;
   padding: 20px;
   border: 0;
-  border-radius: var(--radius-xl);
-  background: var(--panel);
-  box-shadow: var(--shadow-3);
+  border-radius: var(--shell-card-radius);
+  background: var(--shell-card);
+  -webkit-backdrop-filter: var(--shell-card-backdrop-filter);
+  backdrop-filter: var(--shell-card-backdrop-filter);
+  box-shadow: var(--shell-card-shadow);
   color: var(--card-foreground, var(--foreground));
 }
 .harbor-agent-card-header {

@@ -191,6 +191,28 @@ export default function App() {
     width: sidebarWidth,
     setWidth: setSidebarWidth,
   } = useShellLayout();
+  const [fullscreen, setFullscreen] = useState(false);
+  useEffect(() => {
+    if (!desktop) return;
+    let disposed = false;
+    const current = getCurrentWindow();
+    const sync = () => {
+      void current
+        .isFullscreen()
+        .then((value) => {
+          if (!disposed) setFullscreen(value);
+        })
+        .catch((error) =>
+          console.error("Unable to read fullscreen state", error),
+        );
+    };
+    sync();
+    window.addEventListener("resize", sync);
+    return () => {
+      disposed = true;
+      window.removeEventListener("resize", sync);
+    };
+  }, []);
   const [startingProject, setStartingProject] = useState<Project | null>(null);
   const [projectDialog, setProjectDialog] = useState<Project | "new" | null>(null);
   const [projectHistory, setProjectHistory] = useState<Project | null>(null);
@@ -599,13 +621,14 @@ export default function App() {
       ? "Worktrees"
       : view === "settings"
         ? "Settings"
-        : "New task");
+        : "");
   useEffect(() => {
     document.title = active ? title + " — Harbor" : "Harbor";
   }, [active?.id, title]);
   return (
     <SidebarProvider
       className={"app-shell " + (!sidebar ? "sidebar-collapsed" : "")}
+      data-fullscreen={fullscreen || undefined}
       style={{ "--window-gutter": `${rem(WINDOW_GUTTER)}` } as CSSProperties}
       open={sidebar}
       onOpenChange={setSidebar}
@@ -663,11 +686,11 @@ export default function App() {
           <ChromeSidebarDivider />
           {active && typeof view === "object" ? (
             <div ref={setChatTabsTarget} className="topbar-task-tabs" />
-          ) : (
+          ) : title ? (
             <Tooltip content={title}><span className="topbar-title">
               {title}
             </span></Tooltip>
-          )}
+          ) : null}
         </div>
         <div className="topbar-right">
           {contextProject && <Button variant="ghost" size="compact" aria-expanded={contextOpen} onClick={() => setContextOpen((v) => !v)}>Context</Button>}
@@ -780,7 +803,7 @@ export default function App() {
                   <SidebarMenuButton loading={mark.loading} attention={mark.attention} attentionTone={mark.attentionTone} unseen={mark.unseen} icon={projectIcons[project.icon as keyof typeof projectIcons] ?? Folder} isActive={active?.id === current?.id && !!current && !(typeof view === "object" && view.child)} title={data.workspaces.find((w) => w.id === project.workspaceId)?.path} onClick={() => void openProject(project)}>{project.name}</SidebarMenuButton>
                 </SidebarRowMenu>
                 {current && (projectWorkers[current.id]?.length ?? 0) > 0 && <SidebarMenuSub className={sidebarChildrenClassName} aria-label={`Agents in ${project.name}`}>{workerRows(current)}</SidebarMenuSub>}
-              </SidebarMenu>;
+              </SidebarMenuItem>;
               })}</SidebarMenu>
             </SidebarGroup>
             <SidebarGroup collapsible role="region" aria-label="Workspaces">
@@ -1005,7 +1028,6 @@ export default function App() {
                         />
                       }
                     />
-
                   </section>
                 </div>
               </HomeScene>

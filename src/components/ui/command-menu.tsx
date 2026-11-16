@@ -1067,7 +1067,7 @@ const CommandMenuList = forwardRef<HTMLDivElement, CommandMenuListProps>(
       // the end, which is why the footer draws no line of its own.
       <ScrollArea
         className="scroll-divider flex min-h-0 flex-1 flex-col border-t-[0.0625rem] border-border/60 [&::before]:!-top-[0.0625rem]"
-        viewportClassName="min-h-0 flex-1 [&>div[style]]:!block [&>div[style]]:!min-w-0 [--scroll-fade-size:2rem] scroll-fade"
+        viewportClassName="min-h-0 flex-1 [&>div[style]]:!block [&>div[style]]:!min-w-0 [--scroll-fade-size:0.75rem] scroll-fade"
       >
         {/* Empty-state status is a sibling: listboxes may only own options/groups. */}
         {empty && children}
@@ -1092,7 +1092,7 @@ const CommandMenuList = forwardRef<HTMLDivElement, CommandMenuListProps>(
           className={cn(
             // The list is the fill's offsetParent, so rows and fill scroll
             // together inside the viewport. Padding collapses when empty.
-            "relative flex flex-col gap-1 p-1 outline-none data-[empty]:p-0",
+            "relative flex flex-col gap-1 px-1 pt-1 pb-3 outline-none data-[empty]:p-0",
             className
           )}
           {...props}
@@ -1323,7 +1323,7 @@ const CommandMenuItem = memo(forwardRef<HTMLDivElement, CommandMenuItemProps>(
           // ascenders and descenders outside the trimmed box.
           <span className="flex min-w-0 flex-1 items-baseline gap-2">
             <span className={cn(
-              "shrink-0 truncate [text-box:trim-both_cap_alphabetic] py-1 -my-1",
+              "shrink-0 truncate text-foreground [text-box:trim-both_cap_alphabetic] py-1 -my-1",
               item.description ? "max-w-[50%]" : "max-w-full"
             )}>
               {item.label}

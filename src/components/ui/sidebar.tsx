@@ -247,21 +247,16 @@ const SidebarContent = forwardRef<HTMLDivElement, SidebarContentProps>(
     const { isMobile } = useSidebar();
 
     // Inside the mobile sheet, the sheet's flex column owns layout and this
-    // region scrolls natively — a nested ScrollArea would double-scroll. The
-    // boundary hairline still needs a frame to ride: scroll-divider can't sit
-    // on the scroller itself (its own fade mask would erase the line), so the
-    // region is wrapped the way ScrollArea wraps its viewport on desktop.
+    // region scrolls natively — a nested ScrollArea would double-scroll.
     if (isMobile) {
       return (
-        <div className="scroll-divider [--scroll-divider-inset:0.5rem] flex min-h-0 w-full flex-1 flex-col">
-          <div
-            ref={ref}
-            data-sidebar="content"
-            className={cn("scroll-fade flex min-h-0 w-full flex-1 flex-col overflow-y-auto", className)}
-            {...props}
-          >
-            {children}
-          </div>
+        <div
+          ref={ref}
+          data-sidebar="content"
+          className={cn("scroll-fade flex min-h-0 w-full flex-1 flex-col overflow-y-auto", className)}
+          {...props}
+        >
+          {children}
         </div>
       );
     }
@@ -271,7 +266,7 @@ const SidebarContent = forwardRef<HTMLDivElement, SidebarContentProps>(
     // instead of truncating, so the viewport's direct child is forced back
     // to a plain shrinkable block.
     return (
-      <ScrollArea className={cn("scroll-divider min-h-0 w-full flex-1", className)} viewportClassName={cn("scroll-fade [&>div]:!block [&>div]:!min-w-0", viewportClassName)}>
+      <ScrollArea className={cn("min-h-0 w-full flex-1", className)} viewportClassName={cn("scroll-fade [&>div]:!block [&>div]:!min-w-0", viewportClassName)}>
         <div ref={ref} data-sidebar="content" className="flex w-full min-w-0 flex-col" {...props}>
           {children}
         </div>

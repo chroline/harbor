@@ -36,9 +36,10 @@ export function NativeTerminal({
       cursorBlink: true,
       scrollback: 10000,
       theme: {
-        background: "#181818",
-        foreground: "#dedede",
-        cursor: "#dedede",
+        // Canvas paints. neutral-900, neutral-200, neutral-700.
+        background: "#171717",
+        foreground: "#e5e5e5",
+        cursor: "#e5e5e5",
         selectionBackground: "#404040",
       },
     });

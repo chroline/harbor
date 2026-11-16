@@ -1,4 +1,4 @@
-//! Keep native window controls centered in Harbor's 48-point title bar.
+//! Keep native window controls on the sidebar card's top row.
 //!
 //! AppKit can rebuild the title bar after appearance, title, and display
 //! changes. Observe native window and frame changes instead of repairing it by
@@ -54,14 +54,18 @@ unsafe fn align(window: &NSWindow) {
     // AppKit can notify us halfway through its own layout. Reading the current
     // button positions here feeds that temporary spacing back into our layout.
     // Use a stable pitch with room between the native controls instead.
-    // Origin matches the sidebar icon column: 8px card inset + 6px group
-    // padding + 8px row padding. The browser preview uses the same inset.
+    // The close button's left edge lines up with the sidebar icon ink. Button
+    // frames use AppKit's bottom-left origin inside this 48pt titlebar, so the
+    // row center (30pt from the window top: 8pt card inset + 22pt) is measured
+    // up from the titlebar's bottom edge.
     let spacing = 24.0;
-    let light_origin = 26.0;
+    let light_origin = 24.0;
+    let row_center_from_top = 30.0;
+    let center_from_bottom = height - row_center_from_top;
     for (index, button) in [close, minimize, zoom].into_iter().enumerate() {
         let origin = NSPoint::new(
             light_origin + index as f64 * spacing,
-            (height - button.frame().size.height) / 2.0,
+            center_from_bottom - button.frame().size.height / 2.0,
         );
         // Avoid scheduling further window updates when the controls are already aligned.
         if button.frame().origin != origin {

@@ -83,10 +83,12 @@
   width: min(18rem, calc(100vw - 5rem));
   padding: 0.75rem;
   border: 0;
-  border-radius: var(--radius-xl);
-  background: var(--panel);
+  border-radius: var(--shell-card-radius);
+  background: var(--shell-card);
+  -webkit-backdrop-filter: var(--shell-card-backdrop-filter);
+  backdrop-filter: var(--shell-card-backdrop-filter);
   color: var(--foreground);
-  box-shadow: var(--shadow-3);
+  box-shadow: var(--shell-card-shadow);
   overflow-wrap: anywhere;
 }
 .chat-minimap-preview p {

@@ -96,6 +96,21 @@ assert.ok(
       .textContent.includes("Case 30"),
   ),
 );
+assert.deepEqual(
+  await page.evaluate(() => {
+    const card = getComputedStyle(
+      document.querySelector('#harbor-sidebar [data-sidebar="sidebar"]'),
+    );
+    const peek = getComputedStyle(
+      document.querySelector('[data-slot="chat-minimap-preview"]'),
+    );
+    return {
+      background: peek.backgroundColor === card.backgroundColor,
+      blur: peek.backdropFilter === card.backdropFilter,
+    };
+  }),
+  { background: true, blur: true },
+);
 assert.equal(
   await page.evaluate(
     () =>
