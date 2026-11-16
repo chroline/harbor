@@ -15,11 +15,16 @@ pub fn executable() -> Option<PathBuf> {
     if let Some(bundled) = bundled_executable(&app) {
         return Some(bundled);
     }
-    // Cargo's test executables live in target/{profile}/deps, while Tauri
-    // copies the helper into target/{profile} next to the application.
+    // Cargo's test executables live in target/{profile}/deps or
+    // target/{profile}/build/<pkg>/<hash>/out, while Tauri copies the helper
+    // into target/{profile} next to the application.
     #[cfg(test)]
-    if let Some(bundled) = app.parent().and_then(Path::parent)
-        .and_then(|directory| bundled_executable(&directory.join("harbor"))) {
+    if let Some(bundled) = app
+        .ancestors()
+        .skip(1)
+        .take(6)
+        .find_map(|directory| bundled_executable(&directory.join("harbor")))
+    {
         return Some(bundled);
     }
     // A packaged app must use its pinned helper, independent of the user's PATH.
