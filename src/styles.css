@@ -1155,6 +1155,9 @@ a {
   padding-bottom: 1.5rem;
   border-bottom: 0.0625rem solid var(--divider);
 }
+.settings-page > .settings-section:first-child {
+  margin-top: 0;
+}
 .settings-section .section-title {
   margin-bottom: 0.5rem;
 }

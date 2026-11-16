@@ -80,9 +80,6 @@ export function Settings() {
   };
   return (
     <div className="settings-page page-width">
-      <div className="page-intro">
-        <h1>Settings</h1>
-      </div>
       <section className="settings-section">
         <div className="section-title">
           <h2>Agent connections</h2>

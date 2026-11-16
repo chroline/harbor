@@ -721,7 +721,7 @@ export default function App() {
           <ChromeSidebarDivider />
           {active && typeof view === "object" ? (
             <div ref={setChatTabsTarget} className="topbar-task-tabs" />
-          ) : title ? (
+          ) : title && view !== "settings" ? (
             <Tooltip content={title}><span className="topbar-title">
               {title}
             </span></Tooltip>
