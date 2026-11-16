@@ -744,11 +744,12 @@ impl Rpc {
         terminal.publish_output(&self.sink, id).await;
         Ok(())
     }
-    pub async fn cancel_requests(&self) { self.cancel_pending_requests(true).await; }
-    pub async fn cancel_blocking_requests(&self) { self.cancel_pending_requests(false).await; }
-    async fn cancel_pending_requests(&self, include_async: bool) {
+    pub async fn cancel_requests(&self) { self.cancel_pending_requests(true,None).await; }
+    pub async fn cancel_blocking_requests(&self) { self.cancel_pending_requests(false,None).await; }
+    pub async fn cancel_finished_turn_requests(&self, thread: &str) { self.cancel_pending_requests(false,Some(thread)).await; }
+    async fn cancel_pending_requests(&self, include_async: bool, thread: Option<&str>) {
         let mut inbound = self.inbound.lock().await;
-        let keys = inbound.iter().filter(|(_, request)| include_async || !codex_questions::is_async(request)).map(|(id, _)| id.clone()).collect::<Vec<_>>();
+        let keys = inbound.iter().filter(|(_, request)| (include_async || !codex_questions::is_async(request)) && thread.is_none_or(|thread| request["params"]["sessionId"].as_str().is_none_or(|owner|owner==thread))).map(|(id, _)| id.clone()).collect::<Vec<_>>();
         let pending = keys.into_iter().filter_map(|id| inbound.remove(&id)).collect::<Vec<_>>();
         drop(inbound);
         for req in pending {
@@ -1040,6 +1041,18 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn parent_turn_completion_does_not_cancel_worker_questions() {
+        let (rpc,_temp,_events,root)=fixture().await;
+        for (id,owner) in [(1,root.as_str()),(2,"original-worker")] {
+            rpc.inbound.lock().await.insert(json!(id).to_string(),json!({"id":id,"method":"elicitation/create","params":{"sessionId":owner}}));
+        }
+        rpc.cancel_finished_turn_requests(&root).await;
+        assert!(!rpc.inbound.lock().await.contains_key("1"));
+        assert!(rpc.inbound.lock().await.contains_key("2"));
+        rpc.stop().await;
+        assert!(rpc.inbound.lock().await.is_empty());
+    }
     #[tokio::test]
     async fn async_questions_survive_completion_validate_answers_and_remain_recoverable_on_stop() {
         let (rpc, _temp, events, id) = fixture().await;

@@ -695,3 +695,15 @@ function PermissionChoices({
     </Tabs>
   );
 }
+
+/** Native workers retain provider ownership; display only the model the worker reports. */
+export function WorkerModelMenu({ provider, capabilities }: { provider: string; capabilities: unknown }) {
+  const controls = options(record(capabilities).harborConfigOptions);
+  const model = controls.find((option) => option.category === "model" || option.id === "model");
+  const current = model && values(model).find((choice) => choice.value === model.currentValue);
+  const label = current?.name ?? (str(model?.currentValue) || "Provider-managed model");
+  const reason = provider === "codex" ? "This native worker’s model is managed by its provider. Codex continuation does not support changing the worker model." : "This native worker’s model is managed by its provider. Model changes are unavailable through this worker connection.";
+  return <Tooltip content={reason}><span className="inline-flex" tabIndex={0} aria-label={`${label}. ${reason}`}>
+    <Button variant="ghost" className="model-menu-trigger" leadingIcon={providerGlyph(provider)} disabled>{label}</Button>
+  </span></Tooltip>;
+}

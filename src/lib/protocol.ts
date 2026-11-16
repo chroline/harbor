@@ -100,6 +100,9 @@ export type Transcript = {
   messages: Message[];
   tools: Record<string, Tool>;
   terminals: Record<string, ToolTerminalOutput>;
+  replayMessageIds?: string[];
+  replayActiveMessageIds?: string[];
+  replayToolIds?: string[];
   replayToolDetails: Record<
     string,
     Pick<
@@ -174,6 +177,9 @@ export const emptyTranscript = (): Transcript => ({
   messages: [],
   tools: {},
   terminals: {},
+  replayMessageIds: [],
+  replayActiveMessageIds: [],
+  replayToolIds: [],
   replayToolDetails: {},
   attachmentMetadata: [],
   children: {},
@@ -195,6 +201,10 @@ export function values(option: ConfigOption): ConfigValue[] {
   return (option.options ?? []).flatMap((v) =>
     "group" in v ? v.options : [v],
   );
+}
+function workerCapabilitiesPatch(previous: unknown, next: unknown): SubagentRecord["capabilities"] {
+  const owned = Object.fromEntries(Object.entries(record(previous)).filter(([key]) => key.startsWith("harbor")));
+  return (Object.keys(owned).length ? { ...record(next), ...owned } : next) as SubagentRecord["capabilities"];
 }
 export function reduceEvent(
   previous: Transcript,
@@ -241,13 +251,19 @@ export function reduceEvent(
   }
   if (event.kind === "child_history_reset" && targetChild) {
     interruptInteractions((entry) => entry.childId === targetChild);
-    t.messages = t.messages.filter((m) => m.childId !== targetChild);
-    t.tools = Object.fromEntries(
-      Object.entries(t.tools).filter(
-        ([, tool]) => tool.sessionId !== targetChild,
-      ),
-    );
+    const capabilities = record(t.children[targetChild]?.capabilities);
+    if (capabilities.harborViaParent === true && capabilities.harborHistoryLoaded === true) {
+      // Native continuation records human input in the parent rather than as a
+      // child user message. Reconcile the native snapshot with Harbor's existing
+      // conversation so those messages and their chronology survive reconnects.
+      t.replayMessageIds = [...new Set([...(t.replayMessageIds ?? []), ...t.messages.filter((m) => m.childId === targetChild).map((m) => JSON.stringify([m.childId, m.role, m.streamId]))])];
+      t.replayToolIds = Object.entries(t.tools).filter(([, tool]) => tool.sessionId === targetChild).map(([id]) => id);
+    } else {
+      t.messages = t.messages.filter((m) => m.childId !== targetChild);
+      t.tools = Object.fromEntries(Object.entries(t.tools).filter(([, tool]) => tool.sessionId !== targetChild));
+    }
   }
+
   if (
     targetChild &&
     t.children[targetChild] &&
@@ -268,7 +284,7 @@ export function reduceEvent(
         capabilities: {
           ...record(old.capabilities),
           ...(event.kind === "child_connected"
-            ? { harborViaParent: p.viaParent === true }
+            ? { harborViaParent: p.viaParent === true, harborHistoryLoaded: p.historyLoaded === true, harborHistoryDirty: false, ...(Array.isArray(p.configOptions) && !record(old.capabilities).harborConfigOptions ? { harborConfigOptions: p.configOptions } : {}) }
             : {}),
           harborConnected:
             event.kind === "child_connected"
@@ -279,6 +295,11 @@ export function reduceEvent(
         },
       },
     };
+    if (event.kind === "child_connected") {
+      t.replayMessageIds = t.replayMessageIds?.filter((key) => JSON.parse(key)[0] !== targetChild);
+      t.replayActiveMessageIds = t.replayActiveMessageIds?.filter((key) => JSON.parse(key)[0] !== targetChild);
+      t.replayToolIds = t.replayToolIds?.filter((id) => t.tools[id]?.sessionId !== targetChild);
+    }
     if (event.kind === "child_disconnected")
       t.childCommands = { ...t.childCommands, [targetChild!]: [] };
     if (event.kind === "child_disconnected")
@@ -314,6 +335,7 @@ export function reduceEvent(
       // Only an explicit child replay resets that conversation.
       children: t.children,
       childTurns: t.childTurns,
+      replayMessageIds: t.messages.filter((m) => !!m.childId).map((m) => JSON.stringify([m.childId, m.role, m.streamId])),
       messages: t.messages.filter((m) => !!m.childId),
       tools: Object.fromEntries(
         Object.entries(t.tools).filter(
@@ -344,6 +366,9 @@ export function reduceEvent(
     };
   if (event.kind === "connected") {
     t.replayToolDetails = {};
+    t.replayMessageIds = [];
+    t.replayActiveMessageIds = [];
+    t.replayToolIds = [];
     t.children = Object.fromEntries(
       Object.entries(t.children).map(([id, child]) => [
         id,
@@ -387,6 +412,22 @@ export function reduceEvent(
     }
     const messageTurn = childId ? (t.childTurns[childId] ?? 0) : t.turn;
     const streamId = messageId ?? `${childId ?? "root"}:${role}:${messageTurn}`;
+    const replayKey = JSON.stringify([childId, role, streamId]);
+    if (childId && messageId && t.replayMessageIds?.includes(replayKey)) {
+      t.replayMessageIds = t.replayMessageIds.filter((key) => key !== replayKey);
+      // Native parent history can contain a worker's saved final message. Its
+      // first replay chunk replaces that stream; subsequent chunks append normally.
+      const previous = t.messages.findIndex((m) => m.childId === childId && m.role === role && m.streamId === streamId);
+      if (previous >= 0) {
+        t.replayActiveMessageIds = [...(t.replayActiveMessageIds ?? []), replayKey];
+        t.messages = t.messages.map((m, index) => index === previous ? { ...m, text } : m);
+        return;
+      }
+    }
+    if (childId && messageId && t.replayActiveMessageIds?.includes(replayKey)) {
+      t.messages = t.messages.map((m) => m.childId === childId && m.role === role && m.streamId === streamId ? { ...m, text: m.text + text } : m);
+      return;
+    }
     let lastIndex = t.messages.length - 1;
     while (lastIndex >= 0 && t.messages[lastIndex].childId !== childId)
       lastIndex--;
@@ -668,6 +709,10 @@ export function reduceEvent(
       Object.keys(t.children).find((id) => sameWorker(reportedWireId, id)) ??
       reportedWireId;
     const childId = t.children[wireId] ? wireId : undefined;
+    if (type === "config_option_update" && childId) {
+      const worker = t.children[childId];
+      t.children = { ...t.children, [childId]: { ...worker, capabilities: { ...record(worker.capabilities), harborConfigOptions: u.configOptions } as SubagentRecord["capabilities"] } };
+    }
     if (type === "available_commands_update") {
       const commands = commandList(u.availableCommands);
       if (childId)
@@ -682,7 +727,11 @@ export function reduceEvent(
       ].includes(type)
     ) {
       const content = record(u.content);
-      if (content.type === "text")
+      if (content.type === "text") {
+        const history = record(record(u._meta).harbor);
+        // Older persisted imports contain placeholders for unavailable encrypted bodies.
+        // Keep real text and receipts; unavailable content has no chat representation.
+        if (type === "user_message_chunk" && history.contentUnavailable === true) return t;
         append(
           type === "agent_thought_chunk"
             ? "thought"
@@ -692,12 +741,37 @@ export function reduceEvent(
           str(content.text),
           childId,
           str(u.messageId) || undefined,
+          history.sender === "parent" ? "Parent" : undefined,
         );
+        if (typeof history.originalSequence==="number" && Number.isFinite(history.originalSequence)) {
+          t.messages=t.messages.map(m=>m.childId===childId && m.streamId===u.messageId ? {...m,sequence:history.originalSequence as number,timestamp:typeof history.originalTimestamp==="number" ? history.originalTimestamp : m.timestamp} : m);
+        }
+        if (childId && history.source === "codex-native-history" && history.sender === "parent") {
+          const anchor = t.messages.find((m) => m.childId === childId && m.streamId === history.beforeMessageId);
+          const nativeTime = typeof history.timestamp === "number" && Number.isFinite(history.timestamp) && history.timestamp > 0 ? history.timestamp : anchor?.timestamp;
+          if (nativeTime !== undefined) {
+            t.messages = t.messages.map((m) => m.childId === childId && m.streamId === u.messageId ? {...m, timestamp: nativeTime, updatedAt: nativeTime} : m);
+          }
+          const position = history.position;
+          if (anchor && typeof position === "number" && position > 0 && position < 1) {
+            t.messages = t.messages.map((m) => m.childId === childId && m.streamId === u.messageId ? {...m, sequence: anchor.sequence - 1 + position, label: "Parent"} : m);
+          }
+        }
+      }
     }
     if (type === "tool_call" || type === "tool_call_update") {
       const id = `${wireId}:${str(u.toolCallId)}`;
       const old = t.tools[id];
+      const replayingTool = type === "tool_call" && t.replayToolIds?.includes(id);
+      if (replayingTool) t.replayToolIds = t.replayToolIds?.filter((key) => key !== id);
       const meta = record(u._meta);
+      const history = record(meta.harbor);
+      const historyAnchor = history.source === "codex-native-history" && childId
+        ? t.messages.find((m) => m.childId === childId && m.streamId === history.beforeMessageId)
+        : undefined;
+      const historySequence = historyAnchor && typeof history.position === "number" && history.position > 0 && history.position < 1
+        ? historyAnchor.sequence - 1 + history.position
+        : event.sequence;
       const terminalInfo = record(meta.terminal_info);
       const terminalDelta = record(
         meta.terminal_output ?? meta.terminal_output_delta,
@@ -709,7 +783,7 @@ export function reduceEvent(
         str(terminalInfo.terminal_id);
       if (terminalId) {
         // A replay starts a fresh stream instead of appending to cached output.
-        if (!old && type === "tool_call" && terminalInfo.terminal_id) {
+        if ((!old || replayingTool) && type === "tool_call" && terminalInfo.terminal_id) {
           t.terminals = {
             ...t.terminals,
             [terminalId]: { output: "", truncated: false },
@@ -778,7 +852,7 @@ export function reduceEvent(
         ...t.tools,
         [id]: {
           id,
-          sequence: old?.sequence ?? event.sequence,
+          sequence: old?.sequence ?? (typeof history.originalSequence==="number" ? history.originalSequence : historySequence),
           sessionId: wireId,
           title: str(u.title, old?.title ?? ""),
           status: str(u.status, old?.status ?? "in_progress"),
@@ -887,17 +961,9 @@ export function reduceEvent(
               u.state === undefined
                 ? (old?.state ?? { type: "unknown" })
                 : (u.state as SubagentRecord["state"]),
-            capabilities:
-              u.capabilities === undefined
-                ? (old?.capabilities ?? {})
-                : record(old?.capabilities).harborConnected === true
-                  ? {
-                      ...record(u.capabilities),
-                      harborConnected: true,
-                      harborViaParent:
-                        record(old?.capabilities).harborViaParent === true,
-                    }
-                  : (u.capabilities as SubagentRecord["capabilities"]),
+            capabilities: record(old?.capabilities).harborHistoryLoaded === true && ["working", "running", "queued"].includes(str(record(u.state).type))
+              ? {...record(u.capabilities === undefined ? old?.capabilities : workerCapabilitiesPatch(old?.capabilities,u.capabilities)), harborHistoryDirty: true}
+              : u.capabilities === undefined ? old?.capabilities ?? {} : workerCapabilitiesPatch(old?.capabilities,u.capabilities),
           },
         };
     }

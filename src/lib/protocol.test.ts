@@ -1286,6 +1286,67 @@ it("does not invent a tool title when only the provider tool name is available",
   expect(t.tools["root:provider-name"].name).toBe("SubagentHandback");
 });
 
+it("replaces replayed worker message streams instead of appending them to saved history", () => {
+  let t = reduceEvent(emptyTranscript(), update({ sessionUpdate: "subagent_update", sessionId: "child", title: "Worker" }));
+  const chunk = (text: string) => update({ sessionUpdate: "agent_message_chunk", messageId: "native-message", content: { type: "text", text } }, "child");
+  t = reduceEvent(t, chunk("Saved worker reply"));
+  t = reduceEvent(t, event("history_reset", {}));
+  t = reduceEvent(t, chunk("Saved worker "));
+  t = reduceEvent(t, chunk("reply"));
+  t = reduceEvent(t, event("connected", {}));
+  expect(t.messages.filter((m) => m.childId === "child").map((m) => m.text)).toEqual(["Saved worker reply"]);
+  t = reduceEvent(t, event("history_reset", {}));
+  t = reduceEvent(t, chunk("Saved worker reply"));
+  t = reduceEvent(t, event("connected", {}));
+  expect(t.messages.filter((m) => m.childId === "child").map((m) => m.text)).toEqual(["Saved worker reply"]);
+  t = reduceEvent(t, update({ sessionUpdate: "agent_message_chunk", messageId: "new-message", content: { type: "text", text: "ha" } }, "child"));
+  t = reduceEvent(t, update({ sessionUpdate: "agent_message_chunk", messageId: "new-message", content: { type: "text", text: "ha" } }, "child"));
+  expect(t.messages.at(-1)?.text).toBe("haha");
+});
+
+it("keeps a native worker's human follow-up and tool output once when its history is imported again", () => {
+  let t = reduceEvent(emptyTranscript(), update({ sessionUpdate: "subagent_update", sessionId: "child", title: "Worker" }));
+  const reply = (id: string, text: string) => update({ sessionUpdate: "agent_message_chunk", messageId: id, content: { type: "text", text } }, "child");
+  const tool = () => update({ sessionUpdate: "tool_call", toolCallId: "exec", title: "printf marker", status: "completed", _meta: { terminal_info: { terminal_id: "terminal" } } }, "child");
+  const output = () => update({ sessionUpdate: "tool_call_update", toolCallId: "exec", _meta: { terminal_output: { terminal_id: "terminal", data: "marker" } } }, "child");
+  t = reduceEvent(t, tool()); t = reduceEvent(t, output());
+  t = reduceEvent(t, reply("first", "First worker answer"));
+  t = reduceEvent(t, event("child_connected", { childId: "child", viaParent: true, historyLoaded: true }));
+  t = reduceEvent(t, event("user_message", { childId: "child", text: "Human follow-up" }));
+  t = reduceEvent(t, reply("second", "Second worker answer"));
+  t = reduceEvent(t, event("child_history_reset", { childId: "child" }));
+  t = reduceEvent(t, tool()); t = reduceEvent(t, output());
+  t = reduceEvent(t, reply("first", "First worker "));
+  t = reduceEvent(t, reply("first", "answer"));
+  t = reduceEvent(t, reply("second", "Second worker answer"));
+  t = reduceEvent(t, event("child_connected", { childId: "child", viaParent: true, historyLoaded: true }));
+  expect(t.messages.map((m) => m.text)).toEqual(["First worker answer", "Human follow-up", "Second worker answer"]);
+  expect(Object.values(t.tools)).toHaveLength(1);
+  expect(t.terminals.terminal.output).toBe("marker");
+});
+
+it("renders imported parent messages as user bubbles before worker replies and reconciles replay", () => {
+  let t = emptyTranscript();
+  t.children.worker = {sessionId: "worker", parentId: "root", title: "Worker", description: null, state: {type: "completed"}, capabilities: {harborViaParent: true, harborHistoryLoaded: true}};
+  t = reduceEvent(t, update({sessionUpdate: "agent_message_chunk", messageId: "answer", content: {type: "text", text: "Worker response"}}, "worker"));
+  const parent = () => update({sessionUpdate: "user_message_chunk", messageId: "native-parent-id", content: {type: "text", text: "Actual parent assignment"}, _meta: {harbor: {source: "codex-native-history", sender: "parent", beforeMessageId: "answer", position: 0.5, timestamp: 150}}}, "worker");
+  t = reduceEvent(t, parent());
+  expect(t.messages.find(m => m.streamId === "native-parent-id")).toMatchObject({role: "user", label: "Parent", childId: "worker", text: "Actual parent assignment", timestamp: 150, updatedAt: 150});
+  expect(timeline(t,"worker").filter(e=>e.type==="message").map(e=>e.type==="message"&&e.message.text)).toEqual(["Actual parent assignment","Worker response"]);
+  t = reduceEvent(t,event("child_history_reset",{childId:"worker"}));
+  t = reduceEvent(t,parent());
+  expect(t.messages.filter(m=>m.streamId==="native-parent-id")).toHaveLength(1);
+  expect(t.messages.find(m=>m.streamId==="native-parent-id")?.text).toBe("Actual parent assignment");
+});
+it("refreshes an attached worker's parent-message history after native continuation", () => {
+  let t = emptyTranscript();
+  t.children.worker = {sessionId: "worker", parentId: "root", title: "Worker", description: null, state: {type: "completed"}, capabilities: {harborViaParent: true, harborHistoryLoaded: true, harborConnected: true}};
+  t = reduceEvent(t,update({sessionUpdate: "subagent_update", sessionId: "worker", state: {type: "working"}}));
+  expect(t.children.worker.capabilities).toMatchObject({harborHistoryLoaded:true,harborHistoryDirty:true});
+  t = reduceEvent(t,event("child_connected",{childId:"worker",viaParent:true,historyLoaded:true}));
+  expect(t.children.worker.capabilities).toMatchObject({harborHistoryLoaded:true,harborHistoryDirty:false});
+});
+
 it("restores stored image previews when Grok replays only prompt text", () => {
   const attachments = [{ name: "screen.png", mimeType: "image/png", size: 8, previewSource: "harbor-attachment:batch/0-screen.png" }];
   let t = reduceEvent(emptyTranscript(), event("user_message", { text: "Inspect screen", attachments }));
@@ -1300,4 +1361,12 @@ it("does not reuse an older attachment on a new prompt with the same text", () =
   let t = reduceEvent(emptyTranscript(), event("user_message", { text: "Inspect", attachments: [{ name: "screen.png", mimeType: "image/png", size: 8, previewSource: "harbor-attachment:batch/0-screen.png" }] }));
   t = reduceEvent(t, event("user_message", { text: "Inspect" }));
   expect(t.messages.at(-1)?.attachments).toBeUndefined();
+});
+
+it("omits unavailable encrypted parent receipts when rebuilding saved history", () => {
+  let t = emptyTranscript();
+  t = reduceEvent(t, update({sessionUpdate: "user_message_chunk", messageId: "encrypted-parent", content: {type: "text", text: "Legacy encrypted placeholder"}, _meta: {harbor: {source: "codex-native-history", sender: "parent", contentUnavailable: true}}}));
+  expect(t.messages).toEqual([]);
+  t = reduceEvent(t, update({sessionUpdate: "user_message_chunk", messageId: "actual-parent", content: {type: "text", text: "Hello again!"}, _meta: {harbor: {source: "codex-native-history", sender: "parent"}}}));
+  expect(t.messages.map(m => m.text)).toEqual(["Hello again!"]);
 });

@@ -74,10 +74,20 @@ pub fn receipts(
 ) -> Vec<Value> {
     let mut calls = HashMap::new();
     let mut pending = Vec::new();
+    let mut worker_paths = HashMap::<String, String>::new();
+    let mut reporting_worker: Option<String> = None;
     for line in lines {
         let Ok(event) = serde_json::from_str::<Value>(&line) else {
             continue;
         };
+        if event["type"] == "event_msg" && event["payload"]["type"] == "item_completed" && event["payload"]["thread_id"] == thread {
+            let item = &event["payload"]["item"];
+            if item["type"] == "SubAgentActivity" {
+                if let (Some(path), Some(id)) = (item["agent_path"].as_str(), item["agent_thread_id"].as_str()) {
+                    if id != thread { worker_paths.insert(path.into(), id.into()); }
+                }
+            }
+        }
         if event["type"] != "response_item" {
             continue;
         }
@@ -85,11 +95,19 @@ pub fn receipts(
         if item["type"] == "message" && item["role"] == "user" {
             calls.clear();
             pending.clear();
+            worker_paths.clear();
+            reporting_worker = None;
+        } else if item["type"] == "agent_message" {
+            // This is native message-envelope provenance, not assistant prose.
+            reporting_worker = item["author"].as_str().and_then(|path|worker_paths.get(path)).cloned();
         } else if item["type"] == "function_call" && item["name"] == "request_user_input_async" {
             if let (Some(call), Some(args)) = (item["call_id"].as_str(), item["arguments"].as_str())
             {
                 if !call.is_empty() && call.len() <= 256 {
-                    if let Some(request) = request(thread, call, args) {
+                    if let Some(mut request) = request(thread, call, args) {
+                        if let Some(worker) = &reporting_worker {
+                            request["params"]["_meta"]["harborWorkerContextId"] = json!(worker);
+                        }
                         calls.insert(call.to_owned(), request);
                     }
                 }
@@ -384,6 +402,17 @@ mod tests {
             latest_turn_file(&path, "thread", dir.path()).unwrap(),
             Some(("turn-1".into(), Some("end_turn".into())))
         );
+    }
+    #[test]
+    fn relayed_question_context_uses_native_worker_provenance_and_resets_on_user_input() {
+        let activity = json!({"type":"event_msg","payload":{"type":"item_completed","thread_id":"thread","item":{"type":"SubAgentActivity","agent_thread_id":"worker","agent_path":"/root/worker"}}});
+        let native_message = json!({"type":"response_item","payload":{"type":"agent_message","author":"/root/worker","recipient":"/root","content":"opaque"}});
+        let pending = parse(vec![activity.clone(),native_message.clone(),call(),output(true)], HashSet::new());
+        assert_eq!(pending[0]["params"]["sessionId"], "thread");
+        assert_eq!(pending[0]["params"]["_meta"]["harborWorkerContextId"], "worker");
+        for events in [vec![native_message.clone(),call(),output(true)], vec![activity.clone(),native_message.clone(),message("new discussion"),call(),output(true)]] {
+            assert!(parse(events,HashSet::new())[0]["params"]["_meta"]["harborWorkerContextId"].is_null());
+        }
     }
     #[test]
     fn native_receipt_identity_and_workspace_are_checked() {

@@ -29,7 +29,7 @@ import {
 } from "../lib/attachments";
 import { normalizeCommandAliases } from "../lib/commands";
 import { rem } from "@/lib/units";
-import { SessionModelMenu } from "./ModelMenu";
+import { SessionModelMenu, WorkerModelMenu } from "./ModelMenu";
 import { ChatScroller, TranscriptRow } from "./ChatScroller";
 import { ChatLoadingSkeleton } from "./ChatLoadingSkeleton";
 import { PlanTrace, ToolGlyph } from "./AgentTrace";
@@ -1080,7 +1080,7 @@ export function Chat({
                     }}
                     modelMenu={
                       child ? (
-                        <span className="task-project">{worker?.title}</span>
+                        <WorkerModelMenu provider={session.providerId} capabilities={worker?.capabilities} />
                       ) : (
                         <SessionModelMenu
                           session={session}
@@ -1091,8 +1091,11 @@ export function Chat({
                     onStop={
                       (
                         child
-                          ? workerWorking && workerConnected && !workerViaParent
-                          : working
+                          ? workerWorking &&
+                            workerConnected &&
+                            !workerViaParent &&
+                            !["needs_input", "requires_action"].includes(workerState)
+                          : session.status === "working"
                       )
                         ? () =>
                             void call("cancel_turn", {

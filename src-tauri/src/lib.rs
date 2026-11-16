@@ -52,6 +52,7 @@ pub struct AppState {
     app: tauri::AppHandle,
     connections: Mutex<HashMap<String, Arc<Rpc>>>,
     relay_targets: StdMutex<HashMap<String, (String,String)>>,
+    child_replays: StdMutex<HashMap<String, Vec<(String, Value)>>>,
     child_transports: StdMutex<HashMap<String, Arc<Rpc>>>,
     child_connections: Mutex<HashMap<String, Arc<Mutex<Option<subagents::Connection>>>>>,
     terminals: Mutex<HashMap<String, Arc<terminal::NativeTerminal>>>,
@@ -407,6 +408,15 @@ async fn connect(
                 if replay_cb.load(Ordering::SeqCst) {
                     pending.push((kind.into(), payload));
                     return;
+                }
+            }
+            if kind == "session/update" {
+                if let Some(child) = payload["sessionId"].as_str() {
+                    let mut replays = state.child_replays.lock().unwrap();
+                    if let Some(buffer) = replays.get_mut(&worker_key(&session_id, child)) {
+                        buffer.push((kind.into(), payload));
+                        return;
+                    }
                 }
             }
             let wire_id = if kind == "request" { payload["params"]["sessionId"].as_str() } else if kind == "session/update" { payload["sessionId"].as_str() } else { None };
@@ -880,13 +890,14 @@ async fn open_subagent(state: tauri::State<'_, Arc<AppState>>, session_id: Strin
     state.connection(&session_id).await?;
     let session: SessionRecord = state.db.get("session", &session_id)?;
     if session.mode != "gui" { return Err("Return to Chat first".into()); }
-    let _child: SubagentRecord = state.db.get("subagent", &worker_key(&session_id, &child_id))
+    let _child_record: SubagentRecord = state.db.get("subagent", &worker_key(&session_id, &child_id))
         .map_err(|_| "This worker does not belong to this conversation")?;
     let slot = state.child_connections.lock().await.entry(worker_key(&session_id, &child_id))
         .or_insert_with(|| Arc::new(Mutex::new(None))).clone();
     let mut slot = slot.lock().await;
-    if slot.as_ref().is_some_and(|c| c.rpc.alive.load(Ordering::SeqCst)) { return Ok(()); }
-    if let Some(old) = slot.take() { old.rpc.stop().await; }
+    let parent_rpc = state.connection(&session_id).await?;
+    if slot.as_ref().is_some_and(|c|c.rpc.alive.load(Ordering::SeqCst)) {return Ok(());}
+    if let Some(old)=slot.take(){if !old.via_parent {old.rpc.stop().await;}}
     let provider = state.provider(&session.provider_id)?;
     let weak = Arc::downgrade(state.inner());
     let root = session_id.clone(); let child_cb = child_id.clone();
@@ -916,7 +927,8 @@ async fn open_subagent(state: tauri::State<'_, Arc<AppState>>, session_id: Strin
     let started_key = worker_key(&session_id,&child_id);
     let connection = match adapters::resolve(&session.provider_id)?.descriptor().workers {
         adapters::WorkerStrategy::ParentRelay {..} => {
-        subagents::Connection {rpc:state.connection(&session_id).await?,wire_id:session.acp_session_id.clone().ok_or("Missing parent session ID")?,via_parent:true,capabilities:session.capabilities.raw.clone()}
+        let capabilities = session.capabilities.raw.clone();
+        subagents::Connection {rpc:parent_rpc,wire_id:session.acp_session_id.clone().ok_or("Missing parent session ID")?,via_parent:true,capabilities}
     }, adapters::WorkerStrategy::DirectAttachment => { match subagents::attach(&provider,&session.cwd,&child_id,sink,move |rpc| {
         started_state.child_transports.lock().unwrap().insert(started_key,rpc);
     }).await {
@@ -942,7 +954,7 @@ async fn open_subagent(state: tauri::State<'_, Arc<AppState>>, session_id: Strin
         }
         *wire_guard = Some(connection.wire_id.clone());
     }
-    state.emit(&session_id,"child_connected",json!({"childId":child_id,"viaParent":connection.via_parent}));
+    state.emit(&session_id,"child_connected",json!({"childId":child_id,"viaParent":connection.via_parent,"historyLoaded":connection.capabilities["harborHistoryLoaded"],"configOptions":connection.capabilities["harborConfigOptions"]}));
     *slot = Some(connection);
     Ok(())
 }
@@ -961,7 +973,6 @@ async fn send_subagent_prompt_locked(state: &Arc<AppState>, session_id: String, 
     state.connection(&session_id).await?;
     let child: SubagentRecord = state.db.get("subagent", &worker_key(&session_id,&child_id))?;
     let activity = child.state["type"].as_str().or_else(|| child.state["state"].as_str()).unwrap_or("");
-    if matches!(activity,"working" | "running" | "queued" | "needs_input" | "requires_action") { return Err("Wait for this worker's current turn to finish".into()); }
     let slot = state.child_connections.lock().await.get(&worker_key(&session_id,&child_id)).cloned().ok_or("Open this worker before messaging it")?;
     let previous: SessionRecord = state.db.get("session",&session_id)?;
     if previous.mode != "gui" || previous.archived { return Err("Return to the active chat before messaging its worker".into()); }
@@ -971,6 +982,7 @@ async fn send_subagent_prompt_locked(state: &Arc<AppState>, session_id: String, 
         if c.rpc.busy.load(Ordering::SeqCst) { return Err("This worker is already working".into()); }
         (c.rpc.clone(),c.wire_id.clone(),c.via_parent,c.capabilities.clone())
     };
+    if matches!(activity,"working" | "running" | "queued" | "needs_input" | "requires_action") { return Err("Wait for this worker's current turn to finish".into()); }
     let (mut content, file_metadata, paths) = attachments::prepare(&state.data, &text, &files, &capabilities).await?;
     if rpc.busy.swap(true,Ordering::SeqCst) { return Err("This worker is already working".into()); }
     let turn_generation=rpc.turn_generation.fetch_add(1,Ordering::SeqCst)+1;
@@ -1160,7 +1172,7 @@ async fn send_prompt_locked(state: &Arc<AppState>, session_id: String, text: Str
         .await;
     if rpc.turn_generation.load(Ordering::SeqCst) != turn_generation { return Ok(()); }
     rpc.busy.store(false, Ordering::SeqCst);
-    rpc.cancel_blocking_requests().await;
+    rpc.cancel_finished_turn_requests(s.acp_session_id.as_deref().unwrap_or("")).await;
     if !state
         .connections
         .lock()
@@ -1277,7 +1289,7 @@ async fn monitor_question_continuation(state: Arc<AppState>, session_id: String,
                 let _ = rpc.restore_async_questions(&thread, &[]).await;
                 if rpc.turn_generation.load(Ordering::SeqCst) != generation { return; }
                 rpc.busy.store(false, Ordering::SeqCst);
-                rpc.cancel_blocking_requests().await;
+                rpc.cancel_finished_turn_requests(&thread).await;
                 let pending = !rpc.inbound.lock().await.is_empty();
                 state.emit(&session_id, "turn_complete", json!({"stopReason":reason}));
                 let _ = state.update(&session_id, |s| s.status = if pending {"needs_input"} else if reason == "cancelled" {"idle"} else {"completed"}.into());
@@ -1944,6 +1956,7 @@ pub fn run() {
                 connections: Mutex::new(HashMap::new()),
                 child_connections: Mutex::new(HashMap::new()),
                 child_transports: StdMutex::new(HashMap::new()),
+                child_replays: StdMutex::new(HashMap::new()),
                 relay_targets: StdMutex::new(HashMap::new()),
                 terminals: Mutex::new(HashMap::new()),
                 tab_windows: tab_windows::TabWindows::default(),
