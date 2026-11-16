@@ -1,12 +1,24 @@
-//! Compatibility for Grok 1.0.30's omitted mode catalogue and native plan approval.
+//! Compatibility for Grok's omitted mode catalogue (1.0.30+) and native plan approval.
 //! Wire schema: xai-org/grok-build, grok_build/exit_plan_mode/types.rs.
 #[cfg(test)]
 use serde_json::json;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 
+/// Grok 1.0.30 introduced `_x.ai/exit_plan_mode`; later releases keep it while
+/// still omitting the ACP mode catalogue, so accept that release and newer.
 pub fn supported_version(version: &str) -> bool {
-    version.trim() == "grok 1.0.30 (04b7ffed98c6) [stable]"
+    let mut words = version.split_whitespace();
+    if words.next() != Some("grok") {
+        return false;
+    }
+    let Some(number) = words.next() else { return false };
+    let parts: Vec<u64> = match number.split('.').map(str::parse).collect() {
+        Ok(parts) => parts,
+        Err(_) => return false,
+    };
+    let [major, minor, patch] = parts[..] else { return false };
+    (major, minor, patch) >= (1, 0, 30)
 }
 #[cfg(test)]
 pub fn permission(request: &Value, fallback: Option<String>) -> Value {
@@ -83,7 +95,12 @@ mod tests {
             response(&json!({"outcome":{"outcome":"cancelled"}})).unwrap(),
             json!({"outcome":"cancelled"})
         );
-        assert!(!supported_version("grok 1.0.31"));
+        assert!(supported_version("grok 1.0.30 (04b7ffed98c6) [stable]"));
+        assert!(supported_version("grok 1.0.77 (50ca579fa996) [stable]"));
+        assert!(supported_version("grok 2.0.0"));
+        assert!(!supported_version("grok 1.0.29 (abc) [stable]"));
+        assert!(!supported_version("grok 1.0"));
+        assert!(!supported_version("other 1.0.77"));
     }
     #[test]
     fn session_plan_access_is_exact_and_cannot_escape_through_symlinks() {
