@@ -1363,10 +1363,66 @@ it("does not reuse an older attachment on a new prompt with the same text", () =
   expect(t.messages.at(-1)?.attachments).toBeUndefined();
 });
 
+
 it("omits unavailable encrypted parent receipts when rebuilding saved history", () => {
   let t = emptyTranscript();
   t = reduceEvent(t, update({sessionUpdate: "user_message_chunk", messageId: "encrypted-parent", content: {type: "text", text: "Legacy encrypted placeholder"}, _meta: {harbor: {source: "codex-native-history", sender: "parent", contentUnavailable: true}}}));
   expect(t.messages).toEqual([]);
   t = reduceEvent(t, update({sessionUpdate: "user_message_chunk", messageId: "actual-parent", content: {type: "text", text: "Hello again!"}, _meta: {harbor: {source: "codex-native-history", sender: "parent"}}}));
   expect(t.messages.map(m => m.text)).toEqual(["Hello again!"]);
+});
+
+it("shows actual worker reports with their sender and no synthetic user input", () => {
+  const incoming = event("worker_message", {reportId: "receipt-1", childId: "worker", senderTitle: "Annotate sidebar", text: "Finished the label change."});
+  const t = reduceEvent(emptyTranscript(), incoming);
+  expect(t.messages).toMatchObject([{role: "user", label: "Annotate sidebar", text: "Finished the label change.", streamId: "worker-report:receipt-1"}]);
+  expect(t.messages[0].childId).toBeUndefined();
+});
+
+
+it("keeps human and agent authorship distinct even with identical message text and attachments", () => {
+  const files=[{name:"screen.png",mimeType:"image/png",size:8,previewSource:"harbor-attachment:batch/0-screen.png"}];
+  let t=reduceEvent(emptyTranscript(),event("user_message",{text:"Check this",attachments:files}));
+  t=reduceEvent(t,event("agent_message",{messageId:"m1",senderId:"parent",senderTitle:"Project",label:"Parent",text:"Check this",attachments:files}));
+  expect(t.messages).toMatchObject([{role:"user",authored:true,text:"Check this",attachments:files},{role:"user",authored:true,authorSessionId:"parent",label:"Parent",text:"Check this",attachments:files}]);
+  expect(t.messages[0].label).toBeUndefined();
+});
+it("reconnect preserves authored inputs and orders replayed answers around their original messages", () => {
+  let t=reduceEvent(emptyTranscript(),event("user_message",{text:"Human input"}));
+  const first=update({sessionUpdate:"agent_message_chunk",messageId:"first-answer",content:{type:"text",text:"First answer"}});
+  t=reduceEvent(t,first);
+  t=reduceEvent(t,event("agent_message",{messageId:"peer",senderId:"other",senderTitle:"Review",label:"Review",text:"Real peer report"}));
+  const second=update({sessionUpdate:"agent_message_chunk",messageId:"second-answer",content:{type:"text",text:"Second answer"}});
+  t=reduceEvent(t,second);
+  t=reduceEvent(t,event("history_reset",{preserveAuthored:true}));
+  t=reduceEvent(t,update({sessionUpdate:"agent_message_chunk",messageId:"first-answer",content:{type:"text",text:"First answer"}}));
+  t=reduceEvent(t,update({sessionUpdate:"agent_message_chunk",messageId:"second-answer",content:{type:"text",text:"Second answer"}}));
+  expect(timeline(t).filter(e=>e.type==="message").map(e=>e.message.text)).toEqual(["Human input","First answer","Real peer report","Second answer"]);
+});
+it("legacy recording tools do not fabricate duplicate parent messages", () => {
+  const t=reduceEvent(emptyTranscript(),update({sessionUpdate:"tool_call",toolCallId:"old",status:"completed",rawInput:{server:"harbor_project",tool:"record_parent_message",arguments:{message:"Human input"}}}));
+  expect(t.messages).toEqual([]);
+});
+
+it("keeps new human input after the preceding reply when reconnect resets turn counters", () => {
+  let t=reduceEvent(emptyTranscript(),event("user_message",{text:"Earlier request"}));
+  t=reduceEvent(t,update({sessionUpdate:"agent_message_chunk",messageId:"prior-reply",content:{type:"text",text:"Earlier reply"}}));
+  t=reduceEvent(t,event("history_reset",{preserveAuthored:true}));
+  t=reduceEvent(t,update({sessionUpdate:"agent_message_chunk",messageId:"prior-reply",content:{type:"text",text:"Earlier reply"}}));
+  const sent=event("user_message",{text:"Replace Annotate with Ask AI",attachments:[{name:"reference.png",mimeType:"image/png",size:8}]});
+  t=reduceEvent(t,sent);
+  t=reduceEvent(t,update({sessionUpdate:"agent_message_chunk",messageId:"new-reply",content:{type:"text",text:"I will update Ask AI"}}));
+  const input=t.messages.find(m=>m.text==="Replace Annotate with Ask AI")!;
+  expect(input.sequence).toBe(sent.sequence);
+  expect(input.label).toBeUndefined();
+  expect(input.attachments).toHaveLength(1);
+  expect(timeline(t).filter(e=>e.type==="message").map(e=>e.message.text)).toEqual(["Earlier request","Earlier reply","Replace Annotate with Ask AI","I will update Ask AI"]);
+});
+
+it("does not merge new input into a preserved human message when replay contains no answer", () => {
+  let t=reduceEvent(emptyTranscript(),event("user_message",{text:"Earlier request"}));
+  t=reduceEvent(t,event("history_reset",{preserveAuthored:true}));
+  t=reduceEvent(t,event("user_message",{text:"New request"}));
+  expect(t.messages.map(m=>m.text)).toEqual(["Earlier request","New request"]);
+  expect(new Set(t.messages.map(m=>m.streamId)).size).toBe(2);
 });

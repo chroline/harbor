@@ -1,6 +1,11 @@
+import { ThinkingIndicator, ThinkingIndicatorGlyph } from "./components/ui/thinking-indicator";
+import { SidebarConversationRow } from "./components/SidebarConversationRow";
+import { ProjectDialog } from "./components/ProjectDialog";
+import { projectIcons } from "./components/ProjectIcon";
+import { ProjectContext } from "./components/ProjectContext";
+import type { Project } from "./lib/bindings/Project";
 import type { ToolProcess } from "./hooks/use-tool-processes";
 import { BackgroundProcesses } from "./components/BackgroundProcesses";
-import { ThinkingIndicatorGlyph } from "./components/ui/thinking-indicator";
 import { Tooltip } from "./components/ui/tooltip";
 import { supportedProviderId, defaultProvider } from "./lib/providers";
 import {
@@ -70,8 +75,7 @@ import {
   X,
   Bell,
   Archive,
-  Pin,
-  PinOff,
+  Trash2,
 } from "@/lib/icons";
 import { Button } from "./components/ui/button";
 import {
@@ -175,6 +179,8 @@ function SidebarResizeHandle({
 }
 import { open as openFolder } from "@tauri-apps/plugin-dialog";
 import type { Workspace } from "./lib/bindings/Workspace";
+const sidebarChildrenClassName = "ml-0 border-l-0 pl-0";
+
 export default function App() {
   const { data, ready, refresh, error, setError, updateSession } = useStore();
   const [history, setHistory] = useState(restoreHistory);
@@ -185,6 +191,29 @@ export default function App() {
     width: sidebarWidth,
     setWidth: setSidebarWidth,
   } = useShellLayout();
+  const [startingProject, setStartingProject] = useState<Project | null>(null);
+  const [projectDialog, setProjectDialog] = useState<Project | "new" | null>(null);
+  const [projectHistory, setProjectHistory] = useState<Project | null>(null);
+  const [deletingProject, setDeletingProject] = useState<Project | null>(null);
+  const [projectDeleteBusy, setProjectDeleteBusy] = useState(false);
+  const projectDeletePending = useRef(false);
+  const requestProjectDelete = (project: Project) => {
+    if (!projectDeletePending.current) setDeletingProject(project);
+  };
+  const deleteProject = async () => {
+    if (!deletingProject || projectDeletePending.current) return;
+    projectDeletePending.current = true;
+    setProjectDeleteBusy(true);
+    try {
+      await call("delete_project", { projectId: deletingProject.id });
+      if (typeof view === "object" && data.sessions.some((s) => s.id === view.session && s.projectId === deletingProject.id)) go("home");
+      setContextOpen(false);
+      setDeletingProject(null);
+      await refresh();
+    } catch (e) { setError(String(e)); await refresh(); }
+    finally { projectDeletePending.current = false; setProjectDeleteBusy(false); }
+  };
+  const [contextOpen, setContextOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [resizingSidebar, setResizingSidebar] = useState(false);
   const creatingRef = useRef(false);
@@ -223,6 +252,9 @@ export default function App() {
     null,
   );
   const sessions = data.sessions.filter((s) => !s.archived);
+  const workspaceChats = sessions.filter((s) => !s.isOrchestrator && !s.parentSessionId);
+  const projectWorkers = Object.fromEntries(sessions.filter(s=>s.isOrchestrator).map(root=>[root.id,sessions.filter(child=>child.parentSessionId===root.id)]));
+  const [projectSelectionVersion, setProjectSelectionVersion] = useState(0);
   const sessionsRef = useRef(sessions);
   sessionsRef.current = sessions;
   const savedSessionIds = useMemo(() => ready ? new Set(data.sessions.map((s) => s.id)) : undefined, [ready, data.sessions]);
@@ -237,7 +269,7 @@ export default function App() {
     "pinned",
     pinnedChatIds.flatMap((id) => {
       const session = sessions.find((s) => s.id === id);
-      return session ? [session] : [];
+      return session && !session.parentSessionId ? [session] : [];
     }),
     (s) => s.id,
   );
@@ -250,10 +282,15 @@ export default function App() {
   const activeIdRef = useRef(active?.id);
   activeIdRef.current = active?.id;
   const unseen = useUnseenTurns(sessions, active?.id);
+  const navigationGeneration = useRef(0);
   const go = (next: View) => {
+    navigationGeneration.current++;
+    if (typeof next === "object") setProjectSelectionVersion((version) => version + 1);
     transitionPage(() => setHistory((current) => visit(current, next)));
     setSearch(false);
     setNotifications(false);
+    setContextOpen(false);
+    setStartingProject(null);
   };
   const newTask = () => {
     go("home");
@@ -265,6 +302,39 @@ export default function App() {
         ?.querySelector<HTMLElement>('[role="textbox"], textarea')
         ?.focus();
   }, [view, focusComposer, creating]);
+  const openProject = async (project: Project, fresh = false, throwOnError = false) => {
+    if (creatingRef.current && startingProject?.id === project.id) return;
+    const generation = ++navigationGeneration.current;
+    setError(null);
+    try {
+      const session = await call<SessionRecord | null>("open_project_orchestrator", { projectId: project.id });
+      if (generation !== navigationGeneration.current) return;
+      if (session && !fresh) { updateSession(session); go({ session: session.id }); return; }
+      if (fresh && session && ["working", "connecting", "needs_input"].includes(session.status)) throw new Error("Finish or stop the orchestrator and its workers before starting fresh.");
+      if (creatingRef.current) return;
+      creatingRef.current = true;
+      setCreating(true);
+      setStartingProject(project);
+      setContextOpen(false);
+      try {
+        const started = await call<SessionRecord>("start_project", {
+          projectId: project.id,
+          providerId: supportedProviderId(provider),
+          initialConfig: json(modelState.selections),
+          fresh,
+          expectedSessionId: session?.id,
+        });
+        updateSession(started);
+        await refresh();
+        if (generation === navigationGeneration.current) go({ session: started.id });
+      } finally {
+        creatingRef.current = false;
+        setCreating(false);
+        setStartingProject(null);
+      }
+    } catch (e) { setError(String(e)); if (throwOnError) throw e; }
+  };
+  const contextProject = (active?.isOrchestrator || active?.parentSessionId) ? data.projects.find((p) => p.id === active.projectId) : undefined;
   const canCreate =
     ready &&
     (!workspace || !!selectedWorkspace?.available) &&
@@ -399,9 +469,6 @@ export default function App() {
     };
   }, [theme]);
   useEffect(() => {
-    document.title = active ? active.title + " — Harbor" : "Harbor";
-  }, [active?.title, view]);
-  useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey)) return;
       if (e.key.toLowerCase() === "k") {
@@ -507,68 +574,35 @@ export default function App() {
     [data.projects, data.sessions, data.workspaces],
   );
   const workspaceIds = new Set(data.workspaces.map((w) => w.id));
-  const noWorkspaceSessions = sessions.filter(
+  const noWorkspaceSessions = workspaceChats.filter(
     (s) => !s.workspaceId || !workspaceIds.has(s.workspaceId),
   );
   const chatRows = (items: SessionRecord[], group: string, pinned = false) => {
     items = sidebarOrder.sort(group, items, (s) => s.id);
-    const Row = pinned ? SidebarMenuItem : SidebarMenuSubItem;
-    const RowButton = pinned ? SidebarMenuButton : SidebarMenuSubButton;
-    return items.map((s) => {
-      const mark = summarizeSessionMarks(
-        [s.status],
-        unseen.has(s.id) ? 1 : 0,
-      );
-      return (
-        <Row key={s.id}>
-          <SidebarRowMenu
-            label={s.title}
-            reorder={sidebarOrder.row(
-              group,
-              s.id,
-              s.title,
-              items.map((item) => item.id),
-            )}
-            actions={[
-              {
-                label: pinnedChatIds.includes(s.id)
-                  ? "Unpin conversation"
-                  : "Pin conversation",
-                icon: pinnedChatIds.includes(s.id) ? PinOff : Pin,
-                onSelect: () => togglePinnedChat(s.id),
-              },
-              {
-                label: "Archive conversation…",
-                icon: Archive,
-                onSelect: () => void requestArchive(s),
-                destructive: true,
-              },
-            ]}
-          >
-            <RowButton
-              asChild
-              isActive={active?.id === s.id}
-              icon={providerGlyph(s.providerId)}
-              title={mark.loading ?? mark.attention ?? mark.unseen}
-              loading={mark.loading}
-              attention={mark.attention}
-              attentionTone={mark.attentionTone}
-              unseen={mark.unseen}
-            >
-              <button onClick={() => go({ session: s.id })}>{s.title}</button>
-            </RowButton>
-          </SidebarRowMenu>
-        </Row>
-      );
-    });
+    return items.map((s) => <SidebarConversationRow key={s.id}
+      title={s.title} icon={providerGlyph(s.providerId)} status={s.status} unseen={unseen.has(s.id)}
+      topLevel={pinned} pinned={pinnedChatIds.includes(s.id)}
+      active={active?.id === s.id && !(s.isOrchestrator && typeof view === "object" && view.child)}
+      reorder={sidebarOrder.row(group,s.id,s.title,items.map(item=>item.id))}
+      onOpen={()=>go({session:s.id})} onTogglePin={()=>togglePinnedChat(s.id)} onArchive={()=>void requestArchive(s)}>
+      {s.isOrchestrator && (projectWorkers[s.id]?.length ?? 0) > 0 && <SidebarMenuSub className={sidebarChildrenClassName} aria-label={`Agents in ${s.title}`}>{workerRows(s)}</SidebarMenuSub>}
+    </SidebarConversationRow>);
   };
+  const workerRows = (session: SessionRecord) => {
+    const children=sessions.filter(child=>child.parentSessionId===session.id);
+    return [true,false].flatMap(pinned=>chatRows(children.filter(child=>pinnedChatIds.includes(child.id)===pinned),`project-agents:${session.id}:${pinned ? "pinned" : "chats"}`));
+  };
+  useEffect(()=>{if (typeof view==="object" && view.child && sessions.find(s=>s.id===view.session)?.isOrchestrator) go({session:view.session});},[data.sessions,view]);
   const title =
-    active?.title ??
+    startingProject?.name ?? (typeof view === "object" && view.child ? projectWorkers[view.session]?.find((w) => w.id === view.child)?.title : undefined) ?? active?.title ??
     (view === "worktrees"
       ? "Worktrees"
       : view === "settings"
         ? "Settings"
         : "New task");
+  useEffect(() => {
+    document.title = active ? title + " — Harbor" : "Harbor";
+  }, [active?.id, title]);
   return (
     <SidebarProvider
       className={"app-shell " + (!sidebar ? "sidebar-collapsed" : "")}
@@ -636,6 +670,7 @@ export default function App() {
           )}
         </div>
         <div className="topbar-right">
+          {contextProject && <Button variant="ghost" size="compact" aria-expanded={contextOpen} onClick={() => setContextOpen((v) => !v)}>Context</Button>}
           {active && <BackgroundProcesses key={active.id} sessionId={active.id} onOpen={(process) => setProcessRequest((previous) => ({ sessionId: active.id, process, nonce: (previous?.nonce ?? 0) + 1 }))} />}
           {!desktop && <span className="preview-label">Browser preview</span>}
           {view === "home" && (
@@ -724,6 +759,30 @@ export default function App() {
                 </SidebarMenu>
               </SidebarGroup>
             )}
+            <SidebarGroup collapsible role="region" aria-label="Projects">
+              <SidebarGroupLabel>Projects</SidebarGroupLabel>
+              <SidebarGroupAction title="Create project" aria-label="Create project" onClick={() => setProjectDialog("new")}><Plus /></SidebarGroupAction>
+              <SidebarMenu>{sidebarOrder.sort("projects", data.projects, (p) => p.id).map((project) => {
+                const roots = sessions.filter((s) => s.isOrchestrator && s.projectId === project.id);
+                const current = roots.find((s) => s.id === project.activeOrchestratorSessionId);
+                const previous = roots.filter((s) => s.id !== current?.id);
+                const mark = summarizeSessionMarks(current ? [current.status] : [], roots.filter((s) => unseen.has(s.id)).length);
+                return <SidebarMenuItem key={project.id}>
+                <SidebarRowMenu label={project.name} reorder={sidebarOrder.row("projects", project.id, project.name, sidebarOrder.sort("projects", data.projects, (p) => p.id).map((p) => p.id))} actions={[
+                  { label: "Open project", icon: FolderOpen, onSelect: () => void openProject(project) },
+                  { label: "Start fresh conversation", icon: SquarePen, onSelect: () => void openProject(project, true) },
+                  ...(previous.length ? [{ label: "Conversation history…", icon: Archive, onSelect: () => setProjectHistory(project) }] : []),
+
+                  ...(data.sessions.some(s=>s.archived && roots.some(root=>s.parentSessionId===root.id)) ? [{label:"Restore archived agents",icon:Archive,onSelect:()=>void Promise.all(data.sessions.filter(s=>s.archived && roots.some(root=>s.parentSessionId===root.id)).map(s=>call("restore_chat",{sessionId:s.id}))).then(refresh).catch(e=>setError(String(e)))}] : []),
+                  { label: "Edit project…", icon: Settings2, onSelect: () => setProjectDialog(project) },
+                  { label: "Delete project…", icon: Trash2, destructive: true, onSelect: () => void requestProjectDelete(project) },
+                ]}>
+                  <SidebarMenuButton loading={mark.loading} attention={mark.attention} attentionTone={mark.attentionTone} unseen={mark.unseen} icon={projectIcons[project.icon as keyof typeof projectIcons] ?? Folder} isActive={active?.id === current?.id && !!current && !(typeof view === "object" && view.child)} title={data.workspaces.find((w) => w.id === project.workspaceId)?.path} onClick={() => void openProject(project)}>{project.name}</SidebarMenuButton>
+                </SidebarRowMenu>
+                {current && (projectWorkers[current.id]?.length ?? 0) > 0 && <SidebarMenuSub className={sidebarChildrenClassName} aria-label={`Agents in ${project.name}`}>{workerRows(current)}</SidebarMenuSub>}
+              </SidebarMenu>;
+              })}</SidebarMenu>
+            </SidebarGroup>
             <SidebarGroup collapsible role="region" aria-label="Workspaces">
               <SidebarGroupLabel>Workspaces</SidebarGroupLabel>
               <SidebarGroupAction title={"Add workspace"}
@@ -738,7 +797,7 @@ export default function App() {
                   const workspaceSessions =
                     w.id === null
                       ? noWorkspaceSessions
-                      : sessions.filter((s) => s.workspaceId === w.id);
+                      : workspaceChats.filter((s) => s.workspaceId === w.id);
                   const open = !collapsedWorkspaces.has(w.id);
                   const chatsId = `workspace-chats-${w.id ?? "none"}`;
                   // Expanded trees show the mark on each chat. Collapsed, the
@@ -818,7 +877,7 @@ export default function App() {
                       <SidebarMenuSub
                         id={chatsId}
                         open={open}
-                        className="ml-0 border-l-0 pl-0"
+                        className={sidebarChildrenClassName}
                         aria-label={`Chats in ${w.name}`}
                       >
                         {chatRows(
@@ -871,7 +930,9 @@ export default function App() {
             variant={view === "home" ? "home" : "chat"}
             active={view === "home" || !!active}
           >
-            {view === "home" ? (
+            {startingProject ? (
+              <div className="large-empty"><ThinkingIndicator label={`Starting ${startingProject.name}…`} /></div>
+            ) : view === "home" ? (
               <HomeScene city={skylineCity(record(data.settings).skylineCity)}>
                 <div className="home-content chat-composer-wrap">
                   <section
@@ -959,6 +1020,9 @@ export default function App() {
               <Chat
                 key={active.id}
                 session={active}
+                projectChild={active.isOrchestrator && typeof view === "object" ? view.child ?? null : undefined}
+                projectSelectionVersion={projectSelectionVersion}
+                onProjectConversationChange={(child) => go({ session: active.id, ...(child ? { child } : {}) })}
                 processRequest={processRequest?.sessionId === active.id ? processRequest : undefined}
                 onProcessOpened={() => setProcessRequest(null)}
                 tabsTarget={chatTabsTarget}
@@ -973,7 +1037,24 @@ export default function App() {
             )}
           </SkylineScene>
         </div>
+        {contextOpen && contextProject && <ProjectContext key={contextProject.id} projectId={contextProject.id} sessionId={active?.isOrchestrator || active?.parentSessionId ? active.id : undefined} onClose={() => setContextOpen(false)} />}
       </div>
+      {projectDialog && <ProjectDialog project={projectDialog === "new" ? undefined : projectDialog} workspaces={data.workspaces} modelMenu={projectDialog === "new" ? <DiscoveryModelMenu state={modelState} provider={provider} onProviderChange={(id) => setProvider(defaultProvider(id))} disabled={creating} /> : undefined} startDisabled={projectDialog === "new" && (modelState.busy || creating)} onClose={() => setProjectDialog(null)} onSaved={async (project) => { await refresh(); await openProject(project, false, true); }} />}
+      <CommandMenuDialog
+        open={!!projectHistory}
+        onOpenChange={(open) => { if (!open) setProjectHistory(null); }}
+        shortcut={null}
+        title="Project conversation history"
+        description={`Previous conversations in ${projectHistory?.name ?? "this project"}.`}
+      >
+        <CommandMenu
+          items={sessions.filter(s => s.isOrchestrator && s.projectId === projectHistory?.id && s.id !== projectHistory?.activeOrchestratorSessionId).map(s => ({ value: s.id, label: s.title, description: new Date(s.createdAt).toLocaleString(), icon: providerGlyph(s.providerId) }))}
+          onSelect={(item) => { setProjectHistory(null); go({ session: item.value }); }}
+        >
+          <CommandMenuInput placeholder="Search previous conversations…" />
+          <CommandMenuList><CommandMenuEmpty>No previous conversations.</CommandMenuEmpty></CommandMenuList>
+        </CommandMenu>
+      </CommandMenuDialog>
       <CommandMenuDialog
         open={search}
         onOpenChange={setSearch}
@@ -1039,6 +1120,19 @@ export default function App() {
             >
               {deleteBusy && <ThinkingIndicatorGlyph size={rem(14)} />}
               Archive and delete
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={!!deletingProject} onOpenChange={(open) => { if (!open && !projectDeleteBusy) setDeletingProject(null); }}>
+        <DialogContent className="archive-dialog" aria-describedby={undefined}>
+          <DialogHeader>
+            <DialogTitle>Delete “{deletingProject?.name}”?</DialogTitle>
+          </DialogHeader>
+          <div className="dialog-footer">
+            <Button variant="ghost" disabled={projectDeleteBusy} onClick={() => setDeletingProject(null)}>Keep project</Button>
+            <Button disabled={projectDeleteBusy} onClick={() => void deleteProject()}>
+              {projectDeleteBusy && <ThinkingIndicatorGlyph size={rem(14)} />}Delete project
             </Button>
           </div>
         </DialogContent>

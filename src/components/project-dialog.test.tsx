@@ -76,7 +76,7 @@ function mount(project?: {
 }) {
   return render(
     <ProjectDialog
-      project={project}
+      project={project ? { ...project, activeOrchestratorSessionId: null } : undefined}
       workspaces={workspaces}
       onClose={mock.close}
       onSaved={mock.saved}
@@ -188,6 +188,7 @@ it("requires name and folder, searches paths, and saves chosen appearance", asyn
     icon: "rocket",
     color: "purple",
     workspacePath: "/new/platform",
+    instructions: "",
   });
 });
 it("retains the selected workspace when the native chooser is cancelled", async () => {
@@ -273,5 +274,6 @@ it("accepts a browsed ordinary folder and saves edits to the existing ID", async
     icon: "book-open",
     color: "teal",
     workspacePath: "/local/notes",
+    instructions: "",
   });
 });

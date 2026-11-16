@@ -17,6 +17,7 @@ import type { SessionRecord } from "../lib/bindings/SessionRecord";
 
 const mock = vi.hoisted(() => ({
   children: {} as ReturnType<typeof emptyTranscript>["children"],
+  requests: [] as ReturnType<typeof emptyTranscript>["requests"],
   messages: [] as ReturnType<typeof emptyTranscript>["messages"],
   loaded: true,
   pendingRender: null as Promise<void> | null,
@@ -52,6 +53,7 @@ vi.mock("./ChatTranscript", async (original) => {
   };
 });
 vi.mock("./ModelMenu", () => ({
+  WorkerModelMenu: () => <button disabled>Provider-managed model</button>,
   SessionModelMenu: () => (
     <button className="model-menu-trigger" onClick={mock.openModel}>
       Choose model and reasoning
@@ -67,6 +69,7 @@ vi.mock("../lib/store", () => ({
         trimmed: true,
         children: mock.children,
         messages: mock.messages,
+        requests: mock.requests,
         authMethods: [
           { id: "chatgpt", name: "ChatGPT" },
           { id: "api-key", name: "API Key" },
@@ -109,6 +112,7 @@ afterEach(() => {
   setDraftFiles("chat:root", []);
   mock.children = {};
   mock.messages = [];
+  mock.requests = [];
   mock.loaded = true;
   mock.pendingRender = null;
   mock.configurationBlocked = false;
@@ -745,6 +749,14 @@ it("keeps a working chat editable and submits queue versus steer intent", async 
   await waitFor(() => expect(mock.call).toHaveBeenCalledWith("submit_prompt",expect.objectContaining({text:"Change course immediately",intent:"steer"})));
 });
 
+it("cancels the active turn with Escape and preserves the draft", () => {
+  render(<Chat session={{ ...session, status: "working", draft: "Keep my draft", error: null }} />);
+  const input = screen.getByRole("textbox");
+  fireEvent.keyDown(input, { key: "Escape" });
+  expect(mock.call).toHaveBeenCalledWith("cancel_turn", { sessionId: "chat", childId: null });
+  expect(input.textContent).toBe("Keep my draft");
+});
+
 it("retains a working chat draft when steering is rejected", async () => {
   mock.call.mockImplementation((command: string) => command === "submit_prompt" ? Promise.reject(new Error("Another conversation is using this agent")) : Promise.resolve());
   render(<Chat session={{...session,status:"working",draft:"Keep my instruction",error:null}}/>);
@@ -752,14 +764,6 @@ it("retains a working chat draft when steering is rejected", async () => {
   fireEvent.keyDown(input,{key:"Enter",metaKey:true});
   await waitFor(() => expect(mock.call).toHaveBeenCalledWith("submit_prompt",expect.objectContaining({intent:"steer"})));
   expect(input.textContent).toBe("Keep my instruction");
-});
-
-it("cancels the active turn with Escape and preserves the draft", () => {
-  render(<Chat session={{ ...session, status: "working", draft: "Keep my draft", error: null }} />);
-  const input = screen.getByRole("textbox");
-  fireEvent.keyDown(input, { key: "Escape" });
-  expect(mock.call).toHaveBeenCalledWith("cancel_turn", { sessionId: "chat", childId: null });
-  expect(input.textContent).toBe("Keep my draft");
 });
 
 it("opens a process in a reusable terminal tab and closes the view without stopping it", async () => {
@@ -776,4 +780,50 @@ it("opens a process in a reusable terminal tab and closes the view without stopp
   expect(screen.queryByRole("tab",{name:"watch CI"})).toBeNull();
   expect(mock.call.mock.calls.some(([command]) => command === "stop_tool_process")).toBe(false);
   tabsTarget.remove();
+});
+
+it("uses sidebar selection for project workers without adding worker tabs", async () => {
+  const target = document.createElement("div"); document.body.appendChild(target);
+  mock.children = { worker: { sessionId: "worker", parentId: "root", title: "Project worker", description: null, state: { type: "idle" }, capabilities: { harborConnected: true } } };
+  mock.messages = [{ id: "project-worker-reply", streamId: "reply", sequence: 1, role: "assistant", text: "Project worker reply", childId: "worker", timestamp: 1 }];
+  const change = vi.fn();
+  const props = { session: { ...session, isOrchestrator: true, projectId: "project" }, tabsTarget: target, onProjectConversationChange: change };
+  const view = render(<Chat {...props} projectChild="worker" />);
+  expect(await screen.findByText("Project worker reply")).toBeTruthy();
+  expect(screen.getAllByRole("tab")).toHaveLength(1);
+  expect(screen.getByRole("tab", { name: "Project worker" }).getAttribute("data-state")).toBe("active");
+  view.rerender(<Chat {...props} projectChild={null} projectSelectionVersion={1} />);
+  await waitFor(() => expect(screen.queryByText("Project worker reply")).toBeNull());
+  view.rerender(<Chat {...props} projectChild="worker" projectSelectionVersion={2} />);
+  await screen.findByText("Project worker reply");
+  fireEvent.click(screen.getByRole("tab", { name: "Project worker" }));
+  expect(change).not.toHaveBeenCalled();
+  view.unmount(); target.remove();
+});
+
+it("shows project questions only in their owning conversation and answers as native responses", async () => {
+  mock.children = { worker: {sessionId: "worker", parentId: "wire", title: "Worker", description: null, state: {type: "working"}, capabilities: {}} } as typeof mock.children;
+  mock.requests = [{id: 771, method: "elicitation/create", params: {
+    sessionId: "worker", mode: "form", message: "Worker needs input",
+    requestedSchema: {type: "object", properties: {color: {type: "string", title: "Worker color?"}}, required: ["color"]},
+  }}];
+  const project = {...session, isOrchestrator: true, status: "needs_input", draft: "", error: null};
+  const view = render(<Chat session={project} projectChild={null} />);
+  expect(screen.queryByText("Worker color?")).toBeNull();
+  view.rerender(<Chat session={project} projectChild="worker" projectSelectionVersion={1} />);
+  const field = await screen.findByPlaceholderText("Type your answer…");
+  fireEvent.change(field, {target: {value: "Blue"}});
+  fireEvent.click(screen.getByRole("button", {name: /Continue/}));
+  await waitFor(() => expect(mock.call).toHaveBeenCalledWith("answer_request", {sessionId: "chat", requestId: 771, result: {action: "accept", content: {color: "Blue"}}}));
+  expect(mock.call.mock.calls.some(([command]) => command === "submit_prompt" || command === "send_prompt")).toBe(false);
+});
+it("does not offer legacy async bridge forms in project chats", () => {
+  mock.requests = [{id: "harbor:codex-question:wire:old", method: "elicitation/create", params: {
+    sessionId: session.acpSessionId, mode: "form", _meta: {harborCodexAsyncQuestion: true},
+    requestedSchema: {type: "object", properties: {answer: {type: "string", title: "Legacy question?"}}, required: ["answer"]},
+  }}];
+  const view = render(<Chat session={{...session, isOrchestrator: true}} />);
+  expect(screen.queryByText("Legacy question?")).toBeNull();
+  view.rerender(<Chat session={{...session, isOrchestrator: false}} />);
+  expect(screen.getByText("Legacy question?")).toBeTruthy();
 });

@@ -59,13 +59,14 @@ export function PromptQueue({ queue, onRemove, onEdit, onSteer, editing }: {
     <ol>{queue.items.map(item => <li key={item.id} className={`prompt-queue-row${item.editing ? " is-editing" : ""}`}>
       <Message align="end" className="transcript-message transcript-user" aria-label="Queued message">
         <MessageContent><Bubble align="end" variant="muted"><BubbleContent>
+          {item.senderTitle && <small>{item.senderTitle}</small>}
           <RichText text={item.text || "Attached files"} />
           {!!item.attachments.length && <div className="prompt-queue-attachments"><Paperclip size={12} aria-hidden="true" /> {item.attachments.join(", ")}</div>}
         </BubbleContent></Bubble></MessageContent>
       </Message>
       {item.editing ? <span className="prompt-queue-editing"><Pencil size={11} aria-hidden="true" /> Editing</span> : <div className="prompt-queue-actions">
         {onSteer && <Button variant="ghost" size="compact" disabled={editing} aria-label={`Steer with queued message: ${item.text || "Attached files"}`} onClick={() => onSteer(item.id)}><CornerUpRight size={14} /> Steer</Button>}
-        {onEdit && <Button variant="ghost" size="compact" disabled={editing} aria-label={`Edit queued message: ${item.text || "Attached files"}`} onClick={() => onEdit(item.id)}><Pencil size={14} /> Edit</Button>}
+        {onEdit && !item.senderTitle && <Button variant="ghost" size="compact" disabled={editing} aria-label={`Edit queued message: ${item.text || "Attached files"}`} onClick={() => onEdit(item.id)}><Pencil size={14} /> Edit</Button>}
         <Button variant="ghost" size="icon-compact" aria-label={`Remove queued message: ${item.text || "Attached files"}`} onClick={() => onRemove(item.id)}><X size={12} /></Button>
       </div>}
     </li>)}</ol>

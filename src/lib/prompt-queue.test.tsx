@@ -19,7 +19,8 @@ const snapshot = (
   revision,
   items: [
     {
-      id: "pending",
+      senderTitle: null,
+    id: "pending",
       text: "Next task",
       attachments: ["notes.md"],
       intent: "send",

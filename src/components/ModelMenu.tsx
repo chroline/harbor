@@ -210,7 +210,7 @@ export function ModelMenu({
               transition={open ? spring.fast : spring.fast.exit}
               inert={!open}
               aria-hidden={!open || undefined}
-              style={{ pointerEvents: open ? undefined : "none" }}
+              style={{ pointerEvents: open ? "auto" : "none" }}
               onAnimationComplete={() => {
                 if (!open) setMounted(false);
               }}

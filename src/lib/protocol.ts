@@ -77,6 +77,8 @@ export type Message = {
   role: "user" | "assistant" | "thought" | "system";
   text: string;
   label?: string;
+  authored?: boolean;
+  authorSessionId?: string;
   childId?: string;
   timestamp: number;
   updatedAt?: number;
@@ -94,6 +96,7 @@ export type ToolTerminalOutput = {
   exitCode?: number;
 };
 export type Transcript = {
+  replayOrdering?: Record<string, {sequence: number; timestamp?: number}>;
   commands: AvailableCommand[];
   childCommands: Record<string, AvailableCommand[]>;
   trimmed: boolean;
@@ -333,10 +336,11 @@ export function reduceEvent(
       attachmentMetadata: t.attachmentMetadata,
       // Parent replay cannot replace a child's independently imported history.
       // Only an explicit child replay resets that conversation.
-      children: t.children,
-      childTurns: t.childTurns,
+      replayOrdering: p.preserveAuthored ? Object.fromEntries([...t.messages.map(m=>[JSON.stringify([m.childId,m.role,m.streamId]),{sequence:m.sequence,timestamp:m.timestamp}] as const),...Object.values(t.tools).map(tool=>[tool.id,{sequence:tool.sequence,timestamp:tool.timestamp}] as const)]) : undefined,
+      children: p.preserveAuthored ? {} : t.children,
+      childTurns: p.preserveAuthored ? {} : t.childTurns,
       replayMessageIds: t.messages.filter((m) => !!m.childId).map((m) => JSON.stringify([m.childId, m.role, m.streamId])),
-      messages: t.messages.filter((m) => !!m.childId),
+      messages: t.messages.filter((m) => p.preserveAuthored ? m.authored && !m.childId : !!m.childId),
       tools: Object.fromEntries(
         Object.entries(t.tools).filter(
           ([, tool]) => !!t.children[tool.sessionId],
@@ -428,6 +432,9 @@ export function reduceEvent(
       t.messages = t.messages.map((m) => m.childId === childId && m.role === role && m.streamId === streamId ? { ...m, text: m.text + text } : m);
       return;
     }
+    // Only provider-supplied stable identities can identify a replayed stream.
+    // Turn-based fallback IDs are reused after history_reset.
+    const restoredOrder=messageId ? t.replayOrdering?.[replayKey] : undefined;
     let lastIndex = t.messages.length - 1;
     while (lastIndex >= 0 && t.messages[lastIndex].childId !== childId)
       lastIndex--;
@@ -504,7 +511,7 @@ export function reduceEvent(
         {
           id: `${childId ?? "root"}:${role}:${event.sequence}`,
           streamId,
-          sequence: event.sequence,
+          sequence: restoredOrder?.sequence ?? event.sequence,
           role,
           text,
           ...(attachments.length ? { attachments } : {}),
@@ -518,7 +525,7 @@ export function reduceEvent(
             : {}),
           ...(label ? { label } : {}),
           childId,
-          timestamp: event.timestamp,
+          timestamp: restoredOrder?.timestamp ?? event.timestamp,
           updatedAt: event.timestamp,
           turn: messageTurn,
         },
@@ -539,14 +546,24 @@ export function reduceEvent(
       });
     }
   };
-  if (event.kind === "user_message") {
+  if (event.kind === "worker_message") {
+    append("user", str(p.text), undefined, `worker-report:${str(p.reportId)}`, str(p.senderTitle) || "Worker");
+    const reportId = t.messages[t.messages.length - 1]?.id;
+    t.messages = t.messages.map(m => m.id === reportId ? { ...m, authored: true, authorSessionId: str(p.senderId) } : m);
+  }
+  if (event.kind === "user_message" || event.kind === "agent_message") {
     if (targetChild)
       t.childTurns = {
         ...t.childTurns,
         [targetChild]: (t.childTurns[targetChild] ?? 0) + 1,
       };
     else t.turn++;
-    append("user", str(p.text), targetChild);
+    const authoredStream = event.kind === "agent_message"
+      ? `agent-message:${str(p.messageId)}`
+      : (p.projectInstructionVersion || t.replayOrdering) ? `user-message:${event.sequence}` : undefined;
+    append("user", str(p.text), targetChild, authoredStream, event.kind === "agent_message" ? str(p.label, str(p.senderTitle)) : undefined);
+    const authoredId=t.messages.at(-1)?.id;
+    t.messages=t.messages.map(m=>m.id===authoredId ? {...m,authored:true,authorSessionId:event.kind==="agent_message" ? str(p.senderId) : undefined} : m);
     if (array(p.attachments).length) {
       const last = t.messages.at(-1)!;
       t.messages = t.messages.map((message) =>
@@ -852,7 +869,7 @@ export function reduceEvent(
         ...t.tools,
         [id]: {
           id,
-          sequence: old?.sequence ?? (typeof history.originalSequence==="number" ? history.originalSequence : historySequence),
+          sequence: old?.sequence ?? t.replayOrdering?.[id]?.sequence ?? (typeof history.originalSequence==="number" ? history.originalSequence : historySequence),
           sessionId: wireId,
           title: str(u.title, old?.title ?? ""),
           status: str(u.status, old?.status ?? "in_progress"),
@@ -915,7 +932,7 @@ export function reduceEvent(
                 : u.rawInput,
           ),
           rawOutput: boundResult(u.rawOutput ?? old?.rawOutput),
-          timestamp: old?.timestamp ?? event.timestamp,
+          timestamp: old?.timestamp ?? t.replayOrdering?.[id]?.timestamp ?? event.timestamp,
           updatedAt: event.timestamp,
           turn: old?.turn ?? (childId ? (t.childTurns[childId] ?? 0) : t.turn),
           workCompletedAt: old?.workCompletedAt,

@@ -17,6 +17,7 @@ import {
   SessionModelMenu,
 } from "./ModelMenu";
 import { ModePicker, useSessionMode } from "./ModePicker";
+import { ProjectDialog } from "./ProjectDialog";
 import type { SessionRecord } from "../lib/bindings/SessionRecord";
 import { chatMode } from "../lib/chat-mode";
 import type { ConfigOption } from "../lib/protocol";
@@ -87,6 +88,31 @@ const controls: ConfigOption[] = [
     ],
   },
 ];
+it.each(["grok", "claude"])("allows switching away from %s inside the create-project modal", async (provider) => {
+  const user = userEvent.setup();
+  const providerChange = vi.fn();
+  render(
+    <ProjectDialog
+      workspaces={[]}
+      onClose={vi.fn()}
+      onSaved={vi.fn()}
+      modelMenu={
+        <ModelMenu
+          provider={provider}
+          controls={[]}
+          onChange={vi.fn()}
+          onProviderChange={providerChange}
+        />
+      }
+    />,
+  );
+  await user.click(screen.getByRole("button", { name: "Choose model and reasoning" }));
+  await user.click(screen.getByRole("button", { name: "Choose model" }));
+  await user.click(screen.getByRole("button", { name: "Choose agent" }));
+  await user.click(screen.getByRole("button", { name: "Codex" }));
+  expect(providerChange).toHaveBeenCalledExactlyOnceWith("codex");
+  expect(screen.getByRole("dialog", { name: "Create project" })).toBeTruthy();
+});
 it("keeps existing-session effort and mode controls interactive while syncing", async () => {
   const session = {
     id: "chat",

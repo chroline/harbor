@@ -1,4 +1,4 @@
-import { useRef, useState, type CSSProperties } from "react";
+import { useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Folder, ChevronDown, Plus, Circle } from "@/lib/icons";
 import {
@@ -63,8 +63,12 @@ export function ProjectDialog({
   workspaces,
   onClose,
   onSaved,
+  modelMenu,
+  startDisabled = false,
 }: {
   project?: Project;
+  modelMenu?: ReactNode;
+  startDisabled?: boolean;
   workspaces: Workspace[];
   onClose: () => void;
   onSaved: (project: Project) => Promise<void>;
@@ -73,6 +77,7 @@ export function ProjectDialog({
     (w) => w.id === project?.workspaceId,
   );
   const [name, setName] = useState(project?.name ?? "");
+  const [instructions, setInstructions] = useState(project?.instructions ?? "");
   const [icon, setIcon] = useState(project?.icon ?? "folder");
   const [color, setColor] = useState(project?.color ?? "gray");
   const [path, setPath] = useState(initialWorkspace?.path ?? "");
@@ -117,7 +122,8 @@ export function ProjectDialog({
     }
   };
   const save = async () => {
-    if (saving.current || browsing || !name.trim() || !path) return;
+    if (saving.current || browsing || startDisabled || !name.trim() || !path)
+      return;
     saving.current = true;
     setBusy(true);
     setError("");
@@ -128,6 +134,7 @@ export function ProjectDialog({
         icon,
         color,
         workspacePath: path,
+        instructions,
       });
       savedId.current = saved.id;
       await onSaved(saved);
@@ -168,7 +175,7 @@ export function ProjectDialog({
                 {project ? "Edit project" : "Create project"}
               </DialogTitle>
               <DialogDescription>
-                Chats connected to a local folder.
+                An ongoing area of work with its own orchestrator and context.
               </DialogDescription>
             </DialogHeader>
             <div className="flex flex-col gap-3">
@@ -292,7 +299,8 @@ export function ProjectDialog({
                   >
                     <DropdownTrigger
                       render={
-                        <Button title={path || undefined}
+                        <Button
+                          title={path || undefined}
                           type="button"
                           variant="ghost"
                           ref={workspaceTrigger}
@@ -318,7 +326,9 @@ export function ProjectDialog({
                       />
                       <DropdownLabel>Recent workspaces</DropdownLabel>
                       {filtered.map((w, index) => (
-                        <MenuItem title={w.path} key={w.id}
+                        <MenuItem
+                          title={w.path}
+                          key={w.id}
                           index={index}
                           icon={Folder}
                           label={`${w.name} — ${w.path}${w.available ? "" : " · Unavailable"}`}
@@ -343,17 +353,27 @@ export function ProjectDialog({
                     </DropdownContent>
                   </DropdownMenu>
                 </div>
-                {path && (
-                  <span className="text-xs text-muted-foreground break-all text-right">
-                    {path}
-                    {selected && !selected.available && " · Unavailable"}
-                  </span>
-                )}
               </div>
+              <label className="flex flex-col gap-2">
+                <span>Instructions</span>
+                <textarea
+                  aria-label="Project instructions"
+                  className="min-h-28 resize-y rounded-lg border border-border bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  placeholder="What is this project about, and how should the agent help?"
+                  value={instructions}
+                  onChange={(event) => setInstructions(event.target.value)}
+                  disabled={busy}
+                />
+              </label>
+              {modelMenu && (
+                <div className="flex items-center">{modelMenu}</div>
+              )}
               {project && (
                 <p className="text-muted-foreground">
                   Workspace changes apply to new chats. Existing chats keep
-                  their working folder.
+                  their working folder. Changing this project's workspace
+                  preserves its context and requires a fresh orchestrator
+                  conversation.
                 </p>
               )}
               {error && (
@@ -374,9 +394,17 @@ export function ProjectDialog({
               <Button
                 type="submit"
                 loading={busy}
-                disabled={busy || browsing || !name.trim() || !path}
+                disabled={
+                  busy || browsing || startDisabled || !name.trim() || !path
+                }
               >
-                {busy ? "Saving…" : project ? "Save changes" : "Create project"}
+                {busy
+                  ? project
+                    ? "Saving…"
+                    : "Starting project…"
+                  : project
+                    ? "Save changes"
+                    : "Create project"}
               </Button>
             </DialogFooter>
           </form>

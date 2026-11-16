@@ -192,6 +192,10 @@ export function StoreProvider({
       (async () => {
         for (const [name, handler] of [
           [
+            "project-changed",
+            () => { void refresh().catch((e) => setError(String(e))); },
+          ],
+          [
             "session-changed",
             (payload: SessionRecord) => updateSession(payload),
           ],

@@ -99,8 +99,14 @@ export function Chat({
   initialDraft,
   processRequest,
   onProcessOpened,
+  projectChild,
+  projectSelectionVersion = 0,
+  onProjectConversationChange,
 }: {
   session: SessionRecord;
+  projectChild?: string | null;
+  projectSelectionVersion?: number;
+  onProjectConversationChange?: (child: string | null) => void;
   tabsTarget?: HTMLDivElement | null;
   onTabDividerChange?: (visible: boolean) => void;
   standaloneTab?: string;
@@ -118,7 +124,7 @@ export function Chat({
     updateSession,
   } = useStore();
   const [initialTab] = useState(
-    () => standaloneTab ?? readTaskTabSelection(session.id),
+    () => standaloneTab ?? (session.isOrchestrator && projectChild !== undefined ? projectChild ? `worker:${projectChild}` : "parent" : readTaskTabSelection(session.id)),
   );
   const terminals = useTerminalTabs(
     session.id,
@@ -151,6 +157,13 @@ export function Chat({
     ? initialTab.slice(7)
     : null;
   const [child, setChild] = useState<string | null>(initialChild);
+  useEffect(() => {
+    if (!session.isOrchestrator || standaloneTab || projectChild === undefined) return;
+    setChild(projectChild);
+    terminals.setActive(null);
+    setActiveProcess(null);
+    setNativeTerminal(false);
+  }, [session.id, projectChild, projectSelectionVersion, standaloneTab]);
   const [nativeTerminal, setNativeTerminal] = useState(
     session.mode === "terminal",
   );
@@ -346,9 +359,9 @@ export function Chat({
   useEffect(() => {
     // Connection events own readiness. Selecting an attached worker must not
     // start a redundant request or block its composer waiting for that request.
-    if (!child || !connected || workerConnected) return;
+    if (!child || !connected || (workerConnected && (!session.isOrchestrator || session.providerId !== "codex" || (record(worker?.capabilities).harborHistoryLoaded === true && record(worker?.capabilities).harborHistoryDirty !== true) || workerWorking || working))) return;
     void openWorker(child);
-  }, [child, connected, workerConnected, session.id]);
+  }, [child, connected, workerConnected, session.id, workerWorking, working, record(worker?.capabilities).harborHistoryLoaded, record(worker?.capabilities).harborHistoryDirty]);
   const promptQueue = usePromptQueue(session.id, child, setError);
   const [queuedEdit, setQueuedEdit] = useState<{ sessionId: string; childId: string | null; id: string; text: string; files: File[] } | null>(null);
   const editRef = useRef(queuedEdit);
@@ -552,6 +565,16 @@ export function Chat({
         : [],
     [transcript, child, conversationReady],
   );
+  const visibleRequests = useMemo(() => transcript.requests.filter((request) => {
+    if (!session.isOrchestrator) return true;
+    const meta = record(request.params._meta);
+    // Legacy async receipts cannot be answered without inventing another user prompt.
+    if (meta.harborCodexAsyncQuestion === true) return false;
+    const wire = str(request.params.sessionId);
+    const owner = str(request.params._harborChildId) || str(meta.harborWorkerContextId) ||
+      (wire && wire !== session.acpSessionId && wire !== session.id ? wire : "");
+    return child ? sameWorker(owner, child) : !owner;
+  }), [transcript.requests, session.isOrchestrator, session.acpSessionId, session.id, child]);
   const entries = useMemo(
     () =>
       conversationReady
@@ -587,6 +610,7 @@ export function Chat({
     if (standaloneTab || activeProcess || !terminals.loaded || !historyLoaded) return;
     if (child && !transcript.children[child]) {
       setChild(null);
+      if (session.isOrchestrator) onProjectConversationChange?.(null);
       return;
     }
     saveTaskTabSelection(session.id, activeTab);
@@ -604,8 +628,8 @@ export function Chat({
     !standaloneTab && taskTabs.detached.includes(activeTab);
   const tabItems = orderTaskTabs(
     [
-      { id: "parent", title: session.title, status: "", shellId: "" },
-      ...Object.values(transcript.children).map((c) => ({
+      { id: session.isOrchestrator && child ? `worker:${child}` : "parent", title: session.isOrchestrator && child ? worker?.title ?? session.title : session.title, status: session.isOrchestrator && child ? workerState : "", shellId: "" },
+      ...(session.isOrchestrator || session.parentSessionId ? [] : Object.values(transcript.children)).map((c) => ({
         id: `worker:${c.sessionId}`,
         title: c.title,
         status: str(
@@ -681,7 +705,7 @@ export function Chat({
         renderPlan={(interaction) =>
           interaction.status === "pending" &&
           connected &&
-          transcript.requests.some(
+          visibleRequests.some(
             (request) => request.id === interaction.id,
           ) ? (
             <RequestCard
@@ -706,7 +730,7 @@ export function Chat({
         )}
         working={
           (child ? workerWorking : session.status === "working") &&
-          !transcript.requests.length
+          !visibleRequests.length
         }
       >
         {!child && transcript.plan.length > 0 && (
@@ -715,7 +739,7 @@ export function Chat({
           </TranscriptRow>
         )}
         {connected &&
-          transcript.requests
+          visibleRequests
             .filter(
               (r) =>
                 !entries.some(
@@ -749,6 +773,7 @@ export function Chat({
     ),
     [
       entries,
+      visibleRequests,
       transcript,
       child,
       workerWorking,
@@ -784,6 +809,7 @@ export function Chat({
           terminals.setActive(null);
           setNativeTerminal(false);
           setChild(value === "parent" ? null : value.slice("worker:".length));
+          if (session.isOrchestrator && value === "parent") onProjectConversationChange?.(null);
           if (session.mode === "terminal" || nativeTerminal) void reconnect();
         }
       }}
@@ -811,7 +837,7 @@ export function Chat({
                           detached
                             ? `${tab.title} · Open in standalone window`
                             : tab.id === "parent"
-                              ? "Parent conversation"
+                              ? session.isOrchestrator && child ? worker?.title ?? tab.title : "Parent conversation"
                               : tab.title
                         }
                         asChild
@@ -926,8 +952,8 @@ export function Chat({
                     if (!child) scrollRef.current = top;
                   }}
                   requestId={
-                    connected && transcript.requests.length
-                      ? `request:${transcript.requests.at(-1)!.id}`
+                    connected && visibleRequests.length
+                      ? `request:${visibleRequests.at(-1)!.id}`
                       : undefined
                   }
                 >
@@ -1056,7 +1082,7 @@ export function Chat({
                           childOpening
                         : false)
                     }
-                    modePicker={modePicker}
+                    modePicker={session.isOrchestrator || session.parentSessionId ? undefined : modePicker}
                     placeholder={
                       child
                         ? childOpening
@@ -1067,7 +1093,7 @@ export function Chat({
                         : session.status === "connecting"
                           ? "Reconnecting to your agent…"
                           : session.status === "needs_input"
-                            ? "Answer the question above to continue"
+                            ? visibleRequests.length ? "Answer the question above to continue" : "Open the worker awaiting your answer"
                             : working
                               ? "Queue a message, or ⌘Enter to steer…"
                               : "Ask a follow-up or describe the next step…"

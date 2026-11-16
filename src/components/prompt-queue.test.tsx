@@ -7,8 +7,8 @@ import type { QueueSnapshot } from "../lib/bindings/QueueSnapshot";
 beforeAll(() => vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} }));
 afterEach(cleanup);
 const queue: QueueSnapshot = { sessionId: "chat", childId: null, revision: 1, paused: false, steering: false, error: null, items: [
-  { id: "a", text: "First", attachments: [], intent: "send", editing: false },
-  { id: "b", text: "Second", attachments: ["notes.md"], intent: "send", editing: true },
+  { senderTitle: null, id: "a", text: "First", attachments: [], intent: "send", editing: false },
+  { senderTitle: null, id: "b", text: "Second", attachments: ["notes.md"], intent: "send", editing: true },
 ] };
 it("exposes edit and steer actions and identifies the message being edited", () => {
   const edit = vi.fn(), steer = vi.fn(), remove = vi.fn();

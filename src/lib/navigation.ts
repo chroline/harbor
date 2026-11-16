@@ -1,4 +1,4 @@
-export type View = "home" | "worktrees" | "settings" | { session: string };
+export type View = "home" | "worktrees" | "settings" | { session: string; child?: string };
 export type NavigationHistory = { entries: View[]; index: number };
 export const initialHistory: NavigationHistory = {
   entries: ["home"],
@@ -9,7 +9,7 @@ export function readSavedView(raw: string | null): View {
     const view = JSON.parse(raw ?? "null");
     if (["home", "worktrees", "settings"].includes(view)) return view;
     if (view && typeof view.session === "string" && view.session)
-      return { session: view.session };
+      return { session: view.session, ...(typeof view.child === "string" && view.child ? { child: view.child } : {}) };
   } catch {}
   return "home";
 }
@@ -22,7 +22,7 @@ export function restoreHistory(): NavigationHistory {
   }
 }
 export const viewKey = (view: View) =>
-  typeof view === "string" ? view : `chat:${view.session}`;
+  typeof view === "string" ? view : `chat:${view.session}${view.child ? `:worker:${view.child}` : ""}`;
 export function visit(
   history: NavigationHistory,
   next: View,

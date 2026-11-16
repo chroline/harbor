@@ -4,8 +4,10 @@ import type { SessionRecord } from "./bindings/SessionRecord";
 
 const session = (status = "idle", current = "agent"): SessionRecord => ({
   id: "chat",
+  parentSessionId: null,
   title: "Chat",
   projectId: null,
+  isOrchestrator: false,
   workspaceId: null,
   isGit: false,
   cwd: "/tmp",

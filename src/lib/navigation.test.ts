@@ -90,3 +90,12 @@ describe("Sidebar preferences and bounds", () => {
     expect(parseShellPreferences('{"width":1e999}').width).toBe(256);
   });
 });
+
+it("persists worker navigation and distinguishes it from its project orchestrator", () => {
+  const saved = readSavedView(JSON.stringify({ session: "project-root", child: "worker" }));
+  expect(saved).toEqual({ session: "project-root", child: "worker" });
+  const first = visit(initialHistory, { session: "project-root" });
+  const worker = visit(first, saved);
+  expect(worker.index).toBe(first.index + 1);
+  expect(travel(worker, -1).entries[first.index]).toEqual({ session: "project-root" });
+});

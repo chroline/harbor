@@ -15,6 +15,7 @@ const showcase = new URLSearchParams(location.search).has("showcase");
 const data: Bootstrap = {
   projects: [
     {
+      activeOrchestratorSessionId: null,
       id: "fixture-project",
       name: "UI test repository",
       workspaceId: "fixture-workspace",
@@ -239,10 +240,37 @@ mockIPC(
           models: null,
         };
       }
+      case "get_prompt_queue":
+      case "resume_prompt_queue":
+        return { sessionId: args.sessionId, childId: args.childId, revision: 0, items: [], paused: false, steering: false, error: null };
+      case "project_deletion_summary": {
+        const sessions = data.sessions.filter((s) => s.projectId === args.projectId);
+        return { conversations: sessions.length, agents: sessions.filter(s=>s.parentSessionId).length, worktrees: [], preservedWorktrees: [] };
+      }
+      case "delete_project": {
+        const ids = new Set(data.sessions.filter((s) => s.projectId === args.projectId).map((s) => s.id));
+        data.projects = data.projects.filter((p) => p.id !== args.projectId);
+        data.sessions = data.sessions.filter((s) => !ids.has(s.id));
+        for (let index = events.length - 1; index >= 0; index--) { if (ids.has(events[index].sessionId)) events.splice(index, 1); }
+        await emit("project-changed", { id: args.projectId, deleted: true });
+        return;
+      }
+      case "project_provider_support":
+        return { verified: !new URLSearchParams(location.search).has("unverified-project"), reason: "Fixture provider support is unverified" };
+      case "open_project_orchestrator": {
+        const project = data.projects.find((p) => p.id === args.projectId)!;
+        return structuredClone(data.sessions.find((s) => s.id === project.activeOrchestratorSessionId && !s.archived) ?? null);
+      }
+      case "initialize_project_context": return;
+      case "project_documents": return ["index.md", "decisions.md", "current-state.md", "orchestrator.md", "worker.md"];
+      case "read_project_document": return args.path === "index.md" ? "# Billing context\n\nAn ongoing area of work.\n\nSee decisions.md for accepted decisions." : "# Decisions\n\nBilling belongs to organizations. Source: user discussion.";
+      case "open_project_document": return;
       case "save_project": {
         const project = {
+          activeOrchestratorSessionId: data.projects.find((p) => p.id === args.projectId)?.activeOrchestratorSessionId ?? null,
           id: args.projectId ?? "added-project",
           name: args.name,
+          instructions: args.instructions ?? data.projects.find((p) => p.id === args.projectId)?.instructions ?? null,
           workspaceId: data.workspaces.find(
             (w) => w.path === args.workspacePath,
           )!.id,
@@ -255,11 +283,23 @@ mockIPC(
         ];
         return project;
       }
+      case "start_project":
+      case "create_project_orchestrator":
       case "create_session": {
+        const project = ["start_project", "create_project_orchestrator"].includes(command) ? data.projects.find((p) => p.id === args.projectId) : undefined;
+        if (project) {
+          if (new URLSearchParams(location.search).has("unverified-project")) throw new Error("Fixture provider support is unverified");
+          args.workspaceId = project.workspaceId;
+          const existing = data.sessions.find((s) => s.id === project.activeOrchestratorSessionId && !s.archived);
+          if (existing && !args.fresh) return structuredClone(existing);
+          if (existing?.status === "working") throw new Error("Finish or stop active workers before starting fresh");
+        }
         const session: SessionRecord = {
           id: "fixture-" + Date.now(),
-          title: args.title,
-          projectId: null,
+          title: project?.name ?? args.title,
+          isOrchestrator: !!project,
+          parentSessionId: null,
+          projectId: project?.id ?? null,
           workspaceId: args.workspaceId,
           isGit: !!data.workspaces.find((w) => w.id === args.workspaceId)
             ?.isGitRoot,
@@ -297,6 +337,7 @@ mockIPC(
           archived: false,
         };
         data.sessions.push(session);
+        if (project) project.activeOrchestratorSessionId = session.id;
         await changed(session);
         await event(session, "session/update", {
           sessionId: "wire-root",
@@ -305,6 +346,17 @@ mockIPC(
             availableCommands: fixtureCommands,
           },
         });
+        if (command === "start_project" && project) {
+          session.status = "working";
+          await event(session, "project_start", { text: project.instructions ?? "Initialize project", projectInstructionVersion: "harbor-project-v1" });
+          await changed(session);
+          setTimeout(() => { void (async () => {
+            await event(session, "session/update", { sessionId: "wire-root", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: `I'm ready to help with ${project.name}. What would you like to work on?` } } });
+            await event(session, "turn_complete", { stopReason: "end_turn" });
+            session.status = "completed";
+            await changed(session);
+          })(); }, 100);
+        }
         return structuredClone(session);
       }
       case "set_config":
@@ -387,9 +439,16 @@ mockIPC(
           (e) => e.sessionId === args.sessionId && e.sequence > args.after,
         ).slice(0, args.limit ?? 5000);
       case "open_subagent":
+        if (s!.isOrchestrator) {
+          await event(s!, "child_history_reset", { childId: args.childId });
+          await event(s!, "session/update", { sessionId: args.childId, update: { sessionUpdate: "config_option_update", configOptions: [{ id: "model", category: "model", type: "select", currentValue: "fixture-worker", options: [{ value: "fixture-worker", name: "Worker fixture model" }] }] } });
+          await event(s!, "session/update", { sessionId: args.childId, update: { sessionUpdate: "tool_call", toolCallId: "worker-read", title: "Read worker context", kind: "read", status: "completed", rawInput: { path: "index.md" }, content: [{ type: "content", content: { type: "text", text: "Worker tool evidence" } }] } });
+          await event(s!, "session/update", { sessionId: args.childId, update: { sessionUpdate: "agent_message_chunk", messageId: "saved-worker-reply", content: { type: "text", text: "Saved project worker findings" } } });
+        }
         await event(s!, "child_connected", {
           childId: args.childId,
           viaParent: true,
+          historyLoaded: !!s!.isOrchestrator,
         });
         return;
       case "answer_request":
@@ -515,6 +574,13 @@ if (!showcase) document.body.append(label);
 
 Object.assign(window, {
   __harborFixture: {
+    addProjectWorker: async (title: string) => {
+      const parent=data.sessions.filter(s=>s.isOrchestrator && !s.archived).at(-1)!;
+      const child={...structuredClone(parent),id:"sidebar-worker",title,isOrchestrator:false,parentSessionId:parent.id,status:"completed",acpSessionId:"wire-sidebar-worker"};
+      data.sessions.push(child);await changed(child);
+      await event(child,"agent_message",{messageId:"fixture-assignment",senderId:parent.id,senderTitle:parent.title,label:"Parent",text:"Investigate billing."});
+      await event(child,"session/update",{sessionId:child.acpSessionId,update:{sessionUpdate:"agent_message_chunk",messageId:"saved-worker-reply",content:{type:"text",text:"Saved project worker findings"}}});
+    },
     setToolProcesses: (processes: typeof toolProcesses) => { toolProcesses.splice(0, toolProcesses.length, ...processes); },
     showQuestion: async (provider: string) => {
       const s = data.sessions.at(-1)!;
