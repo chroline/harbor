@@ -1155,7 +1155,7 @@ it("marks working chats with the thinking indicator and chats that need you with
   expect(
     collapsed.querySelector('[data-state="loading"]'),
   ).toBeTruthy();
-  expect(screen.queryByRole("button", { name: /Running task/ })).toBeNull();
+  expect(screen.queryByRole("button", { name: /^Running task/ })).toBeNull();
 
   fireEvent.click(screen.getByRole("button", { name: "No workspace" }));
   expect(

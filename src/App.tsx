@@ -44,6 +44,7 @@ import {
 import { discoveryMode } from "./components/ModePicker";
 import { TaskComposer } from "./components/TaskComposer";
 import { HomeScene, SkylineScene } from "./components/SkylineBackground";
+import { HomeDashboard } from "./components/HomeDashboard";
 import { skylineCity } from "./lib/skyline-city";
 import { skylineTimeOfDay } from "./lib/skyline-period";
 import { WorkspacePicker } from "./components/WorkspacePicker";
@@ -992,6 +993,7 @@ export default function App() {
               <div className="large-empty"><ThinkingIndicator label={`Starting ${startingProject.name}…`} /></div>
             ) : view === "home" ? (
               <HomeScene city={skylineCity(record(data.settings).skylineCity)}>
+                <div className="home-stack">
                 <div className="home-content chat-composer-wrap">
                   <section
                     ref={taskComposer}
@@ -1065,6 +1067,16 @@ export default function App() {
                       }
                     />
                   </section>
+                </div>
+                <HomeDashboard
+                  sessions={sessions}
+                  workspaces={data.workspaces}
+                  onOpenSession={(id) => go({ session: id })}
+                  onNewTask={(id) => {
+                    setWorkspace(id);
+                    newTask();
+                  }}
+                />
                 </div>
               </HomeScene>
             ) : view === "settings" ? (
