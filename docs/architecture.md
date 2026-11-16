@@ -9,6 +9,7 @@ Rust owns execution and storage; the webview owns presentation. `src-tauri/src/l
 | `providers.rs` | Shared capability and configuration normalization |
 | `diagnostics.rs` | Temporary ACP connection checks with typed failure results |
 | `sessions.rs` | New/load/resume selection and conversation identity validation |
+| `projects.rs` | Project context, orchestrator role instructions, native communication verification, and fresh-conversation guards |
 | `acp.rs` | NDJSON JSON-RPC, process groups, request correlation, permissions, client filesystem and terminal methods |
 | `db.rs` | SQLite WAL database, versioned schema, ordered events, transactional records, streaming export |
 | `workspaces.rs` | Canonical local folder identity, availability and Git checkout capability |
@@ -61,6 +62,8 @@ Harbor cannot coordinate an unrelated external editor or process writing after t
 - [Jakub’s interface guidance](https://jakub.kr/skills)
 
 ## Projects and workspaces
+
+Projects own an optional active orchestrator and ordinary child sessions linked by `parentSessionId`. `projects.rs` manages the Markdown context and separate role instructions; `project_agents.rs` authenticates project-scoped local IPC and dispatches durable messages through the normal chat queue. `project_tools.rs` exposes the MCP catalog. Database v5 preserves orchestrator history and unrelated chats while removing project-native worker projections. See [project orchestrators](project-orchestrators.md) for message authorship, recovery, and acceptance evidence.
 
 Workspace records identify canonical local folders and track recent use. Projects reference exactly one workspace and own a display name, Lucide icon key, and palette color key. Saving a project validates its folder and appearance, then atomically upserts a shared workspace and the project. Version 2 migrates legacy project paths and chat workspace associations in one SQLite transaction, retaining missing folders and all existing IDs.
 

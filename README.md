@@ -73,6 +73,7 @@ the [setup guide](docs/getting-started.md) covers your first conversation; [prov
 | [development](docs/development.md) | builds, local signing, visual feedback, tests, and verification limits |
 | [providers](docs/providers.md) | adapters, model discovery, native handoff, and compatibility |
 | [storage and recovery](docs/recovery.md) | local data, session reconnection, archives, and restoration |
+| [project orchestrators](docs/project-orchestrators.md) | ongoing project conversations, context libraries, and Harbor-owned agent chats |
 | [architecture](docs/architecture.md) | execution, persistence, protocols, and extension points |
 | [interface](docs/interface.md) | native surfaces, artwork provenance, and Fluid Functionalism |
 | [worker verification](docs/subagent-verification.md) | live acceptance records and provider-specific evidence |
