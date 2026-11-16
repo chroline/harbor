@@ -318,6 +318,13 @@ export function ChatTranscript({
         </TranscriptRow>
       );
     const expanded = expandedMessages.has(message.id);
+    const attachments = message.attachments ?? [];
+    const images = attachments.filter((file) => file.mimeType.startsWith("image/"));
+    const documents = attachments.filter((file) => !file.mimeType.startsWith("image/"));
+    const hasBody =
+      message.text.trim().length > 0 ||
+      !!message.label ||
+      message.role === "system";
     const content = (
       <Message
         key={message.id}
@@ -333,7 +340,8 @@ export function ChatTranscript({
         }
       >
         <MessageContent>
-          <Bubble
+          {images.length > 0 && <MessageAttachments files={images} />}
+          {hasBody && <Bubble
             align={message.role === "user" ? "end" : "start"}
             variant={message.role === "user" ? "muted" : "ghost"}
           >
@@ -376,9 +384,6 @@ export function ChatTranscript({
                   {message.label ?? "Parent relay"}
                 </small>
               )}
-              {!!message.attachments?.length && (
-                <MessageAttachments files={message.attachments} />
-              )}
               <RichText
                 text={message.text}
                 commandRanges={
@@ -387,7 +392,8 @@ export function ChatTranscript({
                 streaming={streamingId === message.id}
               />
             </BubbleContent>
-          </Bubble>
+          </Bubble>}
+          {documents.length > 0 && <MessageAttachments files={documents} />}
         </MessageContent>
       </Message>
     );

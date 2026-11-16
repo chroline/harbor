@@ -1148,7 +1148,7 @@ const InputMessage = forwardRef<HTMLDivElement, InputMessageProps>(
                 transition={{ ...spring.moderate, bounce: 0 }}
                 className="overflow-hidden"
               >
-                <div ref={filesRegionRef} data-slot="composer-attachments" className="flex flex-wrap gap-3 px-2 py-2">
+                <div ref={filesRegionRef} data-slot="composer-attachments" className="flex flex-wrap items-center gap-2 px-2 py-2">
                   <AnimatePresence initial={false} mode="popLayout">
                     {filesArr.map((file, i) => (
                       <FilePreviewTile

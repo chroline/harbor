@@ -2,6 +2,8 @@
   --trace-error: #b42318;
   /* Between the composer's 1rem text inset and its 0.5rem frame. */
   --transcript-message-inset: 0.75rem;
+  /* Photos, file chips, and text in a run of user messages share this gap. */
+  --user-stack-gap: 0.375rem;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -102,6 +104,28 @@
   width: 100%;
   max-width: 100%;
   margin: 0;
+  align-items: flex-end;
+}
+.chat-transcript .transcript-user [data-slot="message-content"] {
+  align-items: flex-end;
+  gap: var(--user-stack-gap);
+}
+.chat-transcript [data-slot="message-attachments"] {
+  gap: var(--user-stack-gap);
+}
+/* An unanswered user message has no reply under it. Drop the reply margin
+   and let the next message use the same gap as the pieces inside a message. */
+.chat-transcript > .transcript-turn:not(:has(.transcript-responses > *)) > .transcript-prompt-header {
+  margin-bottom: 0;
+}
+.chat-transcript > .transcript-turn:not(:has(.transcript-responses > *)) + .transcript-turn > .transcript-prompt-header {
+  padding-top: 0;
+  margin-top: var(--user-stack-gap);
+}
+.chat-transcript .transcript-user [data-slot="bubble"] {
+  width: fit-content;
+  max-width: min(36rem, 80%);
+  margin-left: auto;
 }
 .chat-transcript .transcript-turn {
   display: flow-root;

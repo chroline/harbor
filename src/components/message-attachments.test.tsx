@@ -44,3 +44,20 @@ it("loads a saved screenshot without a provider echo and exposes the lightbox", 
       .getAttribute("aria-haspopup"),
   ).toBe("dialog");
 });
+
+it("shows a document as a name and size, separate from image previews", () => {
+  render(
+    <MessageAttachments
+      files={[
+        {
+          name: "OpenUsage-0.7.16.dmg",
+          mimeType: "application/octet-stream",
+          size: 23_278_387,
+        },
+      ]}
+    />,
+  );
+  expect(screen.getByText("OpenUsage-0.7.16.dmg")).toBeTruthy();
+  expect(screen.getByText("22.2 MB")).toBeTruthy();
+  expect(screen.queryByRole("img")).toBeNull();
+});
