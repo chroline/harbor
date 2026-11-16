@@ -1155,16 +1155,13 @@ const SidebarMenuButton = forwardRef<HTMLButtonElement, SidebarMenuButtonProps>(
     const resolvedDot =
       dot ?? (status ? (status === "idle" ? "ring" : "filled") : undefined);
     const lit = effectiveActive || (item?.isHovered ?? false);
-    const heightClass =
-      size === "sm"
-        ? "h-7"
-        : size === "lg"
-          ? "h-12"
-          : sizeClasses.variant === "compact"
-            ? "h-7"
-            : "h-8";
-    const textClass =
-      size === "sm" ? typeClass("body", "compact") : sizeClasses.text;
+    // Sidebar rows are always compact (1.75rem); only "lg" opts out.
+    const heightClass = size === "lg" ? "h-12" : "h-7";
+    // Rows share the group titles' caption type so the sidebar reads as one scale.
+    const textClass = typeClass(
+      "caption",
+      size === "sm" ? "compact" : sizeClasses.variant,
+    );
 
     // Roving tabindex: the active rows' buttons are the menu's tab stops; with
     // no active row, the menu's first row keeps it keyboard-reachable.
@@ -1504,7 +1501,7 @@ const SidebarMenuSkeleton = forwardRef<
       data-sidebar="menu-skeleton"
       className={cn(
         "flex items-center gap-2 px-2",
-        sizeClasses.variant === "compact" ? "h-7" : "h-8",
+        "h-7",
         className,
       )}
       {...props}
@@ -1729,11 +1726,7 @@ const SidebarMenuSubButton = forwardRef<
           className: cn(
             "relative z-10 flex w-full cursor-pointer select-none items-center gap-2 pl-2 text-left outline-none",
             "transition-[padding] duration-80 pr-[var(--row-gutter)] group-hover/menu-sub-item:pr-[var(--row-gutter-hover)] group-focus-within/menu-sub-item:pr-[var(--row-gutter-hover)] group-has-[[data-sidebar=menu-action]:is([data-state=open],[data-popup-open],[aria-expanded=true])]/menu-sub-item:pr-[var(--row-gutter-hover)]",
-            size === "sm"
-              ? "h-7"
-              : sizeClasses.variant === "compact"
-                ? "h-7"
-                : "h-8",
+            "h-7",
             shape.item,
             className,
           ),
@@ -1757,9 +1750,10 @@ const SidebarMenuSubButton = forwardRef<
             content={content}
             lit={lit}
             emphasized={isActive}
-            textClass={
-              size === "sm" ? typeClass("body", "compact") : sizeClasses.text
-            }
+            textClass={typeClass(
+              "caption",
+              size === "sm" ? "compact" : sizeClasses.variant,
+            )}
             trailing={
               loading || attention || unseen ? (
                 <MenuRowMark

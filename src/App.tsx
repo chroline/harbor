@@ -70,6 +70,7 @@ import {
   SquarePen,
   Search,
   FolderOpen,
+  Home,
   Folder,
   CheckCheck,
   Command,
@@ -897,7 +898,7 @@ export default function App() {
                         ]}
                       >
                         <SidebarMenuButton
-                          icon={open ? FolderOpen : Folder}
+                          icon={w.id === null ? Home : open ? FolderOpen : Folder}
                           style={
                             {
                               "--row-gutter": "var(--row-gutter-hover)",

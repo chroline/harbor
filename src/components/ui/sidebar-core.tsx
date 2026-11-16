@@ -1406,7 +1406,8 @@ const SidebarGroup = forwardRef<HTMLDivElement, SidebarGroupProps>(
         ref={ref}
         data-sidebar="group"
         data-state={collapsible ? (open ? "open" : "closed") : undefined}
-        className={cn("relative flex w-full min-w-0 flex-col p-2", className)}
+        // Harbor: 0.25rem vertical padding, so adjacent groups sit 0.5rem apart.
+        className={cn("relative flex w-full min-w-0 flex-col px-2 py-1", className)}
         {...props}
       >
         <SidebarGroupContext.Provider value={collapsible ? ctx : null}>
@@ -1476,6 +1477,7 @@ const SidebarGroupLabel = forwardRef<HTMLDivElement, SidebarGroupLabelProps>(
               "focus-visible:ring-[0.0625rem] focus-visible:ring-[color:var(--focus-ring,#6B97FF)]",
               shape.item,
               typeClass("caption", sizeVariant),
+              "font-semibold",
               className
             ),
             ...props,
@@ -1496,6 +1498,7 @@ const SidebarGroupLabel = forwardRef<HTMLDivElement, SidebarGroupLabelProps>(
           className: cn(
             "flex h-8 shrink-0 items-center gap-2 px-2 text-muted-foreground outline-none",
             typeClass("caption", sizeVariant),
+            "font-semibold",
             className
           ),
           ...props,
