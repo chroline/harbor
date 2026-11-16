@@ -3,6 +3,8 @@ import {
   disposeWovenLight,
   drawWovenLight,
   WOVEN_LIGHT,
+  wovenLightGrid,
+  type WovenLightRaster,
 } from "@/lib/woven-light";
 import { createWovenLightMotion } from "@/lib/woven-light-motion";
 
@@ -33,7 +35,7 @@ export function SkylinePixels({
     let bounds: DOMRect | null = null;
     let context: CanvasRenderingContext2D | null = null;
     let pixels: ImageData | null = null;
-    let raster: { width: number; height: number } = {
+    let raster: WovenLightRaster = {
       width: WOVEN_LIGHT.rasterWidth,
       height: 0,
     };
@@ -86,13 +88,14 @@ export function SkylinePixels({
       const height = element.clientHeight;
       if (!width || !height) return;
       bounds = element.getBoundingClientRect();
-      // Keep the exact eight-pixel sampling grid, but present at display
-      // resolution. Reading artwork pixels must not demote the animation's
-      // canvas to a CPU-backed surface.
+      // Keep the eight-pixel sampling grid, but present at display resolution.
+      // Wide scenes add dots rather than enlarging them. Reading artwork pixels
+      // must not demote the animation's canvas to a CPU-backed surface.
+      const grid = wovenLightGrid(width);
       const sampling = document.createElement("canvas");
-      sampling.width = WOVEN_LIGHT.rasterWidth;
+      sampling.width = grid.rasterWidth;
       sampling.height = Math.round((height / width) * sampling.width);
-      raster = { width: sampling.width, height: sampling.height };
+      raster = { width: sampling.width, height: sampling.height, columns: grid.columns };
       const ratio = Math.min(
         window.devicePixelRatio || 1,
         sampling.width / width,

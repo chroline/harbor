@@ -2,13 +2,29 @@
 export const WOVEN_LIGHT = {
   intensity: 0.4,
   speed: 0.5,
+  /** Columns up to `denseFrom` CSS px wide; wider scenes keep that dot pitch instead of larger dots. */
   columns: 400,
+  denseFrom: 1440,
+  /** Eight sampled pixels per dot, up to the largest raster worth reading back. */
   rasterWidth: 3200,
+  maximumRasterWidth: 6144,
   minimumSize: 0.2,
   maximumSize: 0.7,
   focusedSize: 0.2,
   poolRadiusScale: 2,
 } as const;
+
+export type WovenLightRaster = { width: number; height: number; columns?: number };
+
+/** Dot columns and sampling width for a scene `displayWidth` CSS px wide. */
+export function wovenLightGrid(displayWidth: number) {
+  const { columns, denseFrom, rasterWidth, maximumRasterWidth } = WOVEN_LIGHT;
+  const dense = Math.max(columns, Math.round((displayWidth / denseFrom) * columns));
+  return {
+    columns: dense,
+    rasterWidth: Math.min(maximumRasterWidth, Math.max(rasterWidth, dense * (rasterWidth / columns))),
+  };
+}
 
 export const lightPools = (t: number) => [
   {
@@ -43,13 +59,14 @@ export function drawWovenLight(
   pixels: Uint8ClampedArray,
   t: number,
   power: number = WOVEN_LIGHT.intensity,
-  raster: { width: number; height: number } = ctx.canvas,
+  raster: WovenLightRaster = ctx.canvas,
   frame: WovenLightFrame = {},
 ) {
   const { width: w, height: h } = raster;
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = "source-over";
-  const step = w / WOVEN_LIGHT.columns;
+  const columns = raster.columns ?? WOVEN_LIGHT.columns;
+  const step = w / columns;
   const pools = frame.pools ?? wovenLightPools(t);
   const [warmPool, coolPool] = pools;
   const focus = frame.focus ?? 0;
@@ -63,7 +80,7 @@ export function drawWovenLight(
         pixels,
         pools,
         power,
-        WOVEN_LIGHT.columns,
+        columns,
         raster,
         focus,
         WOVEN_LIGHT.focusedSize,

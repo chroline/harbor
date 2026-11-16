@@ -101,6 +101,7 @@ export function createWovenLightGpu() {
     gl.ONE_MINUS_SRC_ALPHA,
   );
   let uploaded: Uint8ClampedArray | null = null;
+  let laidOut = 0;
   let count = 0;
   return {
     paint(
@@ -117,7 +118,8 @@ export function createWovenLightGpu() {
     ) {
       if (gl.isContextLost()) return false;
       const { width, height } = raster;
-      if (canvas.width !== width || canvas.height !== height) {
+      if (canvas.width !== width || canvas.height !== height || laidOut !== columns) {
+        laidOut = columns;
         canvas.width = width;
         canvas.height = height;
         gl.viewport(0, 0, width, height);

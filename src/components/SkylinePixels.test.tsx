@@ -99,6 +99,7 @@ it("samples the same centered cover crop as the blurred image and animates at ha
   expect(vi.mocked(drawWovenLight).mock.calls.at(-1)![4]).toEqual({
     width: 3200,
     height: 1600,
+    columns: 400,
   });
   advance(60);
   expect(vi.mocked(drawWovenLight).mock.calls.at(-1)![2]).toBeCloseTo(0.03);
@@ -192,6 +193,23 @@ it("uses Retina display resolution without changing the artwork sampling grid", 
   expect(vi.mocked(drawWovenLight).mock.calls.at(-1)![4]).toEqual({
     width: 3200,
     height: 1600,
+    columns: 400,
+  });
+});
+
+it("adds dots on wide displays instead of enlarging them", () => {
+  vi.stubGlobal("devicePixelRatio", 2);
+  vi.spyOn(HTMLCanvasElement.prototype, "clientWidth", "get").mockReturnValue(2560);
+  vi.spyOn(HTMLCanvasElement.prototype, "clientHeight", "get").mockReturnValue(1440);
+  const { container } = render(
+    <SkylinePixels image={image} source="night.webp" active />,
+  );
+  const canvas = container.querySelector("canvas")!;
+  expect([canvas.width, canvas.height]).toEqual([5120, 2880]);
+  expect(vi.mocked(drawWovenLight).mock.calls.at(-1)![4]).toEqual({
+    width: 5688,
+    height: 3200,
+    columns: 711,
   });
 });
 

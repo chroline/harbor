@@ -2,6 +2,7 @@ import { expect, it } from "vitest";
 import {
   drawWovenLight,
   WOVEN_LIGHT,
+  wovenLightGrid,
   type WovenLightFrame,
 } from "./woven-light";
 
@@ -101,4 +102,40 @@ it("keeps full-size dots at zero intensity and permits near-zero dots at full in
   expect(Math.min(...varied.map((dot) => dot.radius))).toBeGreaterThan(0);
   expect(Math.min(...varied.map((dot) => dot.radius))).toBeLessThan(0.001);
   expect(Math.max(...varied.map((dot) => dot.radius))).toBeGreaterThan(2.5);
+});
+
+it("keeps the approved grid up to 1440px and a constant dot pitch on wider scenes", () => {
+  expect(wovenLightGrid(1024)).toEqual({ columns: 400, rasterWidth: 3200 });
+  expect(wovenLightGrid(1440)).toEqual({ columns: 400, rasterWidth: 3200 });
+  // A 2560px display gets 711 dots across instead of 400 larger ones.
+  expect(wovenLightGrid(2560)).toEqual({ columns: 711, rasterWidth: 5688 });
+  expect(2560 / wovenLightGrid(2560).columns).toBeCloseTo(1440 / 400, 1);
+  // Very wide scenes keep adding dots while the sampled raster stays bounded.
+  expect(wovenLightGrid(5120)).toEqual({ columns: 1422, rasterWidth: 6144 });
+});
+
+it("draws the requested number of columns across the raster", () => {
+  const xs = new Set<number>();
+  const context = {
+    canvas: { width: 3200, height: 16 },
+    globalAlpha: 1,
+    fillStyle: "",
+    clearRect() {},
+    beginPath() {},
+    fill() {},
+    arc(x: number) {
+      xs.add(x);
+    },
+    fillRect(x: number) {
+      xs.add(x + 1);
+    },
+  };
+  drawWovenLight(
+    context as unknown as CanvasRenderingContext2D,
+    new Uint8ClampedArray(3200 * 16 * 4).fill(100),
+    0,
+    WOVEN_LIGHT.intensity,
+    { width: 3200, height: 16, columns: 800 },
+  );
+  expect(xs.size).toBe(800);
 });
