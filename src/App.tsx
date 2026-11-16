@@ -1030,9 +1030,6 @@ export default function App() {
                       }}
                       context={
                         <div className="home-composer-heading">
-                          <header className="home-welcome">
-                            <h1>What would you like to work on?</h1>
-                          </header>
                           <div className="task-location">
                             <WorkspacePicker
                               workspaces={data.workspaces}
