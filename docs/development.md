@@ -85,7 +85,7 @@ HARBOR_SMOKE_HANDOFF=1 \
 cargo test --manifest-path src-tauri/Cargo.toml live_provider_smoke -- --ignored --nocapture
 ```
 
-use `HARBOR_SMOKE_ARGS='["--no-auto-update","agent","stdio"]'` for Grok Build. Set `HARBOR_SMOKE_PROVIDER` to `codex`, `claude`, or `grok`; supply an installed ACP executable through `HARBOR_SMOKE_COMMAND`. the native handoff test verifies original-fact recall in the actual PTY CLI, presence of the CLI-created message in replayed ACP history, and second-fact recall after returning to ACP. the test only auto-accepts trust for its generated `work/live-repo` fixture; other repositories must already be trusted.
+use `HARBOR_SMOKE_ARGS='["--no-auto-update","agent","stdio"]'` for Grok Build and `HARBOR_SMOKE_ARGS='["acp"]'` for OpenCode. Set `HARBOR_SMOKE_PROVIDER` to `codex`, `claude`, `grok`, or `opencode`; supply an installed ACP executable through `HARBOR_SMOKE_COMMAND`. the native handoff test verifies original-fact recall in the actual PTY CLI, presence of the CLI-created message in replayed ACP history, and second-fact recall after returning to ACP. the test only auto-accepts trust for its generated `work/live-repo` fixture; other repositories must already be trusted.
 
 ## verification limits
 
@@ -93,6 +93,6 @@ provider-specific child cancellation beyond shared transport tests, macOS notifi
 
 ## provider contracts
 
-`tests/providers/{codex,claude,grok}.mjs` are separate entry points into a deterministic protocol fixture. They model different reasoning controls and worker receipt shapes. Rust contract tests cover no-prompt diagnostics, authentication/protocol failures, dependent configuration, typed questions, permission IDs, persistence/replay, worker identity, and direct Grok continuation. These are protocol tests, not evidence that a live upstream provider implements a capability.
+`tests/providers/{codex,claude,grok,opencode}.mjs` are separate entry points into a deterministic protocol fixture. They model different reasoning controls and worker receipt shapes. Rust contract tests cover no-prompt diagnostics, authentication/protocol failures, dependent configuration, typed questions, permission IDs, persistence/replay, worker identity, and direct Grok continuation. These are protocol tests, not evidence that a live upstream provider implements a capability.
 
 The opt-in live smoke supports `HARBOR_SMOKE_CONNECT_ONLY=1 HARBOR_SMOKE_CONFIG_ROUNDTRIP=1` for model/effort changes with restoration, and `HARBOR_SMOKE_WORKER_ROUNDTRIP=1` for same-worker context retention. `HARBOR_SMOKE_TRACE_PATH` optionally saves the isolated test's follow-up events for diagnosis. Live runs can consume provider usage. Use a disposable workspace, with `/work/live-repo` suffix for the handoff test's bounded trust handling.

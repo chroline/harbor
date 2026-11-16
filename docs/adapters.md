@@ -1,18 +1,19 @@
 # Provider adapters
 
-Harbor registers Claude Code (`claude`), OpenAI Codex (`codex`), and Grok Build (`grok`). Provider-specific behavior belongs in these directories:
+Harbor registers Claude Code (`claude`), OpenAI Codex (`codex`), Grok Build (`grok`), and OpenCode (`opencode`). Provider-specific behavior belongs in these directories:
 
 | Integration | Backend | Frontend |
 | --- | --- | --- |
 | Claude Code | `src-tauri/src/adapters/claude-code/` | `src/adapters/claude-code/` |
 | OpenAI Codex | `src-tauri/src/adapters/codex/` | `src/adapters/codex/` |
 | Grok Build | `src-tauri/src/adapters/grok-build/` | `src/adapters/grok-build/` |
+| OpenCode | `src-tauri/src/adapters/opencode/` | `src/adapters/opencode/` |
 
 ## Contracts and ownership
 
 `src-tauri/src/adapters/contract.rs` defines the required `Adapter` trait. It has no default methods: omitting a policy is a compiler error. Each integration supplies its descriptor, executable search paths, version arguments, client extensions, plan protocol, native resume arguments, terminal compatibility assessment, legacy update normalization, and native worker receipt conversion. Workers declare parent relay, direct attachment, or unsupported behavior. Unsupported hooks return `Capability::Unsupported { reason }`; descriptors distinguish implemented, unsupported, and unverified features. An implemented native plan extension still checks the installed version and arguments before activation.
 
-The shared transport owns stable ACP v1 initialization, requests, streaming, cancellation, process cleanup, and session identity checks. Model/mode discovery, authentication, attachments, ordinary permissions, and session new/load/resume use advertised ACP capabilities rather than separate implementations per provider. An adapter supplies only additional provider policies. Grok's native plan protocol and worker receipts are isolated under `grok-build/`; Claude and Codex use their advertised ACP plan flows.
+The shared transport owns stable ACP v1 initialization, requests, streaming, cancellation, process cleanup, and session identity checks. Model/mode discovery, authentication, attachments, ordinary permissions, and session new/load/resume use advertised ACP capabilities rather than separate implementations per provider. An adapter supplies only additional provider policies. Grok's native plan protocol and worker receipts are isolated under `grok-build/`; OpenCode's child-session routing is isolated under `opencode/`; Claude and Codex use their advertised ACP plan flows.
 
 `PlanProtocol` requires typed modes, normalized permission requests, decisions, responses, and plan-file access policies. The plan approval contract also distinguishes implemented, unsupported, and unverified states; unavailable approvals require a reason rather than placeholder option IDs. Native worker receipts become typed `WorkerAnnouncement` values. External JSON remains untrusted: adapters validate vendor messages at ingress and reject malformed requests. Shared ACP envelopes and preserved legacy fields remain JSON at the wire boundary. Rust types prove the shape and completeness of our implementation, not the correctness of an upstream executable or its undocumented behavior. Compatibility gates and provider fixtures remain necessary.
 

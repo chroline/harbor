@@ -29,7 +29,7 @@ Plan approvals use a saved review card and a full plan sheet. Implement plan and
 
 ## provider artwork
 
-The Claude Code, OpenAI Codex, and Grok Build icons are bundled SVG brand marks from the [ACP registry](https://github.com/agentclientprotocol/registry). Exact source URLs, pinned registry revision, and checksums are recorded in [artwork provenance](../src/assets/providers/sources.json).
+The Claude Code, OpenAI Codex, Grok Build, and OpenCode icons are bundled SVG brand marks from the [ACP registry](https://github.com/agentclientprotocol/registry). Exact source URLs, pinned registry revision, and checksums are recorded in [artwork provenance](../src/assets/providers/sources.json).
 
 ## component integration
 

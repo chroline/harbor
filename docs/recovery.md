@@ -10,7 +10,7 @@
 - before Worktrunk removal, Harbor bundles Git history, copies the index, and saves all working files, including untracked and ignored files. a full extraction and SHA-256 manifest comparison must succeed, and files/index/HEAD must still match immediately before removal. no commit is added to the working branch.
 - restore from worktrees → archives. restored files and staged state are placed in a new `harbor/restore-*` branch; the saved conversation can then reconnect. failed cleanup retains the worktree and exposes a retryable state. nested repositories and special files are refused rather than incompletely archived.
 - transcripts are stored completely as ordered events. the UI retains a bounded recent window (200 messages, 100 tools, 256 workers) and offers a complete JSONL export when that window is exceeded. terminal replay is capped at 2 mebibytes, with 10,000 rendered scrollback lines.
-- Claude Code, OpenAI Codex, and Grok Build reopen saved ACP identities through advertised load/resume support. A mismatched identity is refused and saved history remains intact. Native terminal handoff is limited to the exact verified combinations in the [compatibility matrix](providers.md).
+- Claude Code, OpenAI Codex, Grok Build, and OpenCode reopen saved ACP identities through advertised load/resume support. A mismatched identity is refused and saved history remains intact. Native terminal handoff is limited to the exact verified combinations in the [compatibility matrix](providers.md).
 
 ## worktree constraints
 

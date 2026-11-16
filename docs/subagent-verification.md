@@ -10,6 +10,7 @@ Existing local authentication was used in isolated repositories under `/tmp/harb
 | --- | --- | --- | --- | --- |
 | OpenAI Codex | codex-acp 2.3.0 | Model and reasoning switch/restore passed without prompts | Passed | Parent relay passed; the original child rollout independently contained both markers |
 | Claude Code | claude-agent-acp 0.97.0 | Model and effort switch/restore passed without prompts | Passed | Parent relay passed; `session_message` addressed the original child, whose own reply retained both markers |
+| OpenCode | v2.3.0 (November 16, 2026) | Model switch/restore passed without prompts; no separate effort selector advertised for the default model | Passed | Direct child `session/load` and follow-up passed with retained context |
 | Grok Build | 1.0.30, build 04b7ffed98c6 | Model switch/restore passed without prompts; no separate effort selector advertised | Passed | Direct child `session/load` and follow-up passed with retained context |
 
 Each worker received an original random marker. Its follow-up supplied a fresh nonce but omitted the original marker. Passing required the same child's answer to include both. The Claude verifier was updated to use its observed typed communication receipts instead of requiring native control-tool telemetry that the current adapter suppresses.
@@ -69,7 +70,7 @@ To repeat Plan acceptance, set `HARBOR_SMOKE_PROVIDER`, `HARBOR_SMOKE_COMMAND`, 
 
 ## Repeating live checks
 
-Set `HARBOR_SMOKE_PROVIDER` to one of `claude`, `codex`, or `grok`, `HARBOR_SMOKE_COMMAND` to its ACP executable, `HARBOR_SMOKE_ARGS` to a JSON argument array, and `HARBOR_SMOKE_WORKDIR` to an isolated repository. Run the ignored `live_tests::live_provider_smoke` test with:
+Set `HARBOR_SMOKE_PROVIDER` to one of `claude`, `codex`, `grok`, or `opencode`, `HARBOR_SMOKE_COMMAND` to its ACP executable, `HARBOR_SMOKE_ARGS` to a JSON argument array, and `HARBOR_SMOKE_WORKDIR` to an isolated repository. Run the ignored `live_tests::live_provider_smoke` test with:
 
 - `HARBOR_SMOKE_CONNECT_ONLY=1 HARBOR_SMOKE_CONFIG_ROUNDTRIP=1` for no-prompt configuration discovery/change/restore.
 - `HARBOR_SMOKE_WORKER_ROUNDTRIP=1` for real worker continuation and original-context recall.
