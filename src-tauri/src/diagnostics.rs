@@ -94,7 +94,7 @@ pub async fn installation(provider: &ProviderDefinition) -> ProviderProbe {
         path: path.map(|p| p.to_string_lossy().into_owned()),
         native_path: native_path.map(|p| p.to_string_lossy().into_owned()),
         version,
-        worktrunk: resolve_executable("wt").is_some(),
+        worktrunk: crate::worktrees::executable().is_some(),
         agent_info: Value::Null,
         auth_methods: json!([]),
     }

@@ -4,6 +4,7 @@
   "version": "0.1.1",
   "type": "module",
   "scripts": {
+    "prepare:worktrunk": "node scripts/prepare-worktrunk.mjs",
     "dev": "vite --host 127.0.0.1",
     "build": "tsc -b && vite build",
     "build:dev": "tsc -b && vite build --mode development --outDir dist-dev",
@@ -13,6 +14,7 @@
     "desktop:build": "tauri build",
     "desktop:build:dev": "tauri build --debug --config src-tauri/tauri.dev.conf.json",
     "desktop:verify-signing": "node scripts/verify-macos-signing.mjs",
+    "desktop:verify-worktrunk": "node scripts/verify-bundled-worktrunk.mjs",
     "test": "vitest run"
   },
   "dependencies": {

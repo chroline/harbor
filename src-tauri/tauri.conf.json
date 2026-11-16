@@ -4,9 +4,9 @@
   "version": "0.1.1",
   "identifier": "dev.harbor.desktop",
   "build": {
-    "beforeDevCommand": "npm run dev",
+    "beforeDevCommand": "npm run prepare:worktrunk && npm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "npm run prepare:worktrunk && npm run build",
     "beforeBundleCommand": "node scripts/ensure-macos-signing.mjs",
     "frontendDist": "../dist"
   },
@@ -37,6 +37,8 @@
   },
   "bundle": {
     "active": true,
+    "externalBin": ["binaries/harbor-wt"],
+    "resources": ["licenses/WORKTRUNK-LICENSE"],
     "targets": [
       "app"
     ],

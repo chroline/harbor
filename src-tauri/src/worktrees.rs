@@ -1,13 +1,43 @@
 use crate::types::*;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::{fs, io::Read, path::Path, process::Command};
+use std::{fs, io::Read, path::{Path, PathBuf}, process::Command};
 use walkdir::WalkDir;
+
+fn bundled_executable(app_executable: &Path) -> Option<PathBuf> {
+    let directory = app_executable.parent()?;
+    let bundled = directory.join("harbor-wt");
+    crate::acp::resolve_executable(bundled.to_str()?)
+}
+
+pub fn executable() -> Option<PathBuf> {
+    let app = std::env::current_exe().ok()?;
+    if let Some(bundled) = bundled_executable(&app) {
+        return Some(bundled);
+    }
+    // Cargo's test executables live in target/{profile}/deps, while Tauri
+    // copies the helper into target/{profile} next to the application.
+    #[cfg(test)]
+    if let Some(bundled) = app.parent().and_then(Path::parent)
+        .and_then(|directory| bundled_executable(&directory.join("harbor"))) {
+        return Some(bundled);
+    }
+    // A packaged app must use its pinned helper, independent of the user's PATH.
+    #[cfg(debug_assertions)]
+    return crate::acp::resolve_executable("wt");
+    #[cfg(not(debug_assertions))]
+    None
+}
+
 fn err(e: impl std::fmt::Display) -> String {
     e.to_string()
 }
 pub fn run(cwd: &Path, program: &str, args: &[&str]) -> Result<String, String> {
-    let mut command = Command::new(program);
+    let mut command = if program == "wt" {
+        Command::new(executable().ok_or("Bundled Worktrunk is missing or not executable. Reinstall Harbor.")?)
+    } else {
+        Command::new(program)
+    };
     #[cfg(test)]
     if program == "wt" {
         command.arg("--config-set").arg(format!(
@@ -424,6 +454,29 @@ pub fn review(cwd: &str) -> Result<Value, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
+    #[test]
+    fn bundled_worktrunk_is_resolved_beside_the_app_without_path_lookup() {
+        use std::os::unix::fs::PermissionsExt;
+        let temp = tempfile::tempdir().unwrap();
+        let directory = temp.path().join("Harbor.app/Contents/MacOS");
+        fs::create_dir_all(&directory).unwrap();
+        let app = directory.join("harbor");
+        assert!(bundled_executable(&app).is_none());
+        let helper = directory.join("harbor-wt");
+        fs::write(&helper, "#!/bin/sh\nexit 0\n").unwrap();
+        fs::set_permissions(&helper, fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(bundled_executable(&app).is_none());
+        fs::set_permissions(&helper, fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(bundled_executable(&app), Some(helper));
+    }
+
+    #[test]
+    fn bundled_worktrunk_runs_the_pinned_version() {
+        let output = run(Path::new(env!("CARGO_MANIFEST_DIR")), "wt", &["--version"]).unwrap();
+        assert_eq!(output, "wt v0.81.0");
+    }
+
     #[test]
     fn uncommitted_changes_include_staged_unstaged_and_untracked_but_not_ignored() {
         let temp = tempfile::tempdir().unwrap();
@@ -484,7 +537,7 @@ mod tests {
     }
     #[test]
     fn archive_round_trip() {
-        if crate::acp::resolve_executable("wt").is_none() {
+        if executable().is_none() {
             return;
         }
         let temp = tempfile::tempdir().unwrap();

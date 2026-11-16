@@ -3,6 +3,7 @@ dist/
 dist-dev/
 src-tauri/target/
 src-tauri/gen/
+src-tauri/binaries/
 *.tsbuildinfo
 .DS_Store
 

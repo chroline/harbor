@@ -43,6 +43,11 @@ jobs:
             [[ -n "${!name}" ]] || { echo "Missing $name secret"; exit 1; }
           done
           [[ "$APPLE_SIGNING_IDENTITY" == 'Developer ID Application:'* ]] || { echo 'A Developer ID Application identity is required'; exit 1; }
+      - run: npm ci
+      - name: Prepare bundled Worktrunk for tests
+        run: npm run prepare:worktrunk
+      - name: Test bundled Worktrunk and archive recovery
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib worktrees::tests
       - name: Import signing certificate
         shell: bash
         run: |
@@ -57,10 +62,9 @@ jobs:
           security import "$certificate" -k "$keychain" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$keychain"
           rm "$certificate"
-      - run: npm ci
       - name: Build and notarize DMG
         run: npm run tauri -- build --target aarch64-apple-darwin --bundles dmg
-      - name: Verify signed and notarized app
+      - name: Verify notarized app and bundled Worktrunk from DMG
         shell: bash
         run: |
           set -euo pipefail
@@ -73,6 +77,7 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "$app"
           xcrun stapler validate "$app"
           spctl --assess --type execute --verbose=2 "$app"
+          node scripts/verify-bundled-worktrunk.mjs "$app"
       - name: Create draft release
         shell: bash
         run: |

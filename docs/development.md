@@ -13,6 +13,14 @@ npm run desktop
 
 `npm run dev` opens the browser preview at `http://127.0.0.1:1420`. the normal browser preview contains real empty states and cannot start local processes. `npm run desktop:build` creates `src-tauri/target/release/bundle/macos/Harbor.app`.
 
+### bundled Worktrunk
+
+Tauri's development and build hooks run `npm run prepare:worktrunk` automatically. the script downloads Worktrunk **0.81.0** from its upstream release, verifies the pinned SHA-256 archive digest, and stages the target-specific `harbor-wt` helper under the ignored `src-tauri/binaries/` directory. the first build needs internet access; subsequent builds verify and reuse the cached archive. Apple silicon and Intel macOS targets are supported by the preparation script; published DMGs target Apple silicon.
+
+Tauri includes and signs the helper beside Harbor in `Contents/MacOS` and includes its upstream license in `Contents/Resources/licenses/WORKTRUNK-LICENSE`. Harbor resolves this helper by absolute path for worktree operations and diagnostics. packaged release builds require the bundled helper; debug builds can fall back to `wt` on PATH. no global tools or shell integration are installed.
+
+Before running Cargo directly on a fresh checkout, run `npm run prepare:worktrunk` (append `-- x86_64-apple-darwin` for that target when cross-compiling). to update the pin, change the version and archive digests in `scripts/prepare-worktrunk.mjs`, refresh `src-tauri/licenses/WORKTRUNK-LICENSE`, update the expected version in the Rust test and verification script, and rerun the worktree tests. verify a packaged app with `npm run desktop:verify-worktrunk`; it checks the helper's signature and creates, lists, and removes worktrees with only `/usr/bin:/bin` on PATH. the release workflow runs this check against the mounted DMG before drafting a release.
+
 ### folder access across rebuilds
 
 local packaged builds automatically reuse the **Harbor Local Development** signing certificate in your user keychain, creating it once if needed. the bundle keeps the identifier `dev.harbor.desktop`. this gives macOS a stable app identity so existing folder approvals survive rebuilds. the former ad-hoc signature identified each executable by its changing code hash; see [Apple's explanation of designated requirements](https://developer.apple.com/documentation/technotes/tn3127-inside-code-signing-requirements). published releases use a separate Developer ID signing identity.
@@ -50,6 +58,7 @@ for optional direct annotation sync, [configure Agentation MCP](https://www.agen
 ## validation
 
 ```sh
+npm run prepare:worktrunk
 cargo test --manifest-path src-tauri/Cargo.toml --lib
 npm test
 npm run build
