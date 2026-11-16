@@ -68,9 +68,14 @@ export function elicitationQuestions(params: Record<string, unknown>) {
       /^question_\d+_custom$/.test(entry.id) &&
       entry.field.title === "Other" &&
       params.toolCallId;
+    // OpenCode's question tool pairs q<N> with a free-text q<N>_custom field.
+    const opencode = /^q\d+_custom$/.test(entry.id) && params.toolCallId;
     const parent = str(
       marker.questionId,
-      str(codex.questionId, legacy ? entry.id.replace(/_custom$/, "") : ""),
+      str(
+        codex.questionId,
+        legacy || opencode ? entry.id.replace(/_custom$/, "") : "",
+      ),
     );
     if (
       entry.field.type === "string" &&
@@ -79,7 +84,8 @@ export function elicitationQuestions(params: Record<string, unknown>) {
       (meta._askUserQuestionCustomAnswer ||
         codex.isOtherAnswer ||
         codex.role === "user_note" ||
-        legacy)
+        legacy ||
+        opencode)
     )
       companions.set(parent, entry);
   }
@@ -99,7 +105,7 @@ export function elicitationQuestions(params: Record<string, unknown>) {
     const bridge =
       companion ||
       record(field._meta).codex ||
-      (params.toolCallId && /^question_\d+$/.test(id));
+      (params.toolCallId && /^(question_|q)\d+$/.test(id));
     let title = str(field.title, str(field.description, id));
     let description = str(field.description);
     if (bridge) {
@@ -111,6 +117,7 @@ export function elicitationQuestions(params: Record<string, unknown>) {
           "Input requested",
           "Codex needs your input to continue.",
           "Please answer the following questions.",
+          "Questions",
         ].includes(message)
       )
         title = message;

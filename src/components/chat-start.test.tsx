@@ -316,7 +316,7 @@ it("stops showing connection progress when the worker connects before the open r
   await act(async () => finishOpening());
 });
 
-it.each(["codex", "claude", "grok"])(
+it.each(["codex", "claude", "grok", "opencode"])(
   "messages an attached %s worker without reopening it or sending to its parent",
   async (providerId) => {
     const tabsTarget = document.createElement("div");

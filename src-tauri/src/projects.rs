@@ -245,7 +245,8 @@ pub fn move_context(
 /// Mirrors Node module resolution for the package paths used by the verified adapters.
 async fn runtime_version(provider: &ProviderDefinition) -> Option<String> {
     let id = require_provider(&provider.id).ok()?;
-    if id == SupportedProviderId::Grok {
+    // These CLIs serve ACP from the same binary as the native runtime.
+    if matches!(id, SupportedProviderId::Grok | SupportedProviderId::OpenCode) {
         return adapters::version(&provider.command, &["--version"]).await;
     }
     let override_key = if id == SupportedProviderId::Codex {

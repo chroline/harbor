@@ -32,5 +32,16 @@ export const supportedProviders = [
     "nativeCommand": "grok",
     "installHint": "Install Grok Build: curl -fsSL https://x.ai/cli/install.sh | bash; then run grok login",
     "color": "sand"
+  },
+  {
+    "id": "opencode",
+    "name": "OpenCode",
+    "command": "opencode",
+    "args": [
+      "acp"
+    ],
+    "nativeCommand": "opencode",
+    "installHint": "Install OpenCode: curl -fsSL https://opencode.ai/install | bash; then run opencode auth login",
+    "color": "mint"
   }
 ] satisfies (ProviderDefinition & { id: SupportedProviderId })[];

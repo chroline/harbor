@@ -15,8 +15,10 @@ it("implements every generated adapter with correlated IDs, icons and explicit c
     );
     if (adapter.descriptor.nativePlanExtension.status !== "implemented")
       expect(adapter.descriptor.nativePlanExtension.reason).toBeTruthy();
-    expect(adapter.descriptor.planApproval.status).toBe("implemented");
-    expect(adapter.readPlan(planRequests[id])?.text).toBe(reviewText);
+    const approval = adapter.descriptor.planApproval;
+    if (approval.status === "implemented")
+      expect(adapter.readPlan(planRequests[id])?.text).toBe(reviewText);
+    else expect(approval.reason).toBeTruthy();
     expect(
       adapter.controlLabel({
         id: "model",
@@ -44,8 +46,10 @@ it("does not accept another adapter's plan contract or malformed wire data", () 
     for (const [other, request] of Object.entries(planRequests))
       if (other !== id) expect(adapter.readPlan(request)).toBeUndefined();
     const contract = adapter.descriptor.planApproval;
-    if (contract.status !== "implemented")
-      throw new Error("Fixture requires plan approvals");
+    if (contract.status !== "implemented") {
+      expect(planRequests[id]).toBeUndefined();
+      continue;
+    }
     for (const input of [
       null,
       [],

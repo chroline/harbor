@@ -687,7 +687,7 @@ mod provider_migration_tests {
         let db = Database::open(&path).unwrap();
         let work = dir.path().join("working-file.txt");
         std::fs::write(&work,"keep working files").unwrap();
-        for provider in ["codex","claude","grok","cursor","pi","prime","opencode","custom-test","missing-provider"] {
+        for provider in ["codex","claude","grok","cursor","pi","prime","gemini","custom-test","missing-provider"] {
             let chat = format!("chat-{provider}");
             db.put("session",&chat,&json!({"id":chat,"providerId":provider,"archived":true,"cwd":dir.path(),"draft":"saved"})).unwrap();
             db.put("subagent",&format!("{chat}:child"),&json!({"parentId":"native"})).unwrap();

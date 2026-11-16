@@ -266,7 +266,7 @@ async fn live_provider_smoke() {
                     println!(
                         "Standalone worker attachment failed: {error}"
                     );
-                    panic!("Grok must attach the existing worker: {error}");
+                    panic!("{provider_id} must attach the existing worker: {error}");
                 }
             }
         };

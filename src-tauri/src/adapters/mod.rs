@@ -25,6 +25,7 @@ register_adapters! {
     Codex => ("codex",codex,"codex/mod.rs",Codex),
     Claude => ("claude",claude_code,"claude-code/mod.rs",ClaudeCode),
     Grok => ("grok",grok_build,"grok-build/mod.rs",GrokBuild),
+    OpenCode => ("opencode",opencode,"opencode/mod.rs",OpenCode),
 }
 pub fn require_provider(id: &str) -> Result<SupportedProviderId, String> {
     serde_json::from_value(Value::String(id.into()))

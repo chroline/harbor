@@ -23,8 +23,8 @@ fn fixture(id: &str, scenario: &str) -> ProviderDefinition {
     provider
 }
 #[tokio::test]
-async fn all_three_diagnose_auth_protocol_and_success_without_prompts() {
-    for id in ["codex", "claude", "grok"] {
+async fn every_provider_diagnoses_auth_protocol_and_success_without_prompts() {
+    for id in ["codex", "claude", "grok", "opencode"] {
         for (scenario, expected) in [
             ("normal", ProbeStatus::Ready),
             ("auth", ProbeStatus::AuthenticationRequired),
@@ -61,8 +61,8 @@ async fn all_three_diagnose_auth_protocol_and_success_without_prompts() {
     );
 }
 #[tokio::test]
-async fn all_three_roundtrip_configuration_questions_permissions_and_history() {
-    for id in ["codex", "claude", "grok"] {
+async fn every_provider_roundtrips_configuration_questions_permissions_and_history() {
+    for id in ["codex", "claude", "grok", "opencode"] {
         let dir = tempfile::tempdir().unwrap();
         let cwd = dir.path().to_str().unwrap();
         let events = Arc::new(Mutex::new(Vec::<(String, Value)>::new()));
@@ -96,7 +96,7 @@ async fn all_three_roundtrip_configuration_questions_permissions_and_history() {
             &rpc,
             sid,
             &mut config,
-            &if id == "grok" {
+            &if matches!(id, "grok" | "opencode") {
                 json!({"model":"deep"})
             } else {
                 json!({"model":"deep","fast-mode":true})
@@ -106,7 +106,7 @@ async fn all_three_roundtrip_configuration_questions_permissions_and_history() {
         .await
         .unwrap();
         assert_eq!(model_config::selections(&config)["model"], "deep");
-        if id != "grok" {
+        if !matches!(id, "grok" | "opencode") {
             assert_eq!(model_config::selections(&config)["fast-mode"], true);
             assert_eq!(model_config::selections(&config)["effort"], "high");
         }
@@ -117,7 +117,7 @@ async fn all_three_roundtrip_configuration_questions_permissions_and_history() {
             ),
             (
                 "question",
-                if id == "grok" { json!({"action":"accept","content":{"question_0":"backend"}}) } else { json!({"action":"accept","content":{"scope":"backend"}}) },
+                if id == "grok" { json!({"action":"accept","content":{"question_0":"backend"}}) } else if id == "opencode" { json!({"action":"accept","content":{"q0":"backend"}}) } else { json!({"action":"accept","content":{"scope":"backend"}}) },
             ),
         ] {
             let prompt = rpc.request(
@@ -196,7 +196,7 @@ async fn all_three_roundtrip_configuration_questions_permissions_and_history() {
         assert!(captured.iter().any(|(_, p)| p["update"]["content"]["text"]
             .as_str()
             .is_some_and(|text| text.contains("marker-713"))));
-        if id == "grok" {
+        if matches!(id, "grok" | "opencode") {
             assert!(captured
                 .iter()
                 .any(|(kind, p)| !adapters::resolve(id).unwrap().worker_announcements(kind, p).is_empty()));
@@ -206,11 +206,18 @@ async fn all_three_roundtrip_configuration_questions_permissions_and_history() {
                 .any(|(_, p)| p["update"]["sessionUpdate"] == "subagent_update"
                     && p["update"]["sessionId"] == format!("{id}-child")));
         }
+        if id == "opencode" {
+            // Forwarded child frames are filed under the child, never the parent.
+            assert!(captured.iter().any(|(_, p)| p["sessionId"] == "opencode-child"
+                && p["update"]["content"]["text"] == "worker-original-context"));
+            assert!(!captured.iter().any(|(_, p)| p["sessionId"] == sid
+                && p["update"]["content"]["text"] == "worker-original-context"));
+        }
     }
 }
 #[tokio::test]
-async fn all_three_cancel_pending_forms_and_reject_crashed_turns() {
-    for id in ["codex", "claude", "grok"] {
+async fn every_provider_cancels_pending_forms_and_rejects_crashed_turns() {
+    for id in ["codex", "claude", "grok", "opencode"] {
         let dir = tempfile::tempdir().unwrap();
         let cwd = dir.path().to_str().unwrap();
         let rpc = Rpc::start(&fixture(id, "normal"), cwd, Arc::new(|_, _| {}))

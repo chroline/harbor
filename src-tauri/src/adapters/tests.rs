@@ -113,14 +113,27 @@ mod tests {
             native_resume_args("codex", "same").unwrap(),
             ["resume", "same"]
         );
+        assert_eq!(
+            native_resume_args("opencode", "same").unwrap(),
+            ["--session", "same"]
+        );
         assert!(native_resume_args("custom", "same").is_err());
+        let opencode = crate::types::providers()
+            .into_iter()
+            .find(|p| p.id == "opencode")
+            .unwrap();
+        assert_eq!(opencode.command, "opencode");
+        assert_eq!(opencode.args, ["acp"]);
+        // Unverified until a live terminal round trip passes, even for one binary.
+        let version = "opencode v2.3.0";
+        assert!(!verified_versions(&opencode, &json!({}), version, version, true));
     }
     #[test]
     fn grok_keeps_native_image_reads_instead_of_delegating_to_a_text_reader() {
         let caps = client_capabilities("grok");
         assert_eq!(caps["fs"]["readTextFile"], false);
         assert_eq!(caps["fs"]["writeTextFile"], true);
-        for provider in ["claude", "codex"] {
+        for provider in ["claude", "codex", "opencode"] {
             assert_eq!(client_capabilities(provider)["fs"]["readTextFile"], true);
         }
     }

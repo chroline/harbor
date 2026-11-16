@@ -92,5 +92,33 @@ export const adapterDescriptors = {
     "workers": {
       "kind": "direct_attachment"
     }
+  },
+  "opencode": {
+    "args": [
+      "acp"
+    ],
+    "color": "mint",
+    "command": "opencode",
+    "controlLabels": [],
+    "id": "opencode",
+    "installHint": "Install OpenCode: curl -fsSL https://opencode.ai/install | bash; then run opencode auth login",
+    "name": "OpenCode",
+    "nativeCommand": "opencode",
+    "nativeHandoff": {
+      "reason": "Only exact provider/version round trips in this adapter may enable handoff",
+      "status": "unverified"
+    },
+    "nativePlanExtension": {
+      "reason": "Uses advertised ACP config options for Build and Plan; no native plan extension required",
+      "status": "unsupported"
+    },
+    "planApproval": {
+      "reason": "OpenCode leaves Plan by switching the advertised Session Mode to Build; it sends no plan approval request",
+      "status": "unsupported"
+    },
+    "transport": "acp_v1",
+    "workers": {
+      "kind": "direct_attachment"
+    }
   }
 } satisfies { [Id in SupportedProviderId]: AdapterDescriptor & { id: Id } };

@@ -88,4 +88,32 @@ export const questionRequests: Record<string, Interaction> = {
       },
     },
   },
+  // Captured from OpenCode 2.3.0's question tool over ACP.
+  opencode: {
+    id: 0,
+    method: "elicitation/create",
+    params: {
+      mode: "form",
+      sessionId: "wire-root",
+      toolCallId: "question-tool",
+      message: "Questions",
+      requestedSchema: {
+        type: "object",
+        properties: {
+          q0: {
+            type: "string",
+            title: "Color",
+            description: "What's your favorite color?",
+            oneOf: options,
+          },
+          q0_custom: {
+            type: "string",
+            title: "Color (other)",
+            description: "Type your own answer",
+          },
+        },
+        required: [],
+      },
+    },
+  },
 };

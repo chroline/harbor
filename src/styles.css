@@ -974,7 +974,8 @@ a {
   color: #d97757;
 }
 .provider-icon.codex,
-.provider-icon.grok {
+.provider-icon.grok,
+.provider-icon.opencode {
   color: var(--foreground);
 }
 .home-footer {

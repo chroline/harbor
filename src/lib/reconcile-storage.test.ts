@@ -25,7 +25,7 @@ it("removes deleted chat references and preserves working UI preferences", () =>
   expect(localStorage.getItem("harbor.sidebar")).toBe("preserve");
 });
 it("has three providers and rejects stale/custom IDs at command boundaries", () => {
-  expect(supportedProviders.map((p) => p.id)).toEqual(["codex","claude","grok"]);
+  expect(supportedProviders.map((p) => p.id)).toEqual(["codex","claude","grok","opencode"]);
   expect(defaultProvider("claude")).toBe("claude");
   expect(defaultProvider("prime")).toBe("codex");
   expect(() => supportedProviderId("custom")).toThrow("Unsupported provider");

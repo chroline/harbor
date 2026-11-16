@@ -3,10 +3,12 @@ import type { AdapterRegistry, PlanReview } from "./contract";
 import { claudeCode } from "./claude-code";
 import { codex } from "./codex";
 import { grokBuild } from "./grok-build";
+import { opencode } from "./opencode";
 export const adapters = {
   claude: claudeCode,
   codex,
   grok: grokBuild,
+  opencode,
 } satisfies AdapterRegistry;
 export const DEFAULT_ADAPTER_ID = "codex" satisfies SupportedProviderId;
 export function isAdapterId(id: string): id is SupportedProviderId {

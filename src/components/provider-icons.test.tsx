@@ -6,7 +6,7 @@ import { providerGlyph } from "./shared";
 afterEach(cleanup);
 
 describe("provider logos in icon slots", () => {
-  it.each(["codex", "claude", "grok"])(
+  it.each(["codex", "claude", "grok", "opencode"])(
     "keeps %s visible when the sidebar passes a rem size",
     (id) => {
       const Icon = providerGlyph(id);

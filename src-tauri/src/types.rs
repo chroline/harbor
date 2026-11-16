@@ -536,7 +536,7 @@ mod provider_registry_tests {
         let providers = providers();
         assert_eq!(providers.len(), crate::adapters::IDS.len());
         for provider in &providers { require_provider(&provider.id).unwrap(); }
-        for id in ["", "custom", "cursor", "pi", "prime", "opencode"] {
+        for id in ["", "custom", "cursor", "pi", "prime", "OpenCode", "open-code"] {
             assert!(require_provider(id).is_err());
         }
         let source = format!("// Generated from Rust adapters::providers(); do not edit.\nimport type {{ ProviderDefinition }} from './ProviderDefinition';\nimport type {{ SupportedProviderId }} from './SupportedProviderId';\nexport const supportedProviders = {} satisfies (ProviderDefinition & {{ id: SupportedProviderId }})[];\n", serde_json::to_string_pretty(&providers).unwrap());

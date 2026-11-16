@@ -17,6 +17,12 @@
       "retrieved": "2026-10-14",
       "sha256": "b8fe2866adbbfb6352af9a3138916e79c90086566cede68e724c3e19e663b51e",
       "changes": "None. Displayed as an alpha mask at the requested icon size."
+    },
+    "opencode": {
+      "url": "https://raw.githubusercontent.com/agentclientprotocol/registry/131167efe22f95a69efe4ace7b0092c9eb905ff8/opencode/icon.svg",
+      "retrieved": "2026-11-16",
+      "sha256": "b60bce4476ce81c772f78313e497b98f9489a67580fd89f39354b527241edbc6",
+      "changes": "None. Displayed as an alpha mask at the requested icon size."
     }
   }
 }

@@ -123,7 +123,7 @@ it("validates typed fields while preserving numeric defaults and secrets", () =>
     content: { count: 2, secret: "abcd" },
   });
 });
-it.each(["codex", "claude", "grok"])(
+it.each(["codex", "claude", "grok", "opencode"])(
   "renders %s questions with visible choices and inline custom input",
   (provider) => {
     const onAnswer = vi.fn();
@@ -148,8 +148,10 @@ it.each(["codex", "claude", "grok"])(
       target: { value: "Navy, specifically" },
     });
     fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
-    const field = provider === "codex" ? "color" : "question_0";
-    const custom = provider === "codex" ? "color_note" : "question_0_custom";
+    const field = { codex: "color", opencode: "q0" }[provider] ?? "question_0";
+    const custom =
+      { codex: "color_note", opencode: "q0_custom" }[provider] ??
+      "question_0_custom";
     expect(onAnswer).toHaveBeenCalledWith({
       action: "accept",
       content: { [field]: "Blue", [custom]: "Navy, specifically" },

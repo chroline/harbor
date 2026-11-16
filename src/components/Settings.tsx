@@ -89,7 +89,7 @@ export function Settings() {
 
         </div>
         <p className="section-description">
-          Connect Claude Code, OpenAI Codex, and Grok Build. Your existing logins stay with
+          Connect Claude Code, OpenAI Codex, Grok Build, and OpenCode. Your existing logins stay with
           each provider.
         </p>
         <Picker

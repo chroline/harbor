@@ -10,14 +10,19 @@ export function run(provider) {
   const sessions = new Map();
   let sequence = 0;
   let trace;
-  const modeChoices = provider === 'grok' ? ['default', 'plan'] : provider === 'claude' ? ['default', 'acceptEdits', 'plan'] : ['read-only', 'workspace-write', 'agent'];
-  const modes = (currentModeId = provider === 'claude' ? 'default' : 'agent') => provider === 'grok' ? {} : {modes:{currentModeId, availableModes:modeChoices.map(id=>({id,name:id}))}};
+  // OpenCode advertises Build/Plan only as a `mode` config option, never as ACP modes.
+  const opencode = provider === 'opencode';
+  const modeChoices = provider === 'grok' ? ['default', 'plan'] : provider === 'claude' ? ['default', 'acceptEdits', 'plan'] : opencode ? ['build', 'plan'] : ['read-only', 'workspace-write', 'agent'];
+  const defaultMode = provider === 'claude' ? 'default' : opencode ? 'build' : 'agent';
+  const modes = (currentModeId = defaultMode) => provider === 'grok' || opencode ? {} : {modes:{currentModeId, availableModes:modeChoices.map(id=>({id,name:id}))}};
   const options = (model = 'fast') => [
     { id: 'model', name: 'Model', category: 'model', type: 'select', currentValue: model, options: [{ value:'fast',name:'Fast' },{value:'deep',name:'Deep'}] },
-    ...(provider === 'grok' ? [] : [{ id:'effort',name:'Reasoning',category:'thought_level',type:'select',currentValue:model === 'fast' ? 'low' : 'high',options:(model === 'fast' ? ['low'] : ['high','max']).map(value => ({value,name:value})) }]),
-    ...(provider === 'grok' ? [] : [
+    ...(provider === 'grok' || opencode ? [] : [{ id:'effort',name:'Reasoning',category:'thought_level',type:'select',currentValue:model === 'fast' ? 'low' : 'high',options:(model === 'fast' ? ['low'] : ['high','max']).map(value => ({value,name:value})) }]),
+    ...(provider === 'grok' || opencode ? [] : [
       { id:'fast-mode',name:'Fast mode',category:'model_config',type:'boolean',currentValue:false },
-      { id:'mode',name:'Mode',category:'mode',type:'select',currentValue:provider === 'claude' ? 'default' : 'agent',options:modeChoices.map(value=>({value,name:value})) },
+    ]),
+    ...(provider === 'grok' ? [] : [
+      { id:'mode',name:opencode ? 'Session Mode' : 'Mode',category:'mode',type:'select',currentValue:defaultMode,options:modeChoices.map(value=>({value,name:value})) },
     ]),
     ...(provider === 'codex' ? [{id:'collaboration_mode',name:'Collaboration mode',category:'collaboration_mode',type:'select',currentValue:'default',options:['default','plan'].map(value=>({value,name:value}))}] : []),
   ];
@@ -57,7 +62,7 @@ export function run(provider) {
           if (scenario === 'reject-mode' && p.configId === 'collaboration_mode') { fail('Mode unavailable'); break; }
           if (scenario === 'delay-mode') await new Promise(resolve=>setTimeout(resolve,80));
           if (scenario === 'unconfirmed-mode' && p.configId === 'collaboration_mode') { ok({configOptions:session.config}); break; }
-          if (p.configId === 'mode') { fail('Use session/set_mode'); break; }
+          if (p.configId === 'mode' && !opencode) { fail('Use session/set_mode'); break; }
           if (p.configId === 'model') {
             const old=session.config;
             session.config=options(p.value).map(o=>['mode','collaboration_mode'].includes(o.id) ? old.find(v=>v.id===o.id) ?? o : o);
@@ -103,6 +108,8 @@ export function run(provider) {
           if (text==='question') {
             const result=provider==='grok'
               ? await request('_x.ai/ask_user_question',{sessionId:p.sessionId,toolCallId:'question-tool',mode:'default',questions:[{question:'Choose scope',multiSelect:null,options:[{label:'backend',description:'Backend'}]}]})
+              : opencode
+              ? await request('elicitation/create',{mode:'form',sessionId:p.sessionId,toolCallId:'question-tool',message:'Questions',requestedSchema:{type:'object',required:[],properties:{q0:{type:'string',title:'Scope',description:'Choose scope',oneOf:[{const:'backend',title:'backend',description:'Backend'}]},q0_custom:{type:'string',title:'Scope (other)',description:'Type your own answer'}}}})
               : await request('elicitation/create',{mode:'form',sessionId:p.sessionId,message:'Choose scope',requestedSchema:{type:'object',required:['scope'],properties:{scope:{type:'string',oneOf:[{const:'backend',title:'Backend'}]}}}});
             if (provider==='grok' && result.outcome!=='cancelled' && (result.outcome!=='accepted' || result.answers?.['Choose scope']?.[0]!=='backend')) { fail('Invalid native question response'); break; }
             update(p.sessionId,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:JSON.stringify(result)}});
@@ -112,9 +119,17 @@ export function run(provider) {
             await writeFile(join(session.cwd,`${child}.json`),JSON.stringify(['worker-original-context']));
             if (provider==='codex') update(p.sessionId,{sessionUpdate:'subagent_spawned',subagentSessionId:child,name:'Scout',task:'Inspect'});
             else if (provider==='claude') update(p.sessionId,{sessionUpdate:'subagent_update',sessionId:child,title:'Scout',state:{type:'working'}});
-            update(child,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'worker-original-context'}});
+            if (opencode) {
+              // OpenCode forwards child activity on the parent stream, tagged with the child session.
+              const meta={'opencode/child-session':{id:child,parentID:p.sessionId,depth:1,title:'Scout'}};
+              update(p.sessionId,{sessionUpdate:'tool_call_update',toolCallId:'spawn',status:'completed',rawInput:{agent:'explore',description:'Scout'},rawOutput:{metadata:{sessionID:child,status:'running'}}});
+              update(p.sessionId,{sessionUpdate:'tool_call',toolCallId:`${child}:read`,title:'Scout: read',kind:'read',status:'pending',_meta:meta});
+              update(p.sessionId,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'worker-original-context'},_meta:meta});
+            }
+            else update(child,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'worker-original-context'}});
             if (provider==='grok') update(p.sessionId,{sessionUpdate:'tool_call_update',toolCallId:'spawn',rawOutput:{type:'SubagentCompleted',subagent_id:child,resume_from_hint:child}});
             else if (provider==='codex') update(p.sessionId,{sessionUpdate:'subagent_state_update',subagentSessionId:child,state:'idle'});
+            else if (opencode) update(p.sessionId,{sessionUpdate:'tool_call_update',toolCallId:'spawn',status:'completed',rawOutput:{metadata:{sessionID:child,status:'completed'}}});
             else update(p.sessionId,{sessionUpdate:'subagent_update',sessionId:child,state:{type:'idle'}});
           }
           const history=JSON.parse(await readFile(join(session.cwd,`${p.sessionId}.json`),'utf8'));

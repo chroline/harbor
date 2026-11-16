@@ -260,7 +260,7 @@ it("offers exactly the supported providers without custom-agent creation", async
   render(<Settings />);
   expect(screen.queryByRole("button", { name: "Custom agent" })).toBeNull();
   await user.click(screen.getByRole("combobox", { name: "Agent connection" }));
-  expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual(["OpenAI Codex", "Claude Code", "Grok Build"]);
+  expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual(["OpenAI Codex", "Claude Code", "Grok Build", "OpenCode"]);
 });
 
 it("keeps the provider draft and shows save failure in the form, then permits retry", async () => {
