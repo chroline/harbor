@@ -44,7 +44,7 @@ const defaults = {
   textareaProps: { "aria-label": "Message" },
 };
 
-it("lets mouse clicks select effort in a portalled composer menu", async () => {
+it("lets pointer and keyboard interactions select effort in a portalled composer popover", async () => {
   const user = userEvent.setup();
   const change = vi.fn();
   render(
@@ -64,11 +64,12 @@ it("lets mouse clicks select effort in a portalled composer menu", async () => {
     />,
   );
   await user.click(screen.getByRole("button", { name: "Effort: Low. Change" }));
-  const high = screen.getByRole("menuitemradio", { name: "High" });
-  // Cancelling mousedown to refocus the editor dismisses the native menu
-  // before mouseup can deliver the selection's click in WebKit.
-  expect(fireEvent.mouseDown(high, { button: 0 })).toBe(true);
-  await user.click(high);
+  const slider = screen.getByRole("slider", { name: "Reasoning effort" });
+  expect(slider.getAttribute("aria-valuetext")).toBe("Low");
+  // Cancelling mousedown to refocus the editor dismisses the menu
+  // before mouseup can deliver the selection in WebKit.
+  expect(fireEvent.mouseDown(slider, { button: 0 })).toBe(true);
+  await user.keyboard("{ArrowRight}");
   expect(change).toHaveBeenCalledExactlyOnceWith("high");
 });
 

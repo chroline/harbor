@@ -3501,36 +3501,20 @@ html.transitioning *::after {
   flex: 1;
   min-width: 0;
 }
-.model-menu-effort {
-  --effort-blue: #3898ff;
+.effort-popover {
+  --effort-blue: light-dark(#3b82f6, #3898ff);
   --color-accent: var(--effort-blue);
-  border-top: 0.0625rem solid var(--divider);
-  padding: 0.875rem 0.75rem 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  align-items: center;
-  gap: 0 0.5rem;
-}
-.effort-heading {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 1.5rem;
-}
-.effort-heading strong {
-  color: var(--effort-blue);
-  font-size: 0.75rem;
-  line-height: 1.125rem;
-  font-weight: 500;
-  text-transform: capitalize;
+  padding: 0;
 }
 .effort-slider {
-  grid-column: 1 / -1;
+  width: 100%;
   margin-top: 0;
   touch-action: none;
 }
 .effort-slider > div {
   width: 100%;
+  /* The slider's own bottom margin would sit the pill above the card's center. */
+  margin-bottom: 0;
 }
 .model-menu-settings {
   padding: 0.875rem 1rem;
@@ -4133,3 +4117,35 @@ html:not(.desktop) body {
 .task-composer-actions { display: flex; align-items: center; gap: .4rem; }
 .task-composer-steer-hint { font-size: .6875rem; color: var(--muted-foreground); white-space: nowrap; }
 @media (max-width: 480px) { .task-composer-steer-hint { display: none; } }
+
+/* Reasoning effort lives inside the model menu, under the current model. */
+.model-menu-effort {
+  --effort-blue: light-dark(#3b82f6, #3898ff);
+  --color-accent: var(--effort-blue);
+  /* Even 0.625rem rhythm: divider → label, label → rail, rail → bottom edge.
+     The slider keeps 0.5rem of hit area above and below its rail, so the
+     slider margin and bottom padding only add the remaining 0.125rem. */
+  padding: 0.625rem 0.625rem 0.125rem;
+  border-top: 0.0625rem solid var(--divider);
+}
+.effort-inline-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-block: 0;
+  color: var(--muted-foreground);
+  font-size: 0.6875rem;
+  /* Line box = text size, so the gaps are measured from the text itself. */
+  line-height: 0.6875rem;
+}
+.effort-inline-heading .effort-meter {
+  color: var(--foreground);
+  font-size: 0.75rem;
+}
+.model-menu-effort .effort-slider {
+  margin-top: 0.125rem;
+}
+.model-menu-effort .effort-slider > div {
+  margin-bottom: 0;
+}
+

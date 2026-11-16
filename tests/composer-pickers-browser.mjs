@@ -83,10 +83,10 @@ for (const theme of ['dark','light']) {
     await close();
   }
 }
-// Keyboard-only effort selection and focus restoration after the menu closes.
+// Keyboard-only effort selection and focus restoration after the popover closes.
 await p.click('button[aria-label^="Effort:"]');
 await stable();
-await p.keyboard.press('Home');
+await p.keyboard.press('End');
 await p.keyboard.press('Enter');
 await p.waitForSelector('.composer-picker-menu',{state:'hidden'});
 await p.waitForFunction(()=>document.activeElement.getAttribute('aria-label')?.startsWith('Effort:'));

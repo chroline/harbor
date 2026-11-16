@@ -63,6 +63,11 @@ interface SliderEngineProps
    */
   steps?: number[];
   showSteps?: boolean;
+  showFilledSteps?: boolean;
+  smoothDrag?: boolean;
+  /** Never draw the ring around a focused thumb (e.g. a popover that focuses
+   *  the slider on open). Keyboard input still works. */
+  hideFocusRing?: boolean;
   showValue?: boolean;
   /** "tooltip" shows a bubble above each thumb only while hovered or
    *  pressed; the other positions place a click-to-edit label on that side
@@ -91,13 +96,13 @@ interface SliderEngineProps
 
 // The thumb's layout box. Travel is the track width minus this, so the thumb
 // never overhangs either end; the visible knob is THUMB_SIZE_REST inside it.
-// Harbor: slightly larger compact geometry for the reasoning control.
-const THUMB_SIZE = 26;
-const THUMB_SIZE_REST = 22;
-// 0.125rem shorter than the thumb box, so the 1rem knob fits inside the pill with
-// 0.0625rem to spare above and below.
-const TRACK_BG_HEIGHT = 24;
-// Step dots grow 1.25x (0.25rem → 0.3125rem) while the slider is hovered.
+// Harbor: small geometry for the reasoning control inside the model menu.
+const THUMB_SIZE = 18;
+const THUMB_SIZE_REST = 18;
+// Same height as the thumb box: the knob fills the rail's full height, never
+// taller than it, and the ends line up at min/max.
+const TRACK_BG_HEIGHT = 18;
+// Step dots grow 1.25x while the slider is hovered.
 const DOT_SIZE = 4;
 const PIP_SIZE = 5;
 // Inset track BG so its rounded-end centers align with thumb centers at min/max
@@ -400,6 +405,9 @@ const CompactSlider = forwardRef<HTMLDivElement, SliderEngineProps>(
       step = 1,
       steps,
       showSteps = false,
+      showFilledSteps = false,
+      smoothDrag = false,
+      hideFocusRing = false,
       showValue = true,
       valuePosition = "left",
       formatValue = String,
@@ -444,6 +452,9 @@ const CompactSlider = forwardRef<HTMLDivElement, SliderEngineProps>(
     // effects stand down so they never fight the pointer.
     const dragging = useRef(false);
     const activeDragThumb = useRef<number>(0);
+    const dragOffset = useRef(0);
+    // smoothDrag: the snap point the thumb is currently springing toward.
+    const snapTarget = useRef<number | null>(null);
     // Latest props for the ResizeObserver callback, which subscribes once per
     // isRange and would otherwise read stale values.
     const valuesRef = useRef(values);
@@ -526,6 +537,13 @@ const CompactSlider = forwardRef<HTMLDivElement, SliderEngineProps>(
       }
     );
     const stepDotsMask = isRange ? stepDotsMaskRange : stepDotsMaskSingle;
+    const filledStepDotsMask = useTransform(
+      motionX0,
+      (x) => {
+        const edge = x + scaledSize(THUMB_SIZE) / 2;
+        return `linear-gradient(to right, black ${pixelsToRem(edge - scaledSize(2))}, transparent ${pixelsToRem(edge)})`;
+      }
+    );
 
     // --- Hover preview computation ---
     // The bar previews what a click would change: it runs from the nearer
@@ -704,46 +722,82 @@ const CompactSlider = forwardRef<HTMLDivElement, SliderEngineProps>(
 
         dragging.current = true;
         setIsPressed(true);
+        setHoverPreview(null);
 
         const motionX =
           activeDragThumb.current === 0 ? motionX0 : motionX1;
+        const maxOffset = layoutWidth - scaledSize(THUMB_SIZE);
 
-        // Snap to step grid immediately
-        const snappedValue = pixelToValue(
-          clamped,
-          min,
-          max,
-          step,
-          layoutWidth,
-          stepValues
-        );
-        const snappedPx = valueToPixel(snappedValue, min, max, layoutWidth);
+        if (smoothDrag) {
+          const currentThumbPx = motionX.get();
+          const pressedOnThumb =
+            Math.abs(clamped - currentThumbPx) <= scaledSize(THUMB_SIZE) / 2;
+          dragOffset.current = pressedOnThumb ? currentThumbPx - clamped : 0;
+          const targetPx = Math.max(
+            0,
+            Math.min(maxOffset, clamped + dragOffset.current)
+          );
+          // Magnetic drag: the thumb springs between snap points instead of
+          // tracking the cursor or jumping. A press on the thumb stays put.
+          const finalValue = pixelToValue(
+            clampForRange(targetPx, activeDragThumb.current),
+            min,
+            max,
+            step,
+            layoutWidth,
+            stepValues
+          );
+          const snapPx = clampForRange(
+            valueToPixel(finalValue, min, max, layoutWidth),
+            activeDragThumb.current
+          );
+          snapTarget.current = snapPx;
+          if (!pressedOnThumb) {
+            motionX.stop();
+            animate(motionX, snapPx, spring.moderate);
+          }
+          emitChange(activeDragThumb.current, finalValue);
+        } else {
+          dragOffset.current = 0;
 
-        // Clamp for range crossing
-        const finalPx = clampForRange(
-          snappedPx,
-          activeDragThumb.current
-        );
-        // Spring-animate thumb to clicked position
-        animate(motionX, finalPx, spring.moderate);
+          // Snap to step grid immediately
+          const snappedValue = pixelToValue(
+            clamped,
+            min,
+            max,
+            step,
+            layoutWidth,
+            stepValues
+          );
+          const snappedPx = valueToPixel(snappedValue, min, max, layoutWidth);
 
-        // Update value
-        // Derived from the clamped pixel, so the emitted value matches where
-        // the range clamp actually left the thumb.
-        const finalValue = pixelToValue(
-          finalPx,
-          min,
-          max,
-          step,
-          layoutWidth,
-          stepValues
-        );
-        emitChange(activeDragThumb.current, finalValue);
+          // Clamp for range crossing
+          const finalPx = clampForRange(
+            snappedPx,
+            activeDragThumb.current
+          );
+          // Spring-animate thumb to clicked position
+          motionX.stop();
+          animate(motionX, finalPx, spring.moderate);
+
+          // Update value
+          // Derived from the clamped pixel, so the emitted value matches where
+          // the range clamp actually left the thumb.
+          const finalValue = pixelToValue(
+            finalPx,
+            min,
+            max,
+            step,
+            layoutWidth,
+            stepValues
+          );
+          emitChange(activeDragThumb.current, finalValue);
+        }
 
         // Capture keeps the drag alive when the pointer leaves the track.
         (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
       },
-      [disabled, isRange, min, max, step, stepValues, motionX0, motionX1, clampForRange, emitChange]
+      [disabled, isRange, smoothDrag, min, max, step, stepValues, motionX0, motionX1, clampForRange, emitChange]
     );
 
     const handlePointerMove = useCallback(
@@ -764,41 +818,71 @@ const CompactSlider = forwardRef<HTMLDivElement, SliderEngineProps>(
 
         const motionX =
           activeDragThumb.current === 0 ? motionX0 : motionX1;
+        const maxOffset = layoutWidth - scaledSize(THUMB_SIZE);
 
-        // Snap to step grid during drag
-        // Set, not animated: the thumb steps along the grid under the cursor,
-        // so fine steps read as a continuous drag and coarse ones visibly snap.
-        const snappedValue = pixelToValue(
-          clamped,
-          min,
-          max,
-          step,
-          layoutWidth,
-          stepValues
-        );
-        const snappedPx = valueToPixel(snappedValue, min, max, layoutWidth);
-        const finalPx = clampForRange(
-          snappedPx,
-          activeDragThumb.current
-        );
-        motionX.set(finalPx);
+        if (smoothDrag) {
+          const targetPx = Math.max(
+            0,
+            Math.min(maxOffset, clamped + dragOffset.current)
+          );
+          const finalValue = pixelToValue(
+            clampForRange(targetPx, activeDragThumb.current),
+            min,
+            max,
+            step,
+            layoutWidth,
+            stepValues
+          );
+          const snapPx = clampForRange(
+            valueToPixel(finalValue, min, max, layoutWidth),
+            activeDragThumb.current
+          );
+          // Only start a new spring when the snap point changes, so a held
+          // drag doesn't restart the animation on every pointer move.
+          if (snapPx !== snapTarget.current) {
+            snapTarget.current = snapPx;
+            motionX.stop();
+            animate(motionX, snapPx, spring.moderate);
+          }
+          emitChange(activeDragThumb.current, finalValue);
+        } else {
+          // Snap to step grid during drag
+          // Set, not animated: the thumb steps along the grid under the cursor,
+          // so fine steps read as a continuous drag and coarse ones visibly snap.
+          const snappedValue = pixelToValue(
+            clamped,
+            min,
+            max,
+            step,
+            layoutWidth,
+            stepValues
+          );
+          const snappedPx = valueToPixel(snappedValue, min, max, layoutWidth);
+          const finalPx = clampForRange(
+            snappedPx,
+            activeDragThumb.current
+          );
+          motionX.stop();
+          motionX.set(finalPx);
 
-        const finalValue = pixelToValue(
-          finalPx,
-          min,
-          max,
-          step,
-          layoutWidth,
-          stepValues
-        );
-        emitChange(activeDragThumb.current, finalValue);
+          const finalValue = pixelToValue(
+            finalPx,
+            min,
+            max,
+            step,
+            layoutWidth,
+            stepValues
+          );
+          emitChange(activeDragThumb.current, finalValue);
+        }
       },
-      [min, max, step, stepValues, motionX0, motionX1, clampForRange, emitChange]
+      [smoothDrag, min, max, step, stepValues, motionX0, motionX1, clampForRange, emitChange]
     );
 
     const handlePointerUp = useCallback(() => {
       if (!dragging.current) return;
       dragging.current = false;
+      dragOffset.current = 0;
       setIsPressed(false);
       setHoverPreview(null);
 
@@ -806,14 +890,24 @@ const CompactSlider = forwardRef<HTMLDivElement, SliderEngineProps>(
       // Moves already land on the grid; this catches a thumb the range clamp
       // left between steps. Clearing the preview above keeps the stale
       // pre-drag bar from fading back in.
-      const tw = trackWidthRef.current;
+      const tw = trackWidthRef.current || trackRef.current?.offsetWidth || 0;
       const motionX =
         activeDragThumb.current === 0 ? motionX0 : motionX1;
+      // A magnetic drag may still be springing: finish on its target, not on
+      // whichever step the thumb happens to be passing.
+      const target = snapTarget.current;
+      snapTarget.current = null;
+      if (smoothDrag && target !== null) {
+        if (!motionX.isAnimating() && motionX.get() !== target)
+          animate(motionX, target, spring.moderate);
+        return;
+      }
       const currentPx = motionX.get();
       const snapped = pixelToValue(currentPx, min, max, step, tw, stepValues);
       const snappedPx = valueToPixel(snapped, min, max, tw);
+      motionX.stop();
       animate(motionX, snappedPx, spring.moderate);
-    }, [min, max, step, stepValues, motionX0, motionX1]);
+    }, [smoothDrag, min, max, step, stepValues, motionX0, motionX1]);
 
     // --- Radix keyboard handler ---
     // In steps mode the primitive runs on indices (0..len-1, step 1) so arrow
@@ -939,7 +1033,7 @@ const CompactSlider = forwardRef<HTMLDivElement, SliderEngineProps>(
             transition={spring.fast}
             style={{
               backgroundColor: thumbColor ?? "white",
-              boxShadow: "0 0.0625rem 0.125rem rgba(0,0,0,0.1)",
+              boxShadow: "0 0.0625rem 0.1875rem rgba(0,0,0,0.16), 0 0 0 0.03125rem rgba(0,0,0,0.05)",
               border: thumbBorderColor ? `0.0625rem solid ${thumbBorderColor}` : undefined,
             }}
           />
@@ -951,7 +1045,7 @@ const CompactSlider = forwardRef<HTMLDivElement, SliderEngineProps>(
             className="absolute rounded-full border-[0.0625rem] border-[color:var(--focus-ring,#6B97FF)] pointer-events-none"
             initial={false}
             animate={{
-              opacity: focusedThumb === index ? 1 : 0,
+              opacity: !hideFocusRing && focusedThumb === index ? 1 : 0,
               width: rem(THUMB_SIZE + 4),
               height: rem(THUMB_SIZE + 4),
             }}
@@ -1181,44 +1275,83 @@ const CompactSlider = forwardRef<HTMLDivElement, SliderEngineProps>(
 
             </motion.div>
 
-            {/* Step dots — masked so filled side is hidden */}
-            {/* Muted at 30% and grown 1.25x on hover (spring.moderate). */}
+            {/* Step dots — masked so filled side is hidden (or rendered subtly light when showFilledSteps is set) */}
             {stepDots.length > 0 && (
-              <motion.div
-                className="absolute left-0 right-0 pointer-events-none"
-                style={{
-                  top: pixelsToRem(scaledSize(8) + (scaledSize(THUMB_SIZE) - scaledSize(TRACK_BG_HEIGHT)) / 2),
-                  height: rem(TRACK_BG_HEIGHT),
-                  maskImage: stepDotsMask,
-                }}
-              >
-                {stepDots.map(({ value: v, percent }) => (
-                  <div
-                    key={v}
-                    className="absolute pointer-events-none flex items-center justify-center"
+              <>
+                <motion.div
+                  className="absolute left-0 right-0 pointer-events-none"
+                  style={{
+                    top: pixelsToRem(scaledSize(8) + (scaledSize(THUMB_SIZE) - scaledSize(TRACK_BG_HEIGHT)) / 2),
+                    height: rem(TRACK_BG_HEIGHT),
+                    WebkitMaskImage: stepDotsMask,
+                    maskImage: stepDotsMask,
+                  }}
+                >
+                  {stepDots.map(({ value: v, percent }) => (
+                    <div
+                      key={v}
+                      className="absolute pointer-events-none flex items-center justify-center"
+                      style={{
+                        left: `calc(${rem(THUMB_SIZE / 2)} + ${percent} * (100% - ${rem(THUMB_SIZE)}))`,
+                        top: "50%",
+                        width: 0,
+                        height: 0,
+                      }}
+                    >
+                      <motion.div
+                        className="rounded-full flex-shrink-0"
+                        initial={false}
+                        animate={{
+                          width: pixelsToRem(isHovered ? scaledSize(DOT_SIZE) * 1.25 : scaledSize(DOT_SIZE)),
+                          height: pixelsToRem(isHovered ? scaledSize(DOT_SIZE) * 1.25 : scaledSize(DOT_SIZE)),
+                        }}
+                        transition={spring.moderate}
+                        style={{
+                          backgroundColor: "var(--muted-foreground)",
+                          opacity: showFilledSteps ? 0.45 : 0.3,
+                        }}
+                      />
+                    </div>
+                  ))}
+                </motion.div>
+                {showFilledSteps && !isRange && (
+                  <motion.div
+                    className="absolute left-0 right-0 pointer-events-none"
                     style={{
-                      left: `calc(${rem(THUMB_SIZE / 2)} + ${percent} * (100% - ${rem(THUMB_SIZE)}))`,
-                      top: "50%",
-                      width: 0,
-                      height: 0,
+                      top: pixelsToRem(scaledSize(8) + (scaledSize(THUMB_SIZE) - scaledSize(TRACK_BG_HEIGHT)) / 2),
+                      height: rem(TRACK_BG_HEIGHT),
+                      WebkitMaskImage: filledStepDotsMask,
+                      maskImage: filledStepDotsMask,
                     }}
                   >
-                    <motion.div
-                      className="rounded-full flex-shrink-0"
-                      initial={false}
-                      animate={{
-                        width: pixelsToRem(isHovered ? scaledSize(DOT_SIZE) * 1.25 : scaledSize(DOT_SIZE)),
-                        height: pixelsToRem(isHovered ? scaledSize(DOT_SIZE) * 1.25 : scaledSize(DOT_SIZE)),
-                      }}
-                      transition={spring.moderate}
-                      style={{
-                        backgroundColor: "var(--muted-foreground)",
-                        opacity: 0.3,
-                      }}
-                    />
-                  </div>
-                ))}
-              </motion.div>
+                    {stepDots.map(({ value: v, percent }) => (
+                      <div
+                        key={v}
+                        className="absolute pointer-events-none flex items-center justify-center"
+                        style={{
+                          left: `calc(${rem(THUMB_SIZE / 2)} + ${percent} * (100% - ${rem(THUMB_SIZE)}))`,
+                          top: "50%",
+                          width: 0,
+                          height: 0,
+                        }}
+                      >
+                        <motion.div
+                          className="rounded-full flex-shrink-0"
+                          initial={false}
+                          animate={{
+                            width: pixelsToRem(isHovered ? scaledSize(DOT_SIZE) * 1.25 : scaledSize(DOT_SIZE)),
+                            height: pixelsToRem(isHovered ? scaledSize(DOT_SIZE) * 1.25 : scaledSize(DOT_SIZE)),
+                          }}
+                          transition={spring.moderate}
+                          style={{
+                            backgroundColor: "rgba(255, 255, 255, 0.5)",
+                          }}
+                        />
+                      </div>
+                    ))}
+                  </motion.div>
+                )}
+              </>
             )}
 
             {/* Visual thumbs */}
@@ -1899,6 +2032,9 @@ const Slider = forwardRef<HTMLDivElement, SliderProps>(
       Array.isArray(props.value) ||
       props.steps !== undefined ||
       props.showSteps !== undefined ||
+      props.showFilledSteps !== undefined ||
+      props.smoothDrag !== undefined ||
+      props.hideFocusRing !== undefined ||
       props.showValue !== undefined ||
       props.valuePosition !== undefined ||
       props.trackClassName !== undefined ||
@@ -1926,6 +2062,9 @@ const Slider = forwardRef<HTMLDivElement, SliderProps>(
       // one would have routed to the compact engine above).
       steps: _steps,
       showSteps: _showSteps,
+      showFilledSteps: _showFilledSteps,
+      smoothDrag: _smoothDrag,
+      hideFocusRing: _hideFocusRing,
       showValue: _showValue,
       valuePosition: _valuePosition,
       trackClassName: _trackClassName,
