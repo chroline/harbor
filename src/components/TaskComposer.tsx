@@ -205,12 +205,16 @@ export function TaskComposer({
                 </Tooltip>
               )}
               {modelMenu}
-              {modePicker && <ModePicker {...modePicker} />}
             </div>
           </SizeProvider>
         )}
         sendControl={
           <div className="task-composer-actions">
+            {modePicker && (
+              <SizeProvider size="compact">
+                <ModePicker {...modePicker} />
+              </SizeProvider>
+            )}
             {onStop && !showStopOnly && (
               <>
                 <span className="task-composer-steer-hint">⌘↵ to steer</span>

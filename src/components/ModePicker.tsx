@@ -68,6 +68,7 @@ export function ModePicker({
       </Tooltip>
       <ComposerPickerContent
         className="mode-picker-menu"
+        align="end"
         checkedIndex={mode.choices.findIndex(
           (choice) => choice.value === value,
         )}
