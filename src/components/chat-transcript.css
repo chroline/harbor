@@ -99,6 +99,21 @@
 .chat-transcript [data-slot="message-attachments"] {
   gap: var(--user-stack-gap);
 }
+/* The scroll-to-latest button floats over the transcript, so it uses the
+   elevated card surface (fill, blur, outline and shadow) instead of a flat tint. */
+.conversation-scroll [data-slot="message-scroller-button"] {
+  background: transparent;
+}
+.conversation-scroll [data-slot="message-scroller-button"] > span[aria-hidden] {
+  inset: 0;
+  background: var(--shell-card);
+  -webkit-backdrop-filter: var(--shell-card-backdrop-filter);
+  backdrop-filter: var(--shell-card-backdrop-filter);
+  box-shadow: var(--shell-card-shadow);
+}
+.conversation-scroll [data-slot="message-scroller-button"]:hover > span[aria-hidden] {
+  background: linear-gradient(var(--hover), var(--hover)), var(--shell-card);
+}
 /* Attached images and files sit on the same card edge as the message bubble. */
 .chat-transcript [data-slot="message-attachments"] > * {
   border: 0;
