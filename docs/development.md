@@ -72,7 +72,7 @@ the interface uses actual Fluid Functionalism registry components. see [integrat
 
 `tests/ui.html` is an explicitly labeled deterministic browser IPC fixture. Add `?skyline=dawn`, `day`, `sunset`, or `night` to check a fixed background period. it is excluded from the production bundle. Ego-browser verified launch/configuration, model-dependent effort changes, worker views, syntax highlighting, unified/split review, draft and panel retention, keyboard search/focus, reduced motion, 900×620 layout, and both neutral themes.
 
-`tests/ui-fixtures.js` seeds the real app with realistic data for screenshots and demos: four workspaces, conversations across every agent and status, a full chat transcript, model favorites, and macOS stoplights where the native window draws them. Inject it before the app loads (for example with CDP `Page.addScriptToEvaluateOnNewDocument`) on a dev server; set `localStorage["fixture.theme"] = "dark"` and reload for dark mode. Nothing in the app imports it.
+`tests/ui-fixtures.js` seeds the real app with realistic data for screenshots and demos: four workspaces, conversations across every agent and status, a full chat transcript, model favorites, and macOS stoplights where the native window draws them. Inject it before the app loads (for example with CDP `Page.addScriptToEvaluateOnNewDocument`) on a dev server; set `localStorage["fixture.theme"] = "dark"` and reload for dark mode. Nothing in the app imports it. `npm run screenshots` uses it to capture the main views in light and dark through ego-browser, into `screenshots/ui/` (gitignored); start Vite first, or pass another dev server URL after `--`.
 
 live provider tests are opt-in, can consume model usage, and use the provider’s existing login:
 

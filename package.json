@@ -15,7 +15,8 @@
     "desktop:build:dev": "tauri build --debug --config src-tauri/tauri.dev.conf.json",
     "desktop:verify-signing": "node scripts/verify-macos-signing.mjs",
     "desktop:verify-worktrunk": "node scripts/verify-bundled-worktrunk.mjs",
-    "test": "vitest run"
+    "test": "vitest run",
+    "screenshots": "node tests/ui-screenshots.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
