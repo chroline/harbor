@@ -16,11 +16,10 @@ export function chatMinimapItems(entries: TimelineEntry[]): ChatMinimapItem[] {
         description: "",
       });
     } else if (message.role === "assistant" && items.length) {
-      const item = items[items.length - 1];
-      item.description = `${item.description} ${message.text}`
-        .replace(/\s+/g, " ")
-        .trim()
-        .slice(0, 360);
+      // The turn's last agent message is its outcome; earlier ones are usually
+      // progress narration ("Let me look at…").
+      const text = message.text.replace(/\s+/g, " ").trim().slice(0, 360);
+      if (text) items[items.length - 1].description = text;
     }
   }
   return items;

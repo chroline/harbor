@@ -80,8 +80,8 @@
 }
 .chat-minimap-preview {
   z-index: 60;
-  width: min(18rem, calc(100vw - 5rem));
-  padding: 0.75rem;
+  width: min(14rem, calc(100vw - 5rem));
+  padding: 0.5rem 0.625rem;
   border: 0;
   border-radius: var(--shell-card-radius);
   background: var(--shell-card);
@@ -102,16 +102,16 @@
 }
 .chat-minimap-title {
   -webkit-line-clamp: 2;
-  font-size: 0.875rem;
+  font-size: 0.75rem;
   font-weight: 550;
-  line-height: 1.25rem;
+  line-height: 1rem;
 }
 .chat-minimap-preview .chat-minimap-description {
-  margin-top: 0.25rem;
-  -webkit-line-clamp: 4;
+  margin-top: 0.125rem;
+  -webkit-line-clamp: 3;
   color: var(--muted-foreground);
-  font-size: 0.8125rem;
-  line-height: 1.25rem;
+  font-size: 0.6875rem;
+  line-height: 1rem;
 }
 @media (max-width: 37.5rem) {
   .chat-minimap {
