@@ -7,7 +7,7 @@ import * as ReactDOM from "react-dom";
 import * as jsxRuntime from "react/jsx-runtime";
 import { Dialog } from "@base-ui/react/dialog";
 import { useDirection } from "@base-ui/react/direction-provider";
-import { IconX, IconChevronLeft, IconChevronRight } from "@tabler/icons-react";
+import { X, ChevronLeft, ChevronRight } from "@/lib/icons";
 import { Button } from "./button";
 import { cn } from "@/lib/utils";
 const DialogRoot = Dialog.Root,
@@ -2001,7 +2001,7 @@ function LightboxDialog({
                         onClick: D.close,
                         className: `pointer-events-auto rounded-full group-data-hidden/chrome:pointer-events-none`,
                         children: [
-                          (0, jsxRuntime.jsx)(IconX, {}),
+                          (0, jsxRuntime.jsx)(X, {}),
                           (0, jsxRuntime.jsx)(`span`, {
                             className: `sr-only`,
                             children: `Close`,
@@ -2021,7 +2021,7 @@ function LightboxDialog({
                             },
                             className: `pointer-events-auto absolute start-3 top-1/2 hidden -translate-y-1/2 rounded-full group-data-hidden/chrome:pointer-events-none sm:start-4 pointer-fine:inline-flex`,
                             children: [
-                              (0, jsxRuntime.jsx)(IconChevronLeft, {
+                              (0, jsxRuntime.jsx)(ChevronLeft, {
                                 className: `rtl:-scale-x-100`,
                               }),
                               (0, jsxRuntime.jsx)(`span`, {
@@ -2038,7 +2038,7 @@ function LightboxDialog({
                             },
                             className: `pointer-events-auto absolute end-3 top-1/2 hidden -translate-y-1/2 rounded-full group-data-hidden/chrome:pointer-events-none sm:end-4 pointer-fine:inline-flex`,
                             children: [
-                              (0, jsxRuntime.jsx)(IconChevronRight, {
+                              (0, jsxRuntime.jsx)(ChevronRight, {
                                 className: `rtl:-scale-x-100`,
                               }),
                               (0, jsxRuntime.jsx)(`span`, {

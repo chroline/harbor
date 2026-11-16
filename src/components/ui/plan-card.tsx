@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { IconListCheck } from "@tabler/icons-react";
+import { ListCheck } from "@/lib/icons";
 import { Button } from "./button";
 import "./plan-card.css";
 
@@ -33,7 +33,7 @@ export function PlanCard({
     >
       <div className="harbor-agent-card-header harbor-plan-card-header">
         <span className="harbor-agent-card-icon harbor-plan-card-icon">
-          <IconListCheck aria-hidden="true" />
+          <ListCheck />
         </span>
         <h3>{title}</h3>
       </div>

@@ -4,7 +4,7 @@
 // Components never import an icon directly: they look one up by the role it
 // plays (`useIcons()["chevron-down"]`). That keeps the icon set swappable in
 // one place, so an app on another library wraps its tree in IconProvider and
-// every component follows. Tabler is the default icon set.
+// every component follows. Hugeicons is the default icon set.
 //
 // Components read from the map rather than calling `useIcon(name)`: React
 // Compiler's lint (`react-hooks/static-components`, on in a fresh Next app)
