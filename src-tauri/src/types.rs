@@ -56,6 +56,10 @@ pub enum CommandRequest {
     SaveSettings {
         settings: Value,
     },
+    SetSidebarCollapsed {
+        collapsed: bool,
+        animate: bool,
+    },
     ListEditors,
     ProbeProvider {
         #[ts(rename = "providerId")]

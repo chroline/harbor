@@ -1968,6 +1968,17 @@ async fn terminal_resize(
         .ok_or("Terminal is not running")?
         .resize(rows, cols)
 }
+#[tauri::command]
+async fn set_sidebar_collapsed(window: tauri::WebviewWindow, collapsed: bool, animate: bool) {
+    #[cfg(target_os = "macos")]
+    {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        window_chrome::set_sidebar_collapsed(&window, collapsed, animate, tx);
+        let _ = rx.await;
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = (window, collapsed, animate);
+}
 fn setup_path() {
     if let Ok(home) = std::env::var("HOME") {
         let mut paths = vec![
@@ -2164,6 +2175,7 @@ pub fn run() {
             save_workspace,
             save_provider,
             save_settings,
+            set_sidebar_collapsed,
             list_editors,
             probe_provider,
             create_session,
