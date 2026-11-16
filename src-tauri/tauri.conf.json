@@ -24,8 +24,7 @@
           "effects": [
             "sidebar"
           ],
-          "state": "active",
-          "radius": 20.0
+          "state": "active"
         },
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
