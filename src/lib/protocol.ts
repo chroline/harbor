@@ -136,6 +136,17 @@ export const record = (v: unknown): Record<string, unknown> =>
 export function toolImageSource(value: unknown): string | undefined {
   const block = record(value);
   const image = block.type === "content" ? record(block.content) : block;
+  // Codex view_image supplies a resource link instead of embedded image bytes.
+  // It can omit mimeType, so use the referenced filename as a fallback.
+  if (
+    image.type === "resource_link" &&
+    typeof image.uri === "string" &&
+    image.uri.length > 0 &&
+    (/^image\/[a-z0-9.+-]+$/i.test(str(image.mimeType)) ||
+      /\.(?:png|jpe?g|gif|webp)(?:[?#].*)?$/i.test(image.uri))
+  ) {
+    return image.uri;
+  }
   if (
     image.type === "image" &&
     typeof image.mimeType === "string" &&
