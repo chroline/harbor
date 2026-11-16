@@ -385,6 +385,8 @@ function Editor({
                 className={`command-menu flex flex-col overflow-hidden ${shapeMap.rounded.container}`}
               >
                 <CommandMenuList
+                  // No footer below the rows here, so pad them evenly.
+                  className="pb-1"
                   aria-label="Commands and skills"
                   renderItem={(item) => (
                     <CommandMenuItem title={[
