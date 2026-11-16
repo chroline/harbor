@@ -57,6 +57,7 @@ import {
 } from "./components/ui/dropdown";
 import {
   useEffect,
+  useLayoutEffect,
   useState,
   useMemo,
   useRef,
@@ -194,6 +195,35 @@ export default function App() {
     width: sidebarWidth,
     setWidth: setSidebarWidth,
   } = useShellLayout();
+  const [chromeCollapsed, setChromeCollapsed] = useState(!sidebar);
+  const chromeAnimationReady = useRef(false);
+  const chromeSequence = useRef(0);
+  useLayoutEffect(() => {
+    const collapsed = !sidebar;
+    const animate =
+      chromeAnimationReady.current &&
+      !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    chromeAnimationReady.current = true;
+    if (!desktop) {
+      setChromeCollapsed(collapsed);
+      return;
+    }
+    if (!animate) {
+      setChromeCollapsed(collapsed);
+      void call("set_sidebar_collapsed", { collapsed, animate: false }).catch(
+        (error) => console.error("Unable to align window controls", error),
+      );
+      return;
+    }
+    const sequence = ++chromeSequence.current;
+    void call("set_sidebar_collapsed", { collapsed, animate: true })
+      .catch((error) =>
+        console.error("Unable to align window controls", error),
+      )
+      .then(() => {
+        if (chromeSequence.current === sequence) setChromeCollapsed(collapsed);
+      });
+  }, [sidebar]);
   const [fullscreen, setFullscreen] = useState(false);
   useEffect(() => {
     if (!desktop) return;
@@ -631,6 +661,7 @@ export default function App() {
   return (
     <SidebarProvider
       className={"app-shell " + (!sidebar ? "sidebar-collapsed" : "")}
+      data-chrome-collapsed={chromeCollapsed ? "true" : undefined}
       data-fullscreen={fullscreen || undefined}
       style={{ "--window-gutter": `${rem(WINDOW_GUTTER)}` } as CSSProperties}
       open={sidebar}

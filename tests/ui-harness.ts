@@ -538,6 +538,8 @@ mockIPC(
       case "save_settings":
         data.settings = args.settings;
         return;
+      case "set_sidebar_collapsed":
+        return;
       case "delete_session":
         s!.archived = true;
         s!.status = "archived";
