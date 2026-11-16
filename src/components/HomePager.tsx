@@ -23,6 +23,8 @@ const TOP_GAP = 8;
 const HEAVY = { type: "spring", stiffness: 170, damping: 26, mass: 1.2 } as const;
 // Popovers opened from the composer render outside it; using them is still
 // using the composer.
+// The composer's text field; only typing there counts as composing.
+const TEXT_ENTRY = 'textarea, input, [role="textbox"], [contenteditable="true"]';
 const COMPOSER_POPUPS =
   '[data-radix-popper-content-wrapper], [role="dialog"], [role="menu"], [role="listbox"]';
 
@@ -122,6 +124,18 @@ export function HomePager({ children, sheet }: { children: ReactNode; sheet: Rea
     (!!composer()?.contains(node) ||
       (node instanceof Element && !!node.closest(COMPOSER_POPUPS)));
 
+  // WebKit (the desktop app) does not focus a button when it is clicked, so
+  // pressing the model or mode button while typing blurs the text field to
+  // the page body. Remember where the latest press landed: a press on the
+  // composer or one of its menus is still composing.
+  const pressedComposerAt = useRef(0);
+  useEffect(() => {
+    const onPointerDown = (event: PointerEvent) => {
+      pressedComposerAt.current = inComposer(event.target as Node) ? event.timeStamp : 0;
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () => document.removeEventListener("pointerdown", onPointerDown, true);
+  }, []);
 
   return (
     <div ref={pager} className="home-pager" data-revealed="">
@@ -129,26 +143,44 @@ export function HomePager({ children, sheet }: { children: ReactNode; sheet: Rea
         <div
           ref={hero}
           className="home-pager-hero"
-          // Focus decides: in the composer, it centers and the cards drop away;
-          // anywhere else (a click outside, Tab, ⌘K, a card), they come back.
+          // Focus decides: in the composer's text field, it centers and the
+          // cards drop away; anywhere else (a click outside, Tab, ⌘K, a card),
+          // they come back. The composer's own buttons (model, mode, attach)
+          // keep the current layout: moving it under a press would make the
+          // click land after the button had slid away.
           onFocusCapture={(event) => {
-            if (inComposer(event.target)) setRevealed(false);
+            const target = event.target;
+            if (
+              target instanceof Element &&
+              composer()?.contains(target) &&
+              target.matches(TEXT_ENTRY)
+            )
+              setRevealed(false);
           }}
           // Esc leaves the composer, unless a menu or suggestion list used it.
           onKeyDown={(event) => {
             const active = document.activeElement;
+            // Keys from a menu reach here through the React tree, after the menu
+            // has closed and handed focus back; only Esc typed in the composer counts.
             if (
               event.key === "Escape" &&
               !event.defaultPrevented &&
+              composer()?.contains(event.target as Node) &&
               active instanceof HTMLElement &&
               composer()?.contains(active)
             )
               active.blur();
           }}
-          onBlurCapture={() => {
-            requestAnimationFrame(() => {
+          onBlurCapture={(event) => {
+            const pressed =
+              pressedComposerAt.current > 0 &&
+              event.timeStamp - pressedComposerAt.current < 1000;
+            if (pressed || inComposer(event.relatedTarget as Node | null)) return;
+            // A closing menu unmounts before it hands focus back to its button,
+            // so let that settle before deciding focus really left.
+            window.setTimeout(() => {
               if (!inComposer(document.activeElement)) setRevealed(true);
-            });
+            }, 60);
           }}
         >
           {children}

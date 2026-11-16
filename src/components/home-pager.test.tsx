@@ -20,13 +20,17 @@ const ui = () => (
   <MotionConfig reducedMotion="always">
     <button>Sidebar</button>
     <HomePager sheet={<button>Card row</button>}>
-      <textarea aria-label="Composer" />
+      <div>
+        <textarea aria-label="Composer" />
+        <button>Choose model</button>
+      </div>
     </HomePager>
   </MotionConfig>
 );
 const revealed = () =>
   (document.querySelector(".home-pager") as HTMLElement).hasAttribute("data-revealed");
-const frame = () => new Promise((resolve) => requestAnimationFrame(resolve));
+// Leaving is decided after a short settle (a closing menu hands focus back late).
+const frame = () => new Promise((resolve) => setTimeout(resolve, 100));
 
 it("shows the cards by default", () => {
   render(ui());
@@ -54,6 +58,19 @@ it("leaves the composer on Esc, and on focus moving to a card", async () => {
   screen.getByRole("button", { name: "Card row" }).focus();
   await frame();
   expect(revealed()).toBe(true);
+});
+
+it("leaves the layout alone when a composer button takes focus", async () => {
+  render(ui());
+  const model = screen.getByRole("button", { name: "Choose model" });
+  model.focus();
+  expect(revealed()).toBe(true);
+  // From the text field, the button still counts as the composer.
+  screen.getByLabelText("Composer").focus();
+  expect(revealed()).toBe(false);
+  model.focus();
+  await frame();
+  expect(revealed()).toBe(false);
 });
 
 it("ignores scrolling", () => {
