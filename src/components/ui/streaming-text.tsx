@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  memo,
   useEffect,
   useMemo,
   useRef,
@@ -54,7 +55,7 @@ interface StreamingTextProps {
   wordMs?: number;
 }
 
-function StreamingText({
+const StreamingText = memo(function StreamingText({
   children,
   className,
   wordMs = 16,
@@ -67,24 +68,44 @@ function StreamingText({
     () => false,
   );
   const presentOnMount = useRef(count);
+  const countRef = useRef(count);
+  countRef.current = count;
   const shownRef = useRef(count);
+  const timerRef = useRef<number | null>(null);
   const [shown, setShown] = useState(count);
 
   useEffect(() => {
-    if (reduced || wordMs <= 0 || shownRef.current >= count) {
+    return () => {
+      if (timerRef.current !== null) {
+        window.clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, [reduced, wordMs]);
+
+  useEffect(() => {
+    if (reduced || wordMs <= 0) {
+      if (timerRef.current !== null) {
+        window.clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
       if (shownRef.current !== count) {
         shownRef.current = count;
         setShown(count);
       }
       return;
     }
-    const timer = window.setInterval(() => {
-      const next = Math.min(count, shownRef.current + 1);
+    if (shownRef.current >= count || timerRef.current !== null) return;
+    timerRef.current = window.setInterval(() => {
+      const target = countRef.current;
+      const next = Math.min(target, shownRef.current + 1);
       shownRef.current = next;
       setShown(next);
-      if (next >= count) window.clearInterval(timer);
+      if (next >= target && timerRef.current !== null) {
+        window.clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
     }, wordMs);
-    return () => window.clearInterval(timer);
   }, [count, reduced, wordMs]);
 
   let wordIndex = 0;
@@ -127,7 +148,7 @@ function StreamingText({
       {visible}
     </span>
   );
-}
+});
 
 export { StreamingText };
 export type { StreamingTextProps };

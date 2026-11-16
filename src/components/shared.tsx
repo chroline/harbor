@@ -176,7 +176,7 @@ function streamLeaves(children: ReactNode, streaming: boolean) {
   if (!streaming) return children;
   return Children.map(children, (child) =>
     typeof child === "string" && /\S/.test(child) ? (
-      <StreamingText>{child}</StreamingText>
+      <StreamingText wordMs={0}>{child}</StreamingText>
     ) : (
       child
     ),
@@ -227,6 +227,7 @@ export function ChatLink({ href, children }: { href?: string; children: ReactNod
 
 function MarkdownOrderedList({ node: _node, children, start, style, ...props }: ComponentProps<"ol"> & { node?: unknown }) {
   const ref = useRef<HTMLOListElement>(null);
+  const itemCount = Children.count(children);
   useLayoutEffect(() => {
     const list = ref.current;
     if (!list) return;
@@ -238,7 +239,7 @@ function MarkdownOrderedList({ node: _node, children, start, style, ...props }: 
     };
     measure();
     void document.fonts?.ready.then(measure);
-  }, [children, start]);
+  }, [itemCount, start]);
   return <ol {...props} ref={ref} start={start} style={style}>{children}</ol>;
 }
 

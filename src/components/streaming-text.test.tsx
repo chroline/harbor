@@ -59,3 +59,35 @@ it("shows a reduced-motion reply immediately, without the word animation", () =>
   });
   expect(view.container.querySelector(".streaming-word")).toBeNull();
 });
+
+it("keeps ticking smoothly when chunks arrive faster than wordMs", () => {
+  mockMotion(false);
+  vi.useFakeTimers();
+  const view = render(<StreamingText wordMs={16}>One</StreamingText>);
+  view.rerender(<StreamingText wordMs={16}>One two</StreamingText>);
+  act(() => {
+    vi.advanceTimersByTime(10);
+  });
+  view.rerender(<StreamingText wordMs={16}>One two three</StreamingText>);
+  act(() => {
+    vi.advanceTimersByTime(6);
+  });
+  expect(view.container.textContent).toBe("One two");
+  act(() => {
+    vi.advanceTimersByTime(16);
+  });
+  expect(view.container.textContent).toBe("One two three");
+});
+
+it("places newly arrived words immediately with fade animation when wordMs is 0", () => {
+  mockMotion(false);
+  const view = render(<StreamingText wordMs={0}>Hello</StreamingText>);
+  expect(view.container.querySelector(".streaming-word")).toBeNull();
+  view.rerender(<StreamingText wordMs={0}>Hello there friend</StreamingText>);
+  expect(view.container.textContent).toBe("Hello there friend");
+  expect(
+    [...view.container.querySelectorAll(".streaming-word")].map(
+      (word) => word.textContent,
+    ),
+  ).toEqual(["there", "friend"]);
+});

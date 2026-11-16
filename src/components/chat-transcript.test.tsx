@@ -560,3 +560,35 @@ it("does not open a tool when it fails during active work", () => {
   fireEvent.click(toggle);
   expect(toggle.getAttribute("aria-expanded")).toBe("true");
 });
+
+it("keeps streaming markdown with inline formatting and new paragraphs in document order", () => {
+  const entry = message(2, "assistant") as Extract<
+    TimelineEntry,
+    { type: "message" }
+  >;
+  entry.message.text = "First part";
+  const view = render(
+    <ChatTranscript
+      entries={[message(1, "user"), entry]}
+      renderTool={renderTool}
+      working
+    />,
+  );
+  const next = {
+    ...entry,
+    message: {
+      ...entry.message,
+      text: "First part with **bold** and `code`\n\nSecond paragraph already here.",
+    },
+  };
+  view.rerender(
+    <ChatTranscript
+      entries={[message(1, "user"), next]}
+      renderTool={renderTool}
+      working
+    />,
+  );
+  expect(screen.getByLabelText("Assistant message").textContent).toBe(
+    "First part with bold and code\nSecond paragraph already here.",
+  );
+});

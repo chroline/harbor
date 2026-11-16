@@ -80,4 +80,6 @@ the [setup guide](docs/getting-started.md) covers your first conversation; [prov
 
 ---
 
+streaming replies use [rare ui](https://www.rareui.com/components/streamingresponse).
+
 <p align="center"><em>for the things only you would think to make.</em></p>
