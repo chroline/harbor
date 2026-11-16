@@ -37,10 +37,6 @@
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
   scroll-padding: 1.25rem;
-  /* scroll-fade's mask becomes the backdrop root and cancels blur on the cards inside. */
-  -webkit-mask-image: none;
-  mask-image: none;
-  animation: none;
 }
 /* While following output, let the scroller move the viewport. Native scroll
    anchoring would jump to each new line before the smooth glide can run. */
