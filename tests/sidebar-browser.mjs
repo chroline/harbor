@@ -83,7 +83,7 @@ const resize = async (target, fromTopbar = false) => {
         .getBoundingClientRect();
       const title = document
         .querySelector(".topbar-title")
-        .getBoundingClientRect();
+        ?.getBoundingClientRect();
       const lastIcon = [
         ...document.querySelectorAll(".topbar-history button svg"),
       ]
@@ -103,11 +103,11 @@ const resize = async (target, fromTopbar = false) => {
         Math.abs(topbar.right - sidebar.right) < 0.5 &&
         Math.abs(railRect.right - sidebar.right) < 1 &&
         divider.right <= main.left + 1 &&
-        title.left >= main.left &&
+        (!title || title.left >= main.left) &&
         iconRight <= sidebar.right + 1
       );
     },
-    Math.max(160, Math.min(360, target)),
+    Math.max(160, Math.min(960, target)),
   );
   await page.mouse.up();
   await page.waitForFunction(
@@ -116,7 +116,7 @@ const resize = async (target, fromTopbar = false) => {
         document.querySelector("#harbor-sidebar").getBoundingClientRect()
           .width - target,
       ) < 1,
-    Math.max(160, Math.min(360, target)),
+    Math.max(160, Math.min(960, target)),
   );
 };
 await setViewport(1380, 900);
@@ -176,10 +176,10 @@ await page.waitForFunction(collapsed);
 await page.click(trigger);
 await page.waitForFunction(expanded);
 console.log("Checking integrated rail resize bounds");
-await resize(800);
+await resize(1400);
 await resize(160, true);
-await resize(800, true);
-assert.equal((await preference()).width, 360);
+await resize(1400, true);
+assert.equal((await preference()).width, 960);
 await resize(160);
 assert.equal((await preference()).width, 160);
 // Measure the painted SVG edge, rather than the trigger's larger hit target.

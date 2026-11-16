@@ -124,7 +124,9 @@ describe("sidebar edge", () => {
     move(handle, 155);
     expect(width()).toBe(160);
     move(handle, 800);
-    expect(width()).toBe(360);
+    expect(width()).toBe(800);
+    move(handle, 1600);
+    expect(width()).toBe(960);
     up(handle);
     expect(state("open")).toBe("true");
     expect(state("resizing")).toBe("false");

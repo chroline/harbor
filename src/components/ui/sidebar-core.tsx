@@ -49,7 +49,7 @@ export const SIDEBAR_KEYBOARD_SHORTCUT = "[";
 export const SIDEBAR_KEYBOARD_SHORTCUT_RIGHT = "]";
 /** Drag-resize clamp for the built-in rail handle (px). */
 export const SIDEBAR_MIN_WIDTH = 160;
-export const SIDEBAR_MAX_WIDTH = 360;
+export const SIDEBAR_MAX_WIDTH = 960;
 /** Dragging this far past the minimum width collapses the sidebar instead of
  *  bottoming out — the same "throw it at the edge to dismiss" affordance
  *  native apps use. */

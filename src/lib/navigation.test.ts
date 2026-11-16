@@ -6,7 +6,7 @@ import {
   travel,
   visit,
 } from "./navigation";
-import { parseShellPreferences } from "./shell-layout";
+import { parseShellPreferences, sidebarWidthCeiling } from "./shell-layout";
 describe("Harbor navigation history", () => {
   it("restores the saved task and safely rejects invalid saved views", () => {
     expect(readSavedView('{"session":"last-task"}')).toEqual({
@@ -74,20 +74,29 @@ describe("Sidebar preferences and bounds", () => {
     expect(parseShellPreferences("broken")).toEqual({ open: true, width: 256 });
     expect(parseShellPreferences('{"open":"no","width":999}')).toEqual({
       open: true,
-      width: 360,
+      width: 999,
     });
-    expect(parseShellPreferences('{"width":-1}').width).toBe(236);
+    expect(parseShellPreferences('{"width":-1}').width).toBe(230);
   });
   it("starts at Fluid's default width and clamps legacy widths to its bounds", () => {
     expect(parseShellPreferences(null)).toEqual({ open: true, width: 256 });
     expect(parseShellPreferences('{"open":false,"width":420}')).toEqual({
       open: false,
-      width: 360,
+      width: 420,
+    });
+    expect(parseShellPreferences('{"open":false,"width":2000}')).toEqual({
+      open: false,
+      width: 2000,
     });
     expect(parseShellPreferences('{"width":280}').width).toBe(280);
-    expect(parseShellPreferences('{"width":160}').width).toBe(236);
+    expect(parseShellPreferences('{"width":160}').width).toBe(230);
     expect(parseShellPreferences('{"width":"280"}').width).toBe(256);
     expect(parseShellPreferences('{"width":1e999}').width).toBe(256);
+  });
+  it("stops where the conversation column would start shrinking", () => {
+    expect(sidebarWidthCeiling(1380)).toBe(560);
+    expect(sidebarWidthCeiling(1920)).toBe(1100);
+    expect(sidebarWidthCeiling(900)).toBe(230);
   });
 });
 

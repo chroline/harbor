@@ -127,7 +127,7 @@ import {
 import { TopbarHistory } from "./components/TopbarHistory";
 import { SidebarRowMenu } from "./components/SidebarRowMenu";
 import { ResizeGrip } from "./components/ui/resizable";
-import { MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH } from "./lib/shell-layout";
+import { MIN_SIDEBAR_WIDTH, sidebarWidthCeiling } from "./lib/shell-layout";
 
 function SidebarResizeHandle({
   width,
@@ -156,7 +156,10 @@ function SidebarResizeHandle({
         const move = (pointer: PointerEvent) => {
           const next = Math.max(
             MIN_SIDEBAR_WIDTH,
-            Math.min(MAX_SIDEBAR_WIDTH, startWidth + pointer.clientX - startX),
+            Math.min(
+              sidebarWidthCeiling(window.innerWidth),
+              startWidth + pointer.clientX - startX,
+            ),
           );
           setWidth(pixelsToRem(next));
         };
