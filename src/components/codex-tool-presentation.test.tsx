@@ -130,10 +130,8 @@ it("renders all nine recorded calls with collapsed failures and shared output pa
   const json = container.querySelector("code.language-json");
   expect(JSON.parse(json!.textContent!)).toEqual({ ok: true });
   expect(container.querySelector("h2")).toBeNull();
-  expect(container.querySelector(".tool-location")?.textContent).toContain(
-    "SKILL.md",
-  );
-  expect(container.querySelectorAll(".tool-location")).toHaveLength(1);
+  // The file path is already in the step title.
+  expect(container.querySelector(".tool-location")).toBeNull();
   expect(
     container.textContent?.match(
       /curl -fsS https:\/\/omniplay.stream\/health/g,

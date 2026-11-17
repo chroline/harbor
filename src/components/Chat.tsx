@@ -8,7 +8,11 @@ import type { PromptAttachment } from "../lib/bindings/PromptAttachment";
 import { WakeupTool } from "./WakeupTool";
 import { ToolResult } from "./ToolResult";
 import { ToolCode, ToolJson } from "./ToolJson";
-import { toolActivityKind, toolPresentation } from "../lib/tool-presentation";
+import {
+  toolActivityKind,
+  toolFileChanges,
+  toolPresentation,
+} from "../lib/tool-presentation";
 import type { SupportedProviderId } from "../lib/bindings/SupportedProviderId";
 import { PlanReview } from "./PlanReview";
 import {
@@ -1213,26 +1217,7 @@ export function ToolCard({
   const hasTerminal = tool.content.some(
     (block) => record(block).type === "terminal",
   );
-  const diffs = tool.content
-    .map(record)
-    .filter(
-      (c) =>
-        c.type === "diff" &&
-        (typeof c.newText === "string" ||
-          typeof c.oldText === "string" ||
-          c.newText === null),
-    );
-  const input = record(tool.rawInput);
-  const files =
-    tool.status !== "completed"
-      ? []
-      : diffs.length
-        ? diffs
-        : (tool.name || tool.title).toLowerCase() === "write" &&
-            typeof (input.file_path ?? input.path) === "string" &&
-            typeof input.content === "string"
-          ? [{ path: input.file_path ?? input.path, newText: input.content }]
-          : [];
+  const files = toolFileChanges(tool);
   const readSnapshot =
     tool.kind === "read" &&
     tool.status === "completed" &&
@@ -1246,9 +1231,6 @@ export function ToolCard({
           <ChatLink href={presentation.url}>{presentation.url}</ChatLink>
         </p>
       )}
-      {presentation.location && !files.length && !readSnapshot && (
-        <p className="tool-location">{presentation.location}</p>
-      )}
       {presentation.command && !presentation.commandInTitle && (
         <ToolCode heading="Input" language="sh" text={presentation.command} />
       )}
@@ -1256,17 +1238,9 @@ export function ToolCard({
       {presentation.context && (
         <p className="tool-context">{presentation.context}</p>
       )}
-      {!!Object.keys(presentation.parameters).filter(
-        (key) => !(files.length && key === "content"),
-      ).length && (
-        <ToolJson
-          heading="Input"
-          value={Object.fromEntries(
-            Object.entries(presentation.parameters).filter(
-              ([key]) => !(files.length && key === "content"),
-            ),
-          )}
-        />
+      {/* A diff already shows the old and new text the input carries. */}
+      {!files.length && !!Object.keys(presentation.parameters).length && (
+        <ToolJson heading="Input" value={presentation.parameters} />
       )}
 
       {files.length ? (

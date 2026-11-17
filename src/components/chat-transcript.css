@@ -294,11 +294,6 @@
     transition: none;
   }
 }
-.tool-location {
-  overflow-wrap: anywhere;
-  color: var(--muted-foreground);
-  font-size: 0.8125rem;
-}
 .tool-detail {
   font-size: 0.8125rem;
   line-height: 1.25rem;
