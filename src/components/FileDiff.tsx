@@ -3,6 +3,7 @@ import { FileDiff } from "./ui/file-diff";
 import {
   fileChangeLines,
   fileDiffLanguage,
+  trimContext,
   type FilePatch,
   type FileDiffHunk,
 } from "@/lib/file-diff";
@@ -17,14 +18,24 @@ export function FileChange({
   before?: string | null;
   after?: string | null;
 }) {
-  const lines = useMemo(() => fileChangeLines(before, after), [before, after]);
+  // Only a real before/after diff has distant context to drop; an unknown
+  // side is all context and shows whole.
+  const hunks = useMemo(() => {
+    const lines = fileChangeLines(before, after);
+    return before === undefined || after === undefined
+      ? [{ lines, oldStart: 1, newStart: 1 }]
+      : trimContext(lines);
+  }, [before, after]);
   return (
     <div className="file-change">
-      <FileDiff
-        filename={filename}
-        lines={lines}
-        language={fileDiffLanguage(filename)}
-      />
+      {hunks.map((hunk, index) => (
+        <FileDiff
+          key={index}
+          filename={filename}
+          language={fileDiffLanguage(filename)}
+          {...hunk}
+        />
+      ))}
       {before === undefined && (
         <p className="file-change-note">Previous contents unavailable.</p>
       )}

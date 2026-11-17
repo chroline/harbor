@@ -3,7 +3,7 @@ import { afterEach, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { FileDiff } from "./ui/file-diff";
 import { FileChange, FilePatchDiff } from "./FileDiff";
-import { fileChangeLines, filePatches } from "@/lib/file-diff";
+import { diffStats, fileChangeLines, filePatches, trimContext } from "@/lib/file-diff";
 
 afterEach(cleanup);
 
@@ -111,4 +111,34 @@ it("keeps multi-file deletions, binary changes, and rename-only changes visible"
   const { container } = render(<FilePatchDiff patch={patches[0]} split />);
   expect(container.querySelectorAll('[data-slot="file-diff"]')).toHaveLength(2);
   expect(screen.getByText("0 added, 1 removed")).toBeTruthy();
+});
+
+it("keeps four lines of context around each change and numbers each hunk", () => {
+  const body = (n: number) => Array.from({ length: n }, (_, i) => `line ${i + 1}`);
+  const before = body(40).join("\n");
+  const after = body(40)
+    .map((text, i) => (i === 9 || i === 29 ? `${text} changed` : text))
+    .join("\n");
+  const hunks = trimContext(fileChangeLines(before, after));
+  expect(hunks).toHaveLength(2);
+  // Lines 6-9 before the change, the change itself, lines 11-14 after.
+  expect(hunks[0]).toMatchObject({ oldStart: 6, newStart: 6 });
+  expect(hunks[0].lines.map((line) => line.text)).toEqual([
+    "line 6", "line 7", "line 8", "line 9",
+    "line 10", "line 10 changed",
+    "line 11", "line 12", "line 13", "line 14",
+  ]);
+  expect(hunks[1]).toMatchObject({ oldStart: 26, newStart: 26 });
+  expect(hunks[1].lines).toHaveLength(10);
+  // No changes: nothing to anchor context to, so the whole file stays.
+  expect(trimContext(fileChangeLines(before, before))).toHaveLength(1);
+
+  const { container } = render(<FileChange filename="a.ts" before={before} after={after} />);
+  expect(container.querySelectorAll('[data-slot="file-diff"]')).toHaveLength(2);
+});
+
+it("counts added and removed lines, and nothing when a side is unknown", () => {
+  expect(diffStats("a\nb\n", "a\nc\nd\n")).toEqual({ added: 2, removed: 1 });
+  expect(diffStats(null, "x\ny\n")).toEqual({ added: 2, removed: 0 });
+  expect(diffStats(undefined, "x\n")).toEqual({ added: 0, removed: 0 });
 });
