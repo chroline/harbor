@@ -33,6 +33,13 @@ const shot = async (name) => {
 // on a fresh document and navigate explicitly.
 const load = async (theme) => {
   await page.cdp("Emulation.setDeviceMetricsOverride", viewport);
+  // The fixtures run the app as the desktop build, whose page is transparent
+  // over macOS's sidebar material. Paint that material behind it instead of
+  // the browser's white. Light is measured from the app over a black desktop
+  // (#e9eaeb after the 60% white wash); dark is an estimate.
+  await page.cdp("Emulation.setDefaultBackgroundColorOverride", {
+    color: theme === "dark" ? { r: 52, g: 52, b: 54, a: 1 } : { r: 200, g: 202, b: 205, a: 1 },
+  });
   await page.cdp("Page.addScriptToEvaluateOnNewDocument", { source: fixtures });
   await page.goto(url);
   await page.evaluate((t) => {
