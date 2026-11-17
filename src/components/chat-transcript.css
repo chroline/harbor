@@ -217,6 +217,10 @@
   > div > [data-slot="trace-collapsible-content-inner"] {
   margin-top: 0.5rem;
 }
+/* Steps sit close; each row's own padding already gives it room. */
+.transcript-activity [data-slot="trace"] {
+  gap: 0;
+}
 .transcript-activity [data-slot="trace"] > [data-slot="trace-line"] {
   padding-block: 0.25rem;
 }
