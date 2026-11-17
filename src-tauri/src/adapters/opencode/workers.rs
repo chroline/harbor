@@ -6,7 +6,6 @@ use serde::Deserialize;
 use serde_json::Value;
 
 const CHILD_META: &str = "opencode/child-session";
-const DEFAULT_TITLE: &str = "OpenCode worker";
 const FORWARDED: &[&str] = &[
     "user_message_chunk",
     "agent_message_chunk",
@@ -28,7 +27,7 @@ fn child_session(update: &Value) -> Option<ChildSession> {
     serde_json::from_value(update.get("_meta")?.get(CHILD_META)?.clone()).ok()
 }
 
-fn announcement(parent: &str, child: &str, title: &str, state: WorkerState) -> Option<WorkerAnnouncement> {
+fn announcement(parent: &str, child: &str, title: Option<&str>, state: WorkerState) -> Option<WorkerAnnouncement> {
     if parent.is_empty() || child.is_empty() || parent == child {
         return None;
     }
@@ -37,7 +36,8 @@ fn announcement(parent: &str, child: &str, title: &str, state: WorkerState) -> O
         update: WorkerUpdate {
             session_update: WorkerUpdateKind::SubagentUpdate,
             session_id: child.into(),
-            title: if title.is_empty() { DEFAULT_TITLE.into() } else { title.into() },
+            // A receipt that does not name the worker must not rename it.
+            title: title.filter(|t| !t.is_empty()).map(str::to_owned),
             description: None,
             state,
         },
@@ -79,7 +79,7 @@ pub fn forwarded(parent: &str, payload: &Value) -> Option<WorkerAnnouncement> {
     if meta.id != child || meta.parent_id != parent {
         return None;
     }
-    announcement(parent, child, meta.title.as_deref().unwrap_or(DEFAULT_TITLE), WorkerState::Working)
+    announcement(parent, child, meta.title.as_deref(), WorkerState::Working)
 }
 
 /// Read the parent's `subagent` tool receipt, which names the child session.
@@ -107,8 +107,7 @@ pub fn announcements(kind: &str, payload: &Value) -> Vec<WorkerAnnouncement> {
     };
     let title = update["rawInput"]["description"]
         .as_str()
-        .filter(|t| !t.is_empty())
-        .unwrap_or(DEFAULT_TITLE);
+        .filter(|t| !t.is_empty());
     announcement(parent, child, title, state).into_iter().collect()
 }
 
@@ -134,7 +133,7 @@ mod tests {
         let worker = forwarded("ses_root", &routed).unwrap();
         assert_eq!(worker.session_id, "ses_root");
         assert_eq!(worker.update.session_id, "ses_child");
-        assert_eq!(worker.update.title, "List cwd files");
+        assert_eq!(worker.update.title.as_deref(), Some("List cwd files"));
         assert!(matches!(worker.update.state, WorkerState::Working));
 
         let chunk = route_child(child_frame("ses_root", json!({"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"done"},"_meta":meta("ses_root")})));
@@ -163,9 +162,14 @@ mod tests {
         let running = announcements("session/update", &receipt("running"));
         assert_eq!(running.len(), 1);
         assert_eq!(running[0].update.session_id, "ses_child");
-        assert_eq!(running[0].update.title, "List files");
+        assert_eq!(running[0].update.title.as_deref(), Some("List files"));
         assert!(matches!(running[0].update.state, WorkerState::Working));
         assert!(matches!(announcements("session/update", &receipt("completed"))[0].update.state, WorkerState::Idle));
+        // A completion receipt without the description must not rename the worker.
+        let bare = child_frame("ses_root", json!({"sessionUpdate":"tool_call_update","toolCallId":"call","status":"completed","rawOutput":{"metadata":{"sessionID":"ses_child","status":"completed"}}}));
+        let bare = announcements("session/update", &bare);
+        assert!(bare[0].update.title.is_none());
+        assert!(serde_json::to_value(&bare[0]).unwrap()["update"].get("title").is_none());
         assert!(matches!(announcements("session/update", &receipt("error"))[0].update.state, WorkerState::Error));
         assert!(announcements("request", &receipt("running")).is_empty());
         let shell = child_frame("ses_root", json!({"sessionUpdate":"tool_call_update","toolCallId":"call","status":"completed","rawOutput":{"metadata":{"status":"completed","exit":0}}}));

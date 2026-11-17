@@ -52,7 +52,7 @@ fn announcement(
         update: WorkerUpdate {
             session_update: WorkerUpdateKind::SubagentUpdate,
             session_id: child.into(),
-            title: title.into(),
+            title: Some(title.into()),
             description: None,
             state,
         },

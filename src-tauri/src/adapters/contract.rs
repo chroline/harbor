@@ -253,7 +253,9 @@ pub struct WorkerAnnouncement {
 pub struct WorkerUpdate {
     pub session_update: WorkerUpdateKind,
     pub session_id: String,
-    pub title: String,
+    /// Omitted when the provider did not restate it, so a title learned earlier is kept.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
     pub description: Option<String>,
     pub state: WorkerState,
 }
