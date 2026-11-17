@@ -78,6 +78,10 @@ export function FileDiff({
     () => highlightCode(lines.map((line) => line.text).join("\n"), language),
     [lines, language],
   );
+  const digits = Math.max(
+    2,
+    ...numbered.flatMap((line) => [line.old ?? 0, line.new ?? 0]).map((n) => String(n).length),
+  );
   const added = lines.filter((line) => line.kind === "add").length;
   const removed = lines.filter((line) => line.kind === "remove").length;
 
@@ -151,6 +155,7 @@ export function FileDiff({
         <div
           aria-hidden
           data-slot="file-diff-gutter"
+          style={{ "--line-number-digits": `${digits}ch` } as React.CSSProperties}
           className="shrink-0 py-2 font-code text-[0.75rem] leading-5 text-muted-foreground/70 select-none"
         >
           {numbered.map((line, index) => (

@@ -41,7 +41,9 @@
 
 [data-slot="file-diff"] .file-diff-line-number {
   display: inline-block;
-  min-width: 2ch;
+  /* The widest number in the snippet, so empty cells (the old side of an
+     added line) keep every row's divider in one column. */
+  min-width: var(--line-number-digits, 2ch);
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
