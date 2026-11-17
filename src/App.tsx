@@ -210,6 +210,7 @@ const WINDOW_NO_DRAG = [
   ".harbor-sidebar-handle",
 ].join(", ");
 const sidebarChildrenClassName = "ml-0 border-l-0 pl-0";
+const newestFirst = (a: SessionRecord, b: SessionRecord) => b.updatedAt - a.updatedAt;
 
 export default function App() {
   const { data, ready, refresh, error, setError, updateSession } = useStore();
@@ -662,17 +663,21 @@ export default function App() {
     ],
     [data.projects, data.sessions, data.workspaces],
   );
+  // A project was last updated when any of its conversations or agents was.
+  const projectUpdatedAt = (projectId: string) =>
+    Math.max(0, ...sessions.filter((s) => s.projectId === projectId).map((s) => s.updatedAt));
   const workspaceIds = new Set(data.workspaces.map((w) => w.id));
   const noWorkspaceSessions = workspaceChats.filter(
     (s) => !s.workspaceId || !workspaceIds.has(s.workspaceId),
   );
-  const chatRows = (items: SessionRecord[], group: string, pinned = false) => {
-    items = sidebarOrder.sort(group, items, (s) => s.id);
+  // Recent groups list newest first and can't be rearranged by hand.
+  const chatRows = (items: SessionRecord[], group: string, pinned = false, recent = false) => {
+    items = recent ? [...items].sort(newestFirst) : sidebarOrder.sort(group, items, (s) => s.id);
     return items.map((s) => <SidebarConversationRow key={s.id}
       title={s.title} icon={providerGlyph(s.providerId)} status={s.status} unseen={unseen.has(s.id)}
       topLevel={pinned} pinned={pinnedChatIds.includes(s.id)}
       active={active?.id === s.id && !(s.isOrchestrator && typeof view === "object" && view.child)}
-      reorder={sidebarOrder.row(group,s.id,s.title,items.map(item=>item.id))}
+      reorder={recent ? undefined : sidebarOrder.row(group,s.id,s.title,items.map(item=>item.id))}
       onOpen={()=>go({session:s.id})} onTogglePin={()=>togglePinnedChat(s.id)} onArchive={()=>void requestArchive(s)}>
       {s.isOrchestrator && (projectWorkers[s.id]?.length ?? 0) > 0 && <SidebarMenuSub className={sidebarChildrenClassName} aria-label={`Agents in ${s.title}`}>{workerRows(s)}</SidebarMenuSub>}
     </SidebarConversationRow>);
@@ -862,13 +867,13 @@ export default function App() {
             <SidebarGroup collapsible role="region" aria-label="Projects">
               <SidebarGroupLabel>Projects</SidebarGroupLabel>
               <SidebarGroupAction title="Create project" aria-label="Create project" onClick={() => setProjectDialog("new")}><Plus /></SidebarGroupAction>
-              <SidebarMenu>{sidebarOrder.sort("projects", data.projects, (p) => p.id).map((project) => {
+              <SidebarMenu>{[...data.projects].sort((a, b) => projectUpdatedAt(b.id) - projectUpdatedAt(a.id)).map((project) => {
                 const roots = sessions.filter((s) => s.isOrchestrator && s.projectId === project.id);
                 const current = roots.find((s) => s.id === project.activeOrchestratorSessionId);
                 const previous = roots.filter((s) => s.id !== current?.id);
                 const mark = summarizeSessionMarks(current ? [current.status] : [], roots.filter((s) => unseen.has(s.id)).length);
                 return <SidebarMenuItem key={project.id}>
-                <SidebarRowMenu label={project.name} reorder={sidebarOrder.row("projects", project.id, project.name, sidebarOrder.sort("projects", data.projects, (p) => p.id).map((p) => p.id))} actions={[
+                <SidebarRowMenu label={project.name} actions={[
                   { label: "Open project", icon: FolderOpen, onSelect: () => void openProject(project) },
                   { label: "Start fresh conversation", icon: SquarePen, onSelect: () => void openProject(project, true) },
                   ...(previous.length ? [{ label: "Conversation history…", icon: Archive, onSelect: () => setProjectHistory(project) }] : []),
@@ -983,6 +988,8 @@ export default function App() {
                         {chatRows(
                           workspaceSessions,
                           `chats:${w.id ?? NO_WORKSPACE_ID}`,
+                          false,
+                          true,
                         )}
                         {!workspaceSessions.length && (
                           <SidebarMenuSubItem>

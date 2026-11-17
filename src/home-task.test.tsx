@@ -968,7 +968,7 @@ it("blocks launching a workspace with an unavailable folder", async () => {
   expect(screen.getByText(/This workspace folder is unavailable/)).toBeTruthy();
 });
 
-it("reorders projects, workspaces, workspace chats and pins independently and restores them", async () => {
+it("lists projects and workspace chats newest first without manual reordering", () => {
   mocks.extraProjects = [
     {
       id: "second",
@@ -980,6 +980,43 @@ it("reorders projects, workspaces, workspace chats and pins independently and re
     },
   ];
   mocks.initialSessions = [
+    { ...session, updatedAt: 1000 },
+    { ...session, id: "second-chat", title: "Second chat", updatedAt: 2000 },
+    {
+      ...session,
+      id: "second-root",
+      title: "Second project conversation",
+      isOrchestrator: true,
+      projectId: "second",
+      updatedAt: 3000,
+    },
+  ];
+  render(<App />);
+  const group = (name: string) => screen.getByRole("region", { name });
+  const before = (first: HTMLElement, second: HTMLElement) =>
+    !!(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING);
+  const projects = within(group("Projects"));
+  expect(
+    before(
+      projects.getByRole("button", { name: "Second project" }),
+      projects.getByRole("button", { name: "Harbor" }),
+    ),
+  ).toBe(true);
+  const workspaces = within(group("Workspaces"));
+  expect(
+    before(
+      workspaces.getByRole("button", { name: "Second chat" }),
+      workspaces.getByRole("button", { name: session.title }),
+    ),
+  ).toBe(true);
+  expect(group("Projects").querySelector("[data-reorder-id]")).toBeNull();
+  expect(
+    document.querySelector('[data-reorder-group^="chats:"]'),
+  ).toBeNull();
+});
+
+it("drags a pinned chat without navigating, rejects another group and cancels with Escape", () => {
+  mocks.initialSessions = [
     session,
     { ...session, id: "second-chat", title: "Second chat" },
   ];
@@ -987,67 +1024,10 @@ it("reorders projects, workspaces, workspace chats and pins independently and re
     PINNED_CHATS_KEY,
     JSON.stringify([session.id, "second-chat"]),
   );
-  const { unmount } = render(<App />);
-  const group = (name: string) => screen.getByRole("region", { name });
-  const ids = (name: string) =>
-    [...group(name).querySelectorAll<HTMLElement>("[data-reorder-id]")].map(
-      (row) => row.dataset.reorderId,
-    );
-
-  await selectSidebarAction(
-    within(group("Projects")).getByRole("button", { name: "Second project" }),
-    "Move up",
-  );
-  expect(ids("Projects")).toEqual(["second", "repo"]);
-  expect(screen.queryByLabelText("Active chat")).toBeNull();
-  await selectSidebarAction(
-    within(group("Workspaces")).getByRole("button", { name: "repo" }),
-    "Move up",
-  );
-  expect(ids("Workspaces").slice(0, 2)).toEqual(["workspace", NO_WORKSPACE_ID]);
-  expect(
-    screen.getByRole("button", { name: "repo" }).getAttribute("aria-expanded"),
-  ).toBe("true");
-
-  const secondChat = within(group("Workspaces")).getByRole("button", {
-    name: "Second chat",
-  });
-  secondChat.focus();
-  fireEvent.keyDown(secondChat, { key: "ArrowUp", altKey: true });
-  expect(ids("Workspaces").slice(2)).toEqual(["second-chat", session.id]);
-  expect(document.activeElement).toBe(secondChat);
-  expect(ids("Pinned")).toEqual([session.id, "second-chat"]);
-  await selectSidebarAction(
-    within(group("Pinned")).getByRole("button", { name: session.title }),
-    "Move down",
-  );
-  expect(ids("Pinned")).toEqual(["second-chat", session.id]);
-  expect(
-    within(document.getElementById("harbor-sidebar")!).getByRole("status")
-      .textContent,
-  ).toContain("position 2 of 2");
-  expect(mocks.call).not.toHaveBeenCalled();
-
-  unmount();
   render(<App />);
-  expect(ids("Projects")).toEqual(["second", "repo"]);
-  expect(ids("Workspaces")).toEqual([
-    "workspace",
-    NO_WORKSPACE_ID,
-    "second-chat",
-    session.id,
-  ]);
-  expect(ids("Pinned")).toEqual(["second-chat", session.id]);
-});
-
-it("drags a chat without navigating, rejects another group and cancels with Escape", () => {
-  mocks.initialSessions = [
-    session,
-    { ...session, id: "second-chat", title: "Second chat" },
-  ];
-  render(<App />);
-  const row = screen.getByRole("button", { name: session.title });
-  const target = screen.getByRole("button", { name: "Second chat" });
+  const pinned = within(screen.getByRole("region", { name: "Pinned" }));
+  const row = pinned.getByRole("button", { name: session.title });
+  const target = pinned.getByRole("button", { name: "Second chat" });
   const elementFromPoint = vi.fn().mockReturnValue(target);
   vi.stubGlobal("PointerEvent", MouseEvent);
   Object.defineProperty(document, "elementFromPoint", {
@@ -1057,7 +1037,7 @@ it("drags a chat without navigating, rejects another group and cancels with Esca
   const ids = () =>
     [
       ...document.querySelectorAll<HTMLElement>(
-        '[data-reorder-group="chats:__no_workspace__"]',
+        '[data-reorder-group="pinned"]',
       ),
     ].map((row) => row.dataset.reorderId);
   fireEvent.pointerDown(row, { button: 0, clientX: 10, clientY: 10 });
@@ -1469,7 +1449,7 @@ it("selects a sidebar workspace without a modal and starts its worktree with the
   );
 });
 
-it("reorders workspaces, workspace chats and pins independently and restores them", async () => {
+it("reorders workspaces and pins independently and restores them", async () => {
   mocks.initialSessions = [
     session,
     { ...session, id: "second-chat", title: "Second chat" },
@@ -1495,13 +1475,6 @@ it("reorders workspaces, workspace chats and pins independently and restores the
     screen.getByRole("button", { name: "repo" }).getAttribute("aria-expanded"),
   ).toBe("true");
 
-  const secondChat = within(group("Workspaces")).getByRole("button", {
-    name: "Second chat",
-  });
-  secondChat.focus();
-  fireEvent.keyDown(secondChat, { key: "ArrowUp", altKey: true });
-  expect(ids("Workspaces").slice(2)).toEqual(["second-chat", session.id]);
-  expect(document.activeElement).toBe(secondChat);
   expect(ids("Pinned")).toEqual([session.id, "second-chat"]);
   await selectSidebarAction(
     within(group("Pinned")).getByRole("button", { name: session.title }),
@@ -1516,11 +1489,6 @@ it("reorders workspaces, workspace chats and pins independently and restores the
 
   unmount();
   render(<App />);
-  expect(ids("Workspaces")).toEqual([
-    "workspace",
-    NO_WORKSPACE_ID,
-    "second-chat",
-    session.id,
-  ]);
+  expect(ids("Workspaces")).toEqual(["workspace", NO_WORKSPACE_ID]);
   expect(ids("Pinned")).toEqual(["second-chat", session.id]);
 });
