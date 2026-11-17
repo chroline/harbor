@@ -186,6 +186,29 @@ function SidebarResizeHandle({
 }
 import { open as openFolder } from "@tauri-apps/plugin-dialog";
 import type { Workspace } from "./lib/bindings/Workspace";
+
+// Controls, rows, and floating layers that keep their own mouse behavior
+// inside the draggable top band and sidebar.
+const WINDOW_NO_DRAG = [
+  "button",
+  "a",
+  "input",
+  "textarea",
+  "select",
+  "[contenteditable]",
+  "[role='button']",
+  "[role='menuitem']",
+  "[role='separator']",
+  "[role='tab']",
+  "[role='menu']",
+  "[role='listbox']",
+  "[role='dialog']",
+  "[data-task-tab-id]",
+  "[data-reorder-id]",
+  "[data-sidebar='menu-item']",
+  "[data-sidebar='menu-sub-item']",
+  ".harbor-sidebar-handle",
+].join(", ");
 const sidebarChildrenClassName = "ml-0 border-l-0 pl-0";
 
 export default function App() {
@@ -280,6 +303,7 @@ export default function App() {
   const [base, setBase] = useState("HEAD");
   const [focusComposer, setFocusComposer] = useState(0);
   const taskComposer = useRef<HTMLElement>(null);
+  const topbar = useRef<HTMLElement>(null);
   const [prompt, setPrompt] = useState("");
   const [files, setFiles] = useDraftFiles("home");
   const [provider, setProvider] = useState(defaultProvider());
@@ -668,6 +692,32 @@ export default function App() {
   useEffect(() => {
     document.title = active ? title + " — Harbor" : "Harbor";
   }, [active?.id, title]);
+  // Drag the window from any empty spot in the top band (the window's top edge
+  // down to the bottom of the top bar) or in the sidebar. The header starts
+  // below the card inset and its spacers ignore the pointer, so listen on the
+  // document.
+  useEffect(() => {
+    if (!desktop) return;
+    const onMouseDown = (event: MouseEvent) => {
+      const bar = topbar.current;
+      if (
+        !bar ||
+        event.button !== 0 ||
+        event.detail > 1 ||
+        !(event.target instanceof Element) ||
+        (event.clientY > bar.getBoundingClientRect().bottom &&
+          !event.target.closest("#harbor-sidebar, [data-sidebar='peek']")) ||
+        event.target.closest(WINDOW_NO_DRAG)
+      )
+        return;
+      event.preventDefault();
+      void getCurrentWindow()
+        .startDragging()
+        .catch((error) => setError(String(error)));
+    };
+    document.addEventListener("mousedown", onMouseDown);
+    return () => document.removeEventListener("mousedown", onMouseDown);
+  }, []);
   return (
     <SidebarProvider
       className={"app-shell " + (!sidebar ? "sidebar-collapsed" : "")}
@@ -686,24 +736,7 @@ export default function App() {
       mobileBreakpoint={600}
     >
       <SidebarKeyboardShortcut />
-      <header
-        className="topbar"
-        onMouseDown={(event) => {
-          if (
-            !desktop ||
-            event.button !== 0 ||
-            event.detail > 1 ||
-            (event.target as Element).closest(
-              "button, a, input, [role='button'], [role='menuitem'], [role='separator']",
-            )
-          )
-            return;
-          event.preventDefault();
-          void getCurrentWindow()
-            .startDragging()
-            .catch((error) => setError(String(error)));
-        }}
-      >
+      <header className="topbar" ref={topbar}>
         <div className="topbar-pinned">
           <div className="window-controls" aria-hidden="true">
             {!desktop && (
