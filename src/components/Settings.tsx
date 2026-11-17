@@ -246,7 +246,7 @@ export function Settings() {
       <div className="settings-footnote">
         <PlugZap size={rem(15)} />
         <span>
-          Harbor 0.2.0
+          Harbor 0.2.1
           <span className="separator-dot">·</span> ACP v1
         </span>
         {!desktop && <span>Browser preview</span>}
