@@ -110,6 +110,9 @@ export function HomePager({ children, sheet }: { children: ReactNode; sheet: Rea
     const observer = new ResizeObserver(measure);
     observer.observe(root);
     observer.observe(panel);
+    // The composer grows as its text does; the cards must follow it down.
+    const content = hero.current?.firstElementChild;
+    if (content) observer.observe(content);
     window.addEventListener("resize", measure);
     return () => {
       observer.disconnect();
