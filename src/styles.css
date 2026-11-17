@@ -170,7 +170,7 @@
 .dark {
   --cursor-bg-chrome: light-dark(var(--color-neutral-50), var(--color-neutral-900));
   --cursor-bg-sidebar: light-dark(var(--color-neutral-100), var(--color-neutral-900));
-  --window-root-wash: light-dark(rgb(255 255 255 / 16%), rgb(0 0 0 / 42%));
+  --window-root-wash: light-dark(rgb(255 255 255 / 60%), rgb(0 0 0 / 60%));
   --window-tint: light-dark(
     color-mix(in srgb, var(--cursor-bg-sidebar) 42%, transparent),
     color-mix(in srgb, var(--cursor-bg-sidebar) 36%, transparent)
@@ -195,7 +195,7 @@
   /* The conversation is the window. Only the sidebar card is inset. */
   --shell-card-inset: 0.5rem;
   --shell-card-radius: max(0px, calc(var(--window-radius) - var(--shell-card-inset)));
-  --shell-canvas: var(--window-tint);
+  --shell-canvas: transparent;
   --sidebar: var(--surface-1);
   --chrome: var(--window-tint);
   --chrome-edge: var(--border);
