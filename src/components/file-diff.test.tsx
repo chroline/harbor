@@ -26,7 +26,9 @@ it("preserves the shipped demo's numbers, change runs, and changed-only highligh
     />,
   );
   const body = container.querySelector("figure > div")!;
-  const [rail, gutter] = body.children;
+  // The rail and line numbers share one sticky wrapper; the +/- marks are a
+  // separate column so they scroll away with the code.
+  const [rail, gutter] = body.children[0].children;
   expect(
     [...rail.children].map((run) => (run as HTMLElement).style.height),
   ).toEqual([

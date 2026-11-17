@@ -1765,6 +1765,8 @@ html.standalone {
   line-height: 1.5;
   margin: 0;
   padding: 1rem 3rem 1rem 1rem;
+  /* 10 lines, then scroll: line height plus the block's vertical padding. */
+  max-height: calc(10 * 1.125rem + 2rem);
   background: transparent;
   tab-size: 2;
 }

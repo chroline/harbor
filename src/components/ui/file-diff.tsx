@@ -56,6 +56,9 @@ export type FileDiffProps = {
   showHeader?: boolean;
 };
 
+// Longer snippets scroll instead of pushing the conversation down.
+const MAX_VISIBLE_LINES = 10;
+
 export function FileDiff({
   filename,
   lines,
@@ -123,7 +126,17 @@ export function FileDiff({
           )}
         </figcaption>
       )}
-      <div dir="ltr" className="flex">
+      {/* One scroller for both axes, so the line numbers move with the code
+          vertically. They stay at the left edge when scrolling sideways; the
+          +/- marks scroll away with the code. */}
+      <div
+        dir="ltr"
+        className="flex items-start overflow-auto"
+        style={{
+          maxHeight: `calc(${MAX_VISIBLE_LINES} * var(--diff-line) + 1rem)`,
+        }}
+      >
+        <div className="sticky left-0 z-10 flex shrink-0 bg-card">
         {mode === "diff" && (
           <div aria-hidden className="file-diff-rail w-1.5 shrink-0 py-2">
             {runs.map(({ kind, count }, index) => (
@@ -148,15 +161,32 @@ export function FileDiff({
                 )}
                 <span className="file-diff-line-number">{line.new}</span>
               </span>
-              {mode === "diff" && (
-                <span className={cn("min-w-[1ch] px-2.5", ROW[line.kind].mark)}>
-                  {ROW[line.kind].glyph}
-                </span>
-              )}
             </div>
           ))}
         </div>
-        <pre className="min-w-0 flex-1 overflow-x-auto py-2 font-code text-[0.75rem] leading-5">
+        </div>
+        {mode === "diff" && (
+          <div
+            aria-hidden
+            data-slot="file-diff-marks"
+            className="shrink-0 py-2 font-code text-[0.75rem] leading-5 select-none"
+          >
+            {numbered.map((line, index) => (
+              <div
+                key={index}
+                className={cn(
+                  "h-(--diff-line) min-w-[1ch] px-2.5",
+                  ROW[line.kind].tint,
+                  ROW[line.kind].mark,
+                )}
+              >
+                {ROW[line.kind].glyph}
+              </div>
+            ))}
+          </div>
+        )}
+        {/* Not a scroller itself: a nested scroller would move apart from the numbers. */}
+        <pre className="min-w-0 flex-1 py-2 font-code text-[0.75rem] leading-5">
           <code
             className={cn(
               "block w-max min-w-full font-code",
