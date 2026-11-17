@@ -344,7 +344,7 @@ it("uses Trace before the first tool and while reasoning streams", () => {
     document.querySelector(
       '.transcript-activity .activity-step[data-status="running"] [data-slot="trace-title"]',
     )?.textContent,
-  ).toBe("Reasoning…");
+  ).toBe("Thinking…");
   expect(screen.queryByText("Done")).toBeNull();
   const details = screen.getByRole("button", { name: "View reasoning" });
   expect(details.getAttribute("aria-expanded")).toBe("true");
@@ -386,7 +386,7 @@ it("preserves a tool detail disclosure while streamed steps arrive", () => {
     document.querySelector(
       '.activity-step[data-status="pending"] [data-slot="trace-title"]',
     )?.textContent,
-  ).toBe("Read file 2");
+  ).toBe("Reading file 2");
   expect(screen.queryByText("Done")).toBeNull();
 });
 

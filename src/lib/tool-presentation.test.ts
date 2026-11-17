@@ -1,5 +1,9 @@
 import { expect, it } from "vitest";
-import { resultText, toolPresentation } from "./tool-presentation";
+import {
+  resultText,
+  toolActivityLabel,
+  toolPresentation,
+} from "./tool-presentation";
 import type { Tool } from "./protocol";
 const tool = (patch: Partial<Tool> = {}): Tool => ({
   id: "root:tool",
@@ -286,4 +290,57 @@ it("special-cases wakeups without inventing a time or hiding failures", () => {
   );
   expect(failed.wakeup).toBeUndefined();
   expect(failed.output).toEqual(["Scheduling unavailable"]);
+});
+
+it("labels activity rows with a gerund while running and past tense after", () => {
+  const read = (status: Tool["status"]) =>
+    toolActivityLabel(
+      tool({
+        name: "read",
+        kind: "read",
+        status,
+        rawInput: { file_path: "/a/b/snapshot.test.ts" },
+      }),
+    );
+  expect(read("in_progress")).toBe("Reading snapshot.test.ts");
+  expect(read("completed")).toBe("Read snapshot.test.ts");
+  const run = (status: Tool["status"]) =>
+    toolActivityLabel(
+      tool({
+        kind: "execute",
+        status,
+        title: "pnpm install",
+        rawInput: { command: "pnpm install" },
+      }),
+    );
+  expect(run("pending")).toBe("Running pnpm install");
+  expect(run("completed")).toBe("Ran pnpm install");
+  expect(
+    toolActivityLabel(
+      tool({ kind: "execute", title: "Install deps", rawInput: { command: "pnpm i" } }),
+    ),
+  ).toBe("Install deps");
+});
+
+it("conjugates a colon-suffixed verb title", () => {
+  const edit = (status: Tool["status"]) =>
+    toolActivityLabel(tool({ kind: "edit", status, title: "edit: a.test.ts" }));
+  expect(edit("in_progress")).toBe("Editing a.test.ts");
+  expect(edit("completed")).toBe("Edited a.test.ts");
+});
+
+it("labels skill and Code Mode execute rows with a verb", () => {
+  const skill = (status: Tool["status"], name = "skill") =>
+    toolActivityLabel(
+      tool({ name, title: name, status, rawInput: { id: "lemma-linear-workflow" } }),
+    );
+  expect(skill("in_progress")).toBe("Loading skill lemma-linear-workflow");
+  expect(skill("completed")).toBe("Loaded skill lemma-linear-workflow");
+  expect(skill("completed", "mcp__opencode__skill")).toBe(
+    "Loaded skill lemma-linear-workflow",
+  );
+  const run = (status: Tool["status"]) =>
+    toolActivityLabel(tool({ name: "execute", title: "execute", status }));
+  expect(run("in_progress")).toBe("Running code");
+  expect(run("completed")).toBe("Ran code");
 });

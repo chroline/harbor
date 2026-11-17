@@ -23,7 +23,13 @@ import {
 } from "./ChatScroller";
 import type { TimelineEntry, Tool, RecordedInteraction } from "../lib/protocol";
 import "./chat-transcript.css";
-import { toolActivityKind, toolPresentation } from "../lib/tool-presentation";
+import { diffStats } from "../lib/file-diff";
+import {
+  toolActivityKind,
+  toolActivityLabel,
+  toolFileChanges,
+  toolPresentation,
+} from "../lib/tool-presentation";
 
 type ActivityEntry =
   | Extract<TimelineEntry, { type: "tool" }>
@@ -101,18 +107,20 @@ function Activity({
             </TraceIcon>
           )}
           <TraceTitle>{heading}</TraceTitle>
+          {/* Everything this block changed, without opening it. */}
+          <DiffStat tools={tools} />
         </TraceLine>
       </TraceCollapsibleTrigger>
       <TraceCollapsibleContent>
         <Trace>
-          {entries.map((entry) =>
+          {entries.map((entry, index) =>
             entry.type === "tool" ? (
               toolPresentation(entry.tool).wakeup ? (
                 <WakeupTool key={entry.tool.id} tool={entry.tool} />
               ) : (
                 <TraceStep
                   key={entry.tool.id}
-                  label={toolPresentation(entry.tool).title}
+                  label={toolActivityLabel(entry.tool)}
                   icon={
                     <ToolGlyph
                       kind={toolActivityKind(entry.tool)}
@@ -128,6 +136,7 @@ function Activity({
                       ? "Interrupted"
                       : undefined
                   }
+                  stats={<DiffStat tools={[entry.tool]} />}
                   detailLabel="View details"
                 >
                   {renderTool(entry.tool)}
@@ -138,8 +147,8 @@ function Activity({
                 key={entry.message.id}
                 label={
                   active && entry === entries.at(-1)
-                    ? "Reasoning…"
-                    : "Reasoning"
+                    ? "Thinking…"
+                    : thoughtLabel(entry.message, entries[index + 1], endedBefore)
                 }
                 icon={<Brain />}
                 status={
@@ -166,6 +175,65 @@ function Activity({
       </TraceCollapsibleContent>
     </TraceCollapsible>
   );
+}
+
+/** "+added -removed" for the files tools changed, in the diff header's colors. */
+function DiffStat({ tools }: { tools: Tool[] }) {
+  let added = 0;
+  let removed = 0;
+  for (const tool of tools)
+    for (const file of toolFileChanges(tool)) {
+      const side = (value: unknown) =>
+        typeof value === "string" || value === null ? value : undefined;
+      const stats = diffStats(side(file.oldText), side(file.newText));
+      added += stats.added;
+      removed += stats.removed;
+    }
+  if (!added && !removed) return null;
+  return (
+    <span
+      aria-hidden
+      className="flex shrink-0 gap-1.5 font-mono text-xs"
+    >
+      <span dir="ltr" className="text-success">+{added}</span>
+      <span dir="ltr" className="text-destructive">-{removed}</span>
+    </span>
+  );
+}
+
+// Thinking ends when its last chunk lands, or when the next step begins.
+function thoughtLabel(
+  message: { timestamp?: number; updatedAt?: number; workCompletedAt?: number },
+  next?: ActivityEntry,
+  endedBefore?: number,
+) {
+  const start = message.timestamp;
+  if (start === undefined) return "Thought";
+  const nextStart = next
+    ? next.type === "tool"
+      ? next.tool.timestamp
+      : next.message.timestamp
+    : undefined;
+  // workCompletedAt is the whole turn's end, shared by every step, so it only
+  // stands in for the last thought, which has no next step; the next prose
+  // segment (endedBefore) closes it earlier.
+  const closedAt =
+    nextStart === undefined && message.workCompletedAt !== undefined
+      ? endedBefore === undefined
+        ? message.workCompletedAt
+        : Math.min(message.workCompletedAt, endedBefore)
+      : undefined;
+  const end = Math.max(
+    start,
+    message.updatedAt ?? start,
+    nextStart ?? start,
+    closedAt ?? start,
+  );
+  const elapsed = end - start;
+  if (elapsed < 1000) return `Thought for ${Math.round(elapsed)}ms`;
+  // Two significant figures under a minute: 1.2s, 12s, 43s.
+  const seconds = Number((elapsed / 1000).toPrecision(2));
+  return `Thought for ${seconds < 60 ? `${seconds}s` : formatWorkDuration(elapsed)}`;
 }
 
 // Use recorded event times so reopening a chat doesn't restart its timer.

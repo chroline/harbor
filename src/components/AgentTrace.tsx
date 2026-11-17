@@ -88,6 +88,7 @@ export function TraceStep({
   label,
   status,
   description,
+  stats,
   icon,
   children,
   detailLabel,
@@ -96,6 +97,8 @@ export function TraceStep({
   label: string;
   status?: TraceStatus;
   description?: string;
+  /** Shown beside the label, e.g. a diff's +added -removed. */
+  stats?: ReactNode;
   icon?: ReactNode;
   children?: ReactNode;
   detailLabel?: string;
@@ -107,6 +110,7 @@ export function TraceStep({
     <TraceLine status={status} className="activity-step">
       {icon && <TraceIcon>{icon}</TraceIcon>}
       <TraceTitle>{label}</TraceTitle>
+      {stats}
       {description && <TraceDescription>{description}</TraceDescription>}
       {status && !description && <span className="sr-only">{status}</span>}
     </TraceLine>

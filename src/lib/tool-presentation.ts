@@ -95,6 +95,74 @@ export function toolActivityKind(tool: Tool): string {
   return tool.kind;
 }
 
+// Leading verbs in a provider's title: [gerund, past]. Matched on any form so
+// "read", "Read", and "Reading" all land on the same row label.
+const VERBS: Record<string, [string, string]> = {
+  read: ["Reading", "Read"],
+  write: ["Writing", "Wrote"],
+  edit: ["Editing", "Edited"],
+  delete: ["Deleting", "Deleted"],
+  search: ["Searching", "Searched"],
+  fetch: ["Fetching", "Fetched"],
+  list: ["Listing", "Listed"],
+  run: ["Running", "Ran"],
+};
+const VERB_FORMS = new Map(
+  Object.values(VERBS).flatMap((forms) =>
+    forms.map((form) => [form.toLowerCase(), forms] as const),
+  ),
+);
+// The base verb ("edit") and irregular pasts share the verb's forms.
+for (const [base, forms] of Object.entries(VERBS)) VERB_FORMS.set(base, forms);
+
+/** Activity-row label: gerund while the tool runs ("Reading x"), past tense after ("Read x"). */
+export function toolActivityLabel(tool: Tool): string {
+  const { title, command, commandInTitle } = toolPresentation(tool);
+  const running =
+    ["pending", "in_progress"].includes(tool.status) &&
+    tool.workCompletedAt === undefined;
+  // These providers' tools have no verb of their own: "skill", "execute".
+  const name = (tool.name || tool.title)
+    .toLowerCase()
+    .replace(/^mcp__opencode__/, "");
+  if (name === "skill") {
+    const input = record(tool.rawInput);
+    const id = str(input.id) || str(input.skill);
+    return `${running ? "Loading" : "Loaded"} skill${id ? ` ${id}` : ""}`;
+  }
+  // Code Mode's JavaScript sandbox, not the shell.
+  if (name === "execute") return running ? "Running code" : "Ran code";
+  const [first, ...rest] = title.split(" ");
+  // "edit: file.ts" is the same verb; the colon only separated it from the file.
+  const forms = VERB_FORMS.get(first.toLowerCase().replace(/:$/, ""));
+  if (forms) return [forms[running ? 0 : 1], ...rest].join(" ");
+  // A bare command has no verb of its own.
+  if (tool.kind === "execute" && command && commandInTitle)
+    return `${running ? "Running" : "Ran"} ${title}`;
+  return title;
+}
+
+/** Files a finished tool changed: its diffs, or the content a write created. */
+export function toolFileChanges(tool: Tool): Record<string, unknown>[] {
+  if (tool.status !== "completed") return [];
+  const diffs = tool.content
+    .map(record)
+    .filter(
+      (c) =>
+        c.type === "diff" &&
+        (typeof c.newText === "string" ||
+          typeof c.oldText === "string" ||
+          c.newText === null),
+    );
+  if (diffs.length) return diffs;
+  const input = record(tool.rawInput);
+  return (tool.name || tool.title).toLowerCase() === "write" &&
+    typeof (input.file_path ?? input.path) === "string" &&
+    typeof input.content === "string"
+    ? [{ path: input.file_path ?? input.path, newText: input.content }]
+    : [];
+}
+
 export function toolPresentation(tool: Tool) {
   const input = record(tool.rawInput);
   const response = record(tool.claudeCode?.toolResponse);
