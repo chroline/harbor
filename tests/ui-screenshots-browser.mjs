@@ -22,7 +22,9 @@ const written = [];
 const shot = async (name) => {
   await page.evaluate(() => document.fonts.ready.then(() => true));
   const path = `${out}/${name}.png`;
-  await page.screenshot({ path });
+  // page.screenshot() downscales to CSS pixels; capture through CDP to keep 2×.
+  const { data } = await page.cdp("Page.captureScreenshot", { format: "png" });
+  await fs.writeFile(path, Buffer.from(data, "base64"));
   written.push(path);
 };
 
